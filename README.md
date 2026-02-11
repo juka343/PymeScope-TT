@@ -30,16 +30,20 @@ git checkout -b nombre-de-la-tarea
 - npm run dev
 El frontend se ejecuta en: http://localhost:5173
 
-Backend (FastAPI)
+## Backend (FastAPI)
 - Abrir una nueva terminal
 - cd backend
 - python3 -m venv venv
-source venv/bin/activate
+- source venv/bin/activate
 - pip install -r requirements.txt
 - cp .env.example .env **(Este archivo NO SE SUBE AL REPOSITORIO)**
+  
 **Editar el archivo .env y colocar las credenciales necesarias (Azure, Firebase, etc.).**
-  -Correr el backend: uvicorn app.main:app --reload
+
+-Correr el backend: uvicorn app.main:app --reload
+
 El backend se ejecuta en: http://localhost:8000/docs
+
 **Ambos deben estar activos para trabajar con el sistema completo.**
 
 ## Flujo de trabajo recomendado
