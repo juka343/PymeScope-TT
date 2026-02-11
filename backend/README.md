@@ -24,6 +24,7 @@ Conexiones → clients/
 Lógica → services/
 
 Endpoints → api/
+
 ---
 
 ### Descripción de carpetas
