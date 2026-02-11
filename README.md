@@ -14,6 +14,13 @@ Durante el desarrollo, **ambos se ejecutan de forma simultánea**, cada uno en s
 - python3 --version
 Si algo no existe, se instala antes de seguir.
 
+## Versiones requeridas
+
+- Python 3.13.x
+- pip 25.0.1 (viene ya con python)
+- Node 24.x (LTS)
+- npm 11.6.2
+
 ## Rama de trabajo
 El desarrollo se realiza sobre la rama develop o ramas derivadas de ella.
 
