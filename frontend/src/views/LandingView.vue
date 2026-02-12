@@ -20,7 +20,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
           <a href="#features">Características</a>
           <a href="#process">Cómo funciona</a>
 
-          <RouterLink to="/analisis" class="btn btn-primary btn-sm">
+          <RouterLink to="/login" class="btn btn-primary btn-sm">
             Comenzar análisis
           </RouterLink>
         </div>
