@@ -2,7 +2,7 @@
 
 ## Flujo de trabajo para colaboradores
 
-Este proyecto está dividido en **frontend (Vue 3)** , **backend (Python + FastAPI)** y **Firebase** (pendiente).  
+Este proyecto está dividido en **frontend (Vue 3)** , **backend (Python + FastAPI)** y **Firebase** (Firestore + Storage + Functions).  
 Durante el desarrollo, **ambos se ejecutan de forma simultánea**, cada uno en su propio servidor local.
 
 ---
@@ -37,6 +37,18 @@ git checkout -b nombre-de-la-tarea
 - npm run dev
 El frontend se ejecuta en: http://localhost:5173
 
+### Variables de entorno (frontend)
+Crear `frontend/.env` (no se sube) con:
+
+```
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+```
+
 ## Backend (FastAPI)
 - Abrir una nueva terminal
 - cd backend
@@ -49,9 +61,43 @@ El frontend se ejecuta en: http://localhost:5173
 
 -Correr el backend: uvicorn app.main:app --reload
 
+Crear `.env` en la raiz del repo con:
+
+```
+FIREBASE_CREDENTIALS_PATH=C:\Users\TU_USUARIO\Secrets\firebase-adminsdk.json
+FIREBASE_STORAGE_BUCKET=TU_BUCKET
+AZURE_DOC_INTEL_ENDPOINT=
+AZURE_DOC_INTEL_KEY=
+```
+
+Correr el backend: uvicorn app.main:app --reload
+
 El backend se ejecuta en: http://localhost:8000/docs
 
 **Ambos deben estar activos para trabajar con el sistema completo.**
+
+## Firebase Functions (JavaScript)
+- cd firebase-functions
+- npm install
+- Configurar variables para OCR/IA (produccion) o usar emuladores
+
+Variables esperadas en entorno de Functions:
+
+```
+FIREBASE_STORAGE_BUCKET=
+AZURE_DOC_INTEL_ENDPOINT=
+AZURE_DOC_INTEL_KEY=
+AZURE_DOC_INTEL_MODEL=
+OPENAI_API_KEY=
+OPENAI_MODEL=
+```
+
+Para desplegar:
+- npm run deploy
+
+## Credenciales
+- Cada colaborador debe tener su **service account JSON** fuera del repo.
+- No subir llaves ni `.env` al repositorio.
 
 ## Flujo de trabajo recomendado
 

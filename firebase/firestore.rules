@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /companies/{companyId} {
+        allow read, write: if isOwner(userId);
+
+        match /analysisSessions/{analysisId} {
+          allow read, create, update: if isOwner(userId);
+
+          match /financialStatements/{statementId} {
+            allow read, create: if isOwner(userId);
+            allow update, delete: if false;
+          }
+
+          match /extractedData/{docId} {
+            allow read: if isOwner(userId);
+            allow write: if false;
+          }
+
+          match /financialRatios/{docId} {
+            allow read: if isOwner(userId);
+            allow write: if false;
+          }
+
+          match /projections/{docId} {
+            allow read: if isOwner(userId);
+            allow write: if false;
+          }
+
+          match /recommendations/{docId} {
+            allow read: if isOwner(userId);
+            allow write: if false;
+          }
+
+          match /auditLogs/{docId} {
+            allow read: if isOwner(userId);
+            allow write: if false;
+          }
+        }
+      }
+    }
+  }
+}
