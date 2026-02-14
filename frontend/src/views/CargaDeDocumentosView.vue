@@ -1,41 +1,107 @@
 <script setup>
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
+import { storage } from "@/firebase/config";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // ESTOS DATOS DEBEN VENIR DEL ARCHIVO, AHI LE PIENSAS COMO HACERLE EMMA XDD
 const projectTitle = ref("Analisis trimestral 2024");
 const periodicity = ref("Trimestral");
 
+
 // Periodos (IGUAL DESDE BD)
 const periods = ref([]);
 // Ejemplo de periodo: { id, label, balanceFile: null, resultsFile: null }
+const isUploading = ref(false); // Para mostrar loading si quieres
+
+// Referencias a los inputs ocultos para poder disparar el click
+const fileInputRefs = ref({}); 
+
+// Función auxiliar para guardar la referencia del input en el DOM
+const setInputRef = (el, periodId, type) => {
+  if (el) {
+    fileInputRefs.value[`${periodId}_${type}`] = el;
+  }
+};
 
 function addPeriod() {
   const next = periods.value.length + 1;
+  const newId = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now());
   periods.value.push({
-    id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now() + next),
+    id: newId,
     label: `Periodo ${next}`,
     balanceFile: null,
     resultsFile: null,
   });
 }
 
-function attachDummyBalance(periodId) {
-  const p = periods.value.find((x) => x.id === periodId);
-  if (!p) return;
-  p.balanceFile = { name: "BalanceGeneral.pdf" };
+// 1. Dispara el input oculto cuando el usuario da click en "Cargar"
+function triggerFileInput(periodId, type) {
+  const input = fileInputRefs.value[`${periodId}_${type}`];
+  if (input) input.click();
 }
 
-function attachDummyResults(periodId) {
-  const p = periods.value.find((x) => x.id === periodId);
-  if (!p) return;
-  p.resultsFile = { name: "EstadoResultados.pdf" };
+// 2. Maneja la selección del archivo y sube a Firebase
+async function handleFileChange(event, periodId, type) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Validar que sea PDF (opcional pero recomendado)
+  if (file.type !== "application/pdf") {
+    alert("Por favor sube solo archivos PDF");
+    return;
+  }
+
+  isUploading.value = true;
+
+  try {
+    // Definir la ruta: uploads/PROYECTO/PERIODO/TIPO.pdf
+    // Usamos el ID del periodo para organizar carpetas
+    const path = `uploads/${projectTitle.value}/${periodId}/${type}_${file.name}`;
+    const fileRef = storageRef(storage, path);
+
+    // Subir archivo
+    const snapshot = await uploadBytes(fileRef, file);
+    
+    // Obtener URL pública
+    const downloadURL = await getDownloadURL(snapshot.ref);
+
+    // Actualizar el estado local
+    const p = periods.value.find((x) => x.id === periodId);
+    if (p) {
+      // Guardamos la info necesaria para el Backend
+      const fileData = { 
+        name: file.name, 
+        url: downloadURL,
+        type: type // 'balance' o 'resultado'
+      };
+
+      if (type === 'balance') p.balanceFile = fileData;
+      if (type === 'resultado') p.resultsFile = fileData;
+    }
+
+    console.log(`Archivo subido: ${downloadURL}`);
+
+  } catch (error) {
+    console.error("Error subiendo archivo:", error);
+    alert("Error al subir el archivo.");
+  } finally {
+    isUploading.value = false;
+    // Limpiar el input para permitir subir el mismo archivo si es necesario
+    event.target.value = null; 
+  }
 }
 
 const canGenerate = computed(() => {
   if (periods.value.length === 0) return false;
   return periods.value.every((p) => p.balanceFile && p.resultsFile);
 });
+
+// AQUI IRÁ LA FUNCION PARA ENVIAR AL BACKEND LUEGO
+async function generateAnalysis() {
+   console.log("Enviando al backend:", periods.value);
+   //...
+}
 </script>
 
 <template>
@@ -129,14 +195,22 @@ const canGenerate = computed(() => {
                 <div>
                   <p class="doc-title">Balance General</p>
                   <p class="doc-sub">
-                    {{ p.balanceFile ? p.balanceFile.name : "No cargado" }}
+                    <span v-if="p.balanceFile" style="color: green">{{ p.balanceFile.name }}</span>
+                    <span v-else>No cargado</span>
                   </p>
                 </div>
               </div>
+              
+              <input 
+                type="file" 
+                hidden 
+                accept="application/pdf"
+                :ref="(el) => setInputRef(el, p.id, 'balance')"
+                @change="(e) => handleFileChange(e, p.id, 'balance')"
+              />
 
-              <!-- Por ahora botones “dummy”. Luego será input file + upload -->
-              <button class="btn-secondary" type="button" @click="attachDummyBalance(p.id)">
-                Cargar
+              <button class="btn-secondary" type="button" @click="triggerFileInput(p.id, 'balance')">
+                {{ p.balanceFile ? 'Cambiar' : 'Cargar' }}
               </button>
             </div>
 
@@ -146,13 +220,22 @@ const canGenerate = computed(() => {
                 <div>
                   <p class="doc-title">Estado de Resultados</p>
                   <p class="doc-sub">
-                    {{ p.resultsFile ? p.resultsFile.name : "No cargado" }}
+                    <span v-if="p.resultsFile" style="color: green">{{ p.resultsFile.name }}</span>
+                    <span v-else>No cargado</span>
                   </p>
                 </div>
               </div>
 
-              <button class="btn-secondary" type="button" @click="attachDummyResults(p.id)">
-                Cargar
+              <input 
+                type="file" 
+                hidden 
+                accept="application/pdf"
+                :ref="(el) => setInputRef(el, p.id, 'resultado')"
+                @change="(e) => handleFileChange(e, p.id, 'resultado')"
+              />
+
+              <button class="btn-secondary" type="button" @click="triggerFileInput(p.id, 'resultado')">
+                {{ p.resultsFile ? 'Cambiar' : 'Cargar' }}
               </button>
             </div>
           </div>
@@ -175,9 +258,10 @@ const canGenerate = computed(() => {
       <div class="container bottom-inner">
         <span class="autosave">Todos los cambios se guardan automáticamente</span>
 
-        <button class="btn-generate" type="button" :disabled="!canGenerate">
-          Generar análisis
-          <span class="material-symbols-outlined">arrow_forward</span>
+        <button class="btn-generate" type="button" :disabled="!canGenerate || isUploading" @click="generateAnalysis">
+          <span v-if="isUploading">Subiendo...</span>
+          <span v-else>Generar análisis</span>
+          <span v-if="!isUploading" class="material-symbols-outlined">arrow_forward</span>
         </button>
       </div>
     </footer>

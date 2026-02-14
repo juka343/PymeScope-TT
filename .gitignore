@@ -149,3 +149,5 @@ venv/
 
 # OS
 .DS_Store
+
+backend/source/
