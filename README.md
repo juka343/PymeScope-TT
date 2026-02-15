@@ -76,25 +76,6 @@ El backend se ejecuta en: http://localhost:8000/docs
 
 **Ambos deben estar activos para trabajar con el sistema completo.**
 
-## Firebase Functions (JavaScript)
-- cd firebase-functions
-- npm install
-- Configurar variables para OCR/IA (produccion) o usar emuladores
-
-Variables esperadas en entorno de Functions:
-
-```
-FIREBASE_STORAGE_BUCKET=
-AZURE_DOC_INTEL_ENDPOINT=
-AZURE_DOC_INTEL_KEY=
-AZURE_DOC_INTEL_MODEL=
-OPENAI_API_KEY=
-OPENAI_MODEL=
-```
-
-Para desplegar:
-- npm run deploy
-
 ## Credenciales
 - Cada colaborador debe tener su **service account JSON** fuera del repo.
 - No subir llaves ni `.env` al repositorio.
