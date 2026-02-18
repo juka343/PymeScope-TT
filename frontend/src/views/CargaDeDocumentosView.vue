@@ -1,18 +1,24 @@
 <script setup>
-import { computed, ref } from "vue";
-import { RouterLink } from "vue-router";
-import { storage } from "@/firebase/config";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { computed, onMounted, ref } from "vue";
+import { RouterLink, useRoute } from "vue-router";
+import { db, storage } from "@/firebase/config";
+import { doc, getDoc } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
+const route = useRoute();
+const projectId = route.params.id_proyecto;
 // ESTOS DATOS DEBEN VENIR DEL ARCHIVO, AHI LE PIENSAS COMO HACERLE EMMA XDD
-const projectTitle = ref("Analisis trimestral 2024");
-const periodicity = ref("Trimestral");
+const projectTitle = ref("Cargando...");
+const periodicity = ref("...");
+const isLoadingProject = ref(true);
 
 
 // Periodos (IGUAL DESDE BD)
 const periods = ref([]);
 // Ejemplo de periodo: { id, label, balanceFile: null, resultsFile: null }
 const isUploading = ref(false); // Para mostrar loading si quieres
+
+const isProcessing = ref(false); // Nuevo estado para el spinner de "Generando"
 
 // Referencias a los inputs ocultos para poder disparar el click
 const fileInputRefs = ref({}); 
@@ -24,11 +30,38 @@ const setInputRef = (el, periodId, type) => {
   }
 };
 
+onMounted(async () => {
+  if (!projectId) {
+    alert("No se encontró el ID del proyecto en la URL");
+    return;
+  }
+
+  try {
+    const docRef = doc(db, "proyectos", projectId);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      projectTitle.value = data.nombre || "Sin Título";
+      periodicity.value = data.periodicidad || "Desconocida";
+      
+      // Iniciamos con un periodo vacío
+      addPeriod();
+    } else {
+      projectTitle.value = "Proyecto no encontrado";
+    }
+  } catch (error) {
+    console.error("Error cargando proyecto:", error);
+    projectTitle.value = "Error de conexión";
+  } finally {
+    isLoadingProject.value = false;
+  }
+});
+
 function addPeriod() {
   const next = periods.value.length + 1;
-  const newId = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now());
   periods.value.push({
-    id: newId,
+    id: crypto.randomUUID(), // ID interno para el front
     label: `Periodo ${next}`,
     balanceFile: null,
     resultsFile: null,
@@ -55,53 +88,193 @@ async function handleFileChange(event, periodId, type) {
   isUploading.value = true;
 
   try {
+
+    const fileUuid = crypto.randomUUID();
     // Definir la ruta: uploads/PROYECTO/PERIODO/TIPO.pdf
     // Usamos el ID del periodo para organizar carpetas
-    const path = `uploads/${projectTitle.value}/${periodId}/${type}_${file.name}`;
+    const path = `uploads/${projectId}/${periodId}/${type}_${fileUuid}.pdf`;
     const fileRef = storageRef(storage, path);
 
-    // Subir archivo
-    const snapshot = await uploadBytes(fileRef, file);
-    
-    // Obtener URL pública
-    const downloadURL = await getDownloadURL(snapshot.ref);
+    // C. Subir
+    await uploadBytes(fileRef, file);
+    const downloadURL = await getDownloadURL(fileRef);
 
-    // Actualizar el estado local
+    // D. Guardar en estado local CON LA METADATA NECESARIA
     const p = periods.value.find((x) => x.id === periodId);
-    if (p) {
-      // Guardamos la info necesaria para el Backend
-      const fileData = { 
-        name: file.name, 
-        url: downloadURL,
-        type: type // 'balance' o 'resultado'
-      };
+    
+    const fileMetadata = { 
+      uuid: fileUuid,      
+      name: file.name, 
+      url: downloadURL,
+      type: type           
+    };
 
-      if (type === 'balance') p.balanceFile = fileData;
-      if (type === 'resultado') p.resultsFile = fileData;
+    if (p) {
+      if (type === 'balance') p.balanceFile = fileMetadata;
+      if (type === 'resultado') p.resultsFile = fileMetadata;
     }
 
-    console.log(`Archivo subido: ${downloadURL}`);
-
   } catch (error) {
-    console.error("Error subiendo archivo:", error);
-    alert("Error al subir el archivo.");
+    console.error("Error subiendo:", error);
+    alert("Error al subir a Firebase.");
   } finally {
     isUploading.value = false;
-    // Limpiar el input para permitir subir el mismo archivo si es necesario
     event.target.value = null; 
   }
 }
 
 const canGenerate = computed(() => {
   if (periods.value.length === 0) return false;
-  return periods.value.every((p) => p.balanceFile && p.resultsFile);
+  return periods.value.some((p) => p.balanceFile && p.resultsFile);
 });
 
-// AQUI IRÁ LA FUNCION PARA ENVIAR AL BACKEND LUEGO
 async function generateAnalysis() {
-   console.log("Enviando al backend:", periods.value);
-   //...
+   isProcessing.value = true;
+  
+  // Filtramos solo periodos completos
+  const validPeriods = periods.value.filter(p => p.balanceFile && p.resultsFile);
+  
+  if (validPeriods.length === 0) {
+    alert("Completa al menos un periodo.");
+    isProcessing.value = false;
+    return;
+  }
+
+  try {
+    // Recorremos cada periodo y enviamos sus 2 archivos
+    // Usamos Promise.all para que sea más rápido (paralelo)
+    const promesas = [];
+
+    for (const p of validPeriods) {
+      // Preparar Balance
+      const payloadBalance = {
+        project_id: projectId,
+        period_id: p.label,       // "Periodo 1"
+        file_uuid: p.balanceFile.uuid,
+        file_url: p.balanceFile.url,
+        file_type: "Balance General"
+      };
+
+      // Preparar Resultados
+      const payloadResults = {
+        project_id: projectId,
+        period_id: p.label,
+        file_uuid: p.resultsFile.uuid,
+        file_url: p.resultsFile.url,
+        file_type: "Estado de Resultados"
+      };
+
+      // Agregar a la cola de envío
+      promesas.push(sendToAzure(payloadBalance));
+      promesas.push(sendToAzure(payloadResults));
+    }
+
+    // Esperar a que Azure procese todo
+    console.log(`Enviando ${promesas.length} documentos a Azure...`);
+    const resultados = await Promise.all(promesas);
+
+    console.log("Resultados recibidos de Azure:", resultados);
+    alert("¡Análisis completado! Revisa la consola para ver el JSON de Azure.");
+    
+    // AQUÍ REDIRIGIRÍAS A LA PANTALLA DE RESULTADOS
+    // router.push(`/proyecto/${projectId}/resultados`);
+
+  } catch (error) {
+    console.error("Error en el análisis:", error);
+    alert("Hubo un error procesando los documentos.");
+  } finally {
+    isProcessing.value = false;
+  }
 }
+
+async function sendToAzure(payload) {
+  // AJUSTA LA URL SI TU PUERTO ES DIFERENTE
+  const response = await fetch('http://127.0.0.1:8000/api/documents/process-azure', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error backend: ${response.statusText}`);
+  }
+  return await response.json();
+}
+
+async function removeDocument(periodId, type) {
+  const p = periods.value.find((x) => x.id === periodId);
+  if (!p) return;
+
+  // Identificar qué archivo es
+  const fileData = type === 'balance' ? p.balanceFile : p.resultsFile;
+  if (!fileData) return;
+
+  if (!confirm(`¿Estás seguro de eliminar el archivo: ${fileData.name}?`)) return;
+
+  isUploading.value = true; // Reusamos el estado de carga para bloquear botones
+
+  try {
+    // 1. Crear referencia al archivo en Firebase para borrarlo
+    // Firebase es listo: si le pasas la URL de descarga, sabe qué archivo es.
+    const fileRef = storageRef(storage, fileData.url);
+
+    // 2. Borrar de la Nube
+    await deleteObject(fileRef);
+
+    // 3. Borrar de la Vista (Frontend)
+    if (type === 'balance') p.balanceFile = null;
+    if (type === 'resultado') p.resultsFile = null;
+
+    // 4. Limpiar el input file por si quieren subir el mismo nombre de nuevo
+    const input = fileInputRefs.value[`${periodId}_${type}`];
+    if (input) input.value = '';
+
+  } catch (error) {
+    console.error("Error eliminando archivo:", error);
+    alert("No se pudo eliminar el archivo de la nube.");
+  } finally {
+    isUploading.value = false;
+  }
+}
+
+async function removePeriod(periodId) {
+  const p = periods.value.find((x) => x.id === periodId);
+  if (!p) return;
+
+  if (!confirm(`¿Eliminar ${p.label} y todos sus archivos cargados?`)) return;
+
+  isUploading.value = true;
+
+  try {
+    // 1. Si tiene Balance cargado, borrarlo de Firebase
+    if (p.balanceFile) {
+      const balanceRef = storageRef(storage, p.balanceFile.url);
+      await deleteObject(balanceRef).catch(e => console.warn("Balance ya no existía", e));
+    }
+
+    // 2. Si tiene Resultados cargado, borrarlo de Firebase
+    if (p.resultsFile) {
+      const resultsRef = storageRef(storage, p.resultsFile.url);
+      await deleteObject(resultsRef).catch(e => console.warn("Resultados ya no existía", e));
+    }
+
+    // 3. Quitar el periodo de la lista visual
+    periods.value = periods.value.filter(period => period.id !== periodId);
+
+    // (Opcional) Renombrar los periodos restantes (Periodo 1, 2...)
+    // para que no queden huecos como "Periodo 1, Periodo 3".
+    periods.value.forEach((period, index) => {
+      period.label = `Periodo ${index + 1}`;
+    });
+
+  } catch (error) {
+    console.error("Error eliminando periodo:", error);
+    alert("Hubo un error al limpiar los archivos del periodo.");
+  } finally {
+    isUploading.value = false;
+  }
+}
+
 </script>
 
 <template>
@@ -181,7 +354,7 @@ async function generateAnalysis() {
       </section>
 
       <!-- LISTA DE PERIODOS (EJEMPLO) -->
-      <section v-if="periods.length" class="periods">
+      <!-- <section v-if="periods.length" class="periods">
         <article v-for="p in periods" :key="p.id" class="period-card">
           <header class="period-card-head">
             <h3>{{ p.label }}</h3>
@@ -240,6 +413,93 @@ async function generateAnalysis() {
             </div>
           </div>
         </article>
+      </section> -->
+      <section v-if="periods.length" class="periods">
+        <article v-for="p in periods" :key="p.id" class="period-card">
+          
+          <header class="period-card-head">
+            <div class="head-left">
+              <h3>{{ p.label }}</h3>
+              <span class="mini-pill">{{ periodicity }}</span>
+            </div>
+            
+            <button class="btn-icon-danger" @click="removePeriod(p.id)" title="Eliminar periodo completo">
+              <span class="material-symbols-outlined">delete</span>
+            </button>
+          </header>
+
+          <div class="docs">
+            <div class="doc">
+              <div class="doc-left">
+                <span class="material-symbols-outlined">description</span>
+                <div>
+                  <p class="doc-title">Balance General</p>
+                  <p class="doc-sub">
+                    <span v-if="p.balanceFile" class="file-success">
+                      {{ p.balanceFile.name }}
+                      <button class="btn-text-danger" @click="removeDocument(p.id, 'balance')">
+                         (Eliminar)
+                      </button>
+                    </span>
+                    <span v-else class="file-empty">No cargado</span>
+                  </p>
+                </div>
+              </div>
+              
+              <input 
+                type="file" 
+                hidden 
+                accept="application/pdf"
+                :ref="(el) => setInputRef(el, p.id, 'balance')"
+                @change="(e) => handleFileChange(e, p.id, 'balance')"
+              />
+
+              <button 
+                class="btn-secondary" 
+                type="button" 
+                @click="triggerFileInput(p.id, 'balance')"
+                v-if="!p.balanceFile"
+              >
+                Cargar
+              </button>
+            </div>
+
+            <div class="doc">
+              <div class="doc-left">
+                <span class="material-symbols-outlined">receipt_long</span>
+                <div>
+                  <p class="doc-title">Estado de Resultados</p>
+                  <p class="doc-sub">
+                    <span v-if="p.resultsFile" class="file-success">
+                      {{ p.resultsFile.name }}
+                      <button class="btn-text-danger" @click="removeDocument(p.id, 'resultado')">
+                        (Eliminar)
+                      </button>
+                    </span>
+                    <span v-else class="file-empty">No cargado</span>
+                  </p>
+                </div>
+              </div>
+
+              <input 
+                type="file" 
+                hidden 
+                accept="application/pdf"
+                :ref="(el) => setInputRef(el, p.id, 'resultado')"
+                @change="(e) => handleFileChange(e, p.id, 'resultado')"
+              />
+
+              <button 
+                class="btn-secondary" 
+                type="button" 
+                @click="triggerFileInput(p.id, 'resultado')"
+                v-if="!p.resultsFile"
+              >
+                Cargar
+              </button>
+            </div>
+          </div>
+        </article>
       </section>
 
       <!-- CASO VACIO -->
@@ -258,10 +518,19 @@ async function generateAnalysis() {
       <div class="container bottom-inner">
         <span class="autosave">Todos los cambios se guardan automáticamente</span>
 
-        <button class="btn-generate" type="button" :disabled="!canGenerate || isUploading" @click="generateAnalysis">
-          <span v-if="isUploading">Subiendo...</span>
+        <button 
+          class="btn-generate" 
+          type="button" 
+          :disabled="!canGenerate || isUploading || isProcessing" 
+          @click="generateAnalysis"
+        >
+          <span v-if="isUploading">Subiendo a Firebase...</span>
+          <span v-else-if="isProcessing">Analizando con IA...</span>
           <span v-else>Generar análisis</span>
-          <span v-if="!isUploading" class="material-symbols-outlined">arrow_forward</span>
+          
+          <span v-if="!isUploading && !isProcessing" class="material-symbols-outlined">
+            arrow_forward
+          </span>
         </button>
       </div>
     </footer>
@@ -503,9 +772,14 @@ async function generateAnalysis() {
 .period-card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: space-between; /* Separa título y botón de borrar */
   gap: 12px;
   margin-bottom: 12px;
+}
+.head-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .period-card-head h3 {
@@ -571,6 +845,45 @@ async function generateAnalysis() {
 }
 .btn-secondary:hover {
   filter: brightness(0.98);
+}
+
+.btn-icon-danger {
+  background: transparent;
+  border: none;
+  color: #ef4444; /* Rojo */
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+}
+.btn-icon-danger:hover {
+  background: #fee2e2; /* Fondo rojo clarito */
+}
+.file-success {
+  color: #16a34a; /* Verde */
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-empty {
+  color: #94a3b8; /* Gris */
+  font-style: italic;
+}
+.btn-text-danger {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 600;
+}
+.btn-text-danger:hover {
+  color: #b91c1c;
 }
 
 /* Empty */
