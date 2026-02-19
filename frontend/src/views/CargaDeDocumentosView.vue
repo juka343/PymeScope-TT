@@ -138,7 +138,7 @@ async function generateAnalysis() {
         </div>
 
         <div class="actions">
-          <RouterLink class="back" to="/mis-proyectos">
+          <RouterLink class="back" to="/misProyectos">
             <span class="material-symbols-outlined">arrow_back</span>
             <span class="back-text">Volver a proyectos</span>
           </RouterLink>
