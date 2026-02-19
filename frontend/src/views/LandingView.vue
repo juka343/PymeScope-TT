@@ -21,7 +21,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
           <a href="#process">Cómo funciona</a>
 
           <RouterLink to="/login" class="btn btn-primary btn-sm">
-            Comenzar análisis
+            Iniciar sesión
           </RouterLink>
         </div>
 
@@ -45,7 +45,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
           </p>
 
           <div class="hero-actions">
-            <RouterLink to="/analisis" class="btn btn-primary btn-lg">
+            <RouterLink to="/login" class="btn btn-primary btn-lg">
               Comenzar análisis
             </RouterLink>
             <a href="https://www.youtube.com/watch?v=hPr-Yc92qaY" target="_blank">
@@ -253,7 +253,9 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
           Obtén claridad absoluta sobre la salud financiera de tu empresa con análisis automáticos
           y proyecciones precisas.
         </p>
-        <button class="btn btn-white btn-lg" type="button">Crear cuenta</button>
+        <RouterLink to="/login" class="btn btn-white btn-lg">
+              Crear cuenta
+            </RouterLink>
       </div>
     </section>
 

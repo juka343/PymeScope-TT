@@ -63,6 +63,10 @@ VITE_FIREBASE_APP_ID=
 
 Crear `.env` en la raiz del repo con:
 
+## Instalación SDK Azure para python
+
+pip install azure-ai-formrecognizer azure-core python-dotenv
+
 ```
 FIREBASE_CREDENTIALS_PATH=C:\Users\TU_USUARIO\Secrets\firebase-adminsdk.json
 FIREBASE_STORAGE_BUCKET=TU_BUCKET

@@ -1,11 +1,57 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, computed } from "vue";
+import { useRouter } from "vue-router";
 
+import { auth } from "@/firebase/config";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+
+const router = useRouter();
+
+// ====== AUTH UI ======
+const user = ref(null);
+const authUnsub = ref(null);
+
+const userDisplayName = computed(() => {
+  if (!user.value) return "Usuario";
+  return user.value.displayName || (user.value.email ? user.value.email.split("@")[0] : "Usuario");
+});
+
+const userEmail = computed(() => (user.value?.email ? user.value.email : ""));
+const userRole = computed(() => "Usuario"); 
+const userPhotoURL = computed(() => user.value?.photoURL || ""); // si alguien ve esto, las fotos solo funcioan con google xdddd
+
+onMounted(() => {
+  authUnsub.value = onAuthStateChanged(auth, (u) => {
+    user.value = u;
+
+    if (!u) {
+      router.replace("/"); // sin sesión, fuera
+    }
+  });
+
+  window.addEventListener("keydown", onKeydown);
+});
+
+onBeforeUnmount(() => {
+  if (authUnsub.value) authUnsub.value();
+  window.removeEventListener("keydown", onKeydown);
+});
+
+async function handleLogout() {
+  try {
+    await signOut(auth);
+    router.replace("/"); // landing
+  } catch (e) {
+    console.error("Error al cerrar sesión:", e);
+  }
+}
+
+//  MODAL 
 const isModalOpen = ref(false);
 
 // Form (solo UI)
 const projectName = ref("");
-const periodicity = ref("monthly"); // monthly | quarterly | annual
+const periodicity = ref("monthly"); // 
 const companyName = ref("");
 const notes = ref("");
 
@@ -33,10 +79,8 @@ function handleCreate() {
 function onKeydown(e) {
   if (e.key === "Escape" && isModalOpen.value) closeModal();
 }
-onMounted(() => window.addEventListener("keydown", onKeydown));
-onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
-// Solo 2 proyectos (los que pediste)
+//  PROYECTOS (EJEMPLOOOO QUITAR (EMILIANO)) 
 const projects = ref([
   {
     id: "p1",
@@ -63,12 +107,10 @@ function removeProject(id) {
 
 <template>
   <div class="page">
-    <!-- HEADER -->
     <header class="header">
       <div class="container header-inner">
         <div class="brand">
           <div class="logo" aria-hidden="true">
-            <!-- SVG original -->
             <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path
                 d="M42.1739 20.1739L27.8261 5.82609C29.1366 7.13663 28.3989 10.1876 26.2002 13.7654C24.8538 15.9564 22.9595 18.3449 20.6522 20.6522C18.3449 22.9595 15.9564 24.8538 13.7654 26.2002C10.1876 28.3989 7.13663 29.1366 5.82609 27.8261L20.1739 42.1739C21.4845 43.4845 24.5355 42.7467 28.1133 40.548C30.3042 39.2016 32.6927 37.3073 35 35C37.3073 32.6927 39.2016 30.3042 40.548 28.1133C42.7467 24.5355 43.4845 21.4845 42.1739 20.1739Z"
@@ -86,15 +128,23 @@ function removeProject(id) {
         </div>
 
         <div class="user">
-          <div class="avatar" aria-hidden="true"></div>
+          <!-- Avatar real (si hay foto), si no, círculo gris -->
+          <div
+            class="avatar"
+            :style="userPhotoURL ? { backgroundImage: `url('${userPhotoURL}')` } : {}"
+            aria-hidden="true"
+          ></div>
+
           <div class="user-text">
-            <span class="user-name">Juan Pérez</span>
-            <span class="user-role">Admin</span>
+            <span class="user-name">{{ userDisplayName }}</span>
+            <span class="user-role">
+              {{ userRole }}<template v-if="userEmail"> · {{ userEmail }}</template>
+            </span>
           </div>
 
           <div class="divider"></div>
 
-          <button class="logout" type="button">
+          <button class="logout" type="button" @click="handleLogout">
             <span class="material-symbols-outlined">logout</span>
             <span class="logout-text">Cerrar sesión</span>
           </button>
@@ -102,7 +152,6 @@ function removeProject(id) {
       </div>
     </header>
 
-    <!-- MAIN -->
     <main class="container main">
       <div class="top">
         <div class="top-left">
@@ -117,15 +166,9 @@ function removeProject(id) {
       </div>
 
       <section class="grid">
-        <!-- 2 tarjetas -->
         <article v-for="p in projects" :key="p.id" class="card">
           <div class="card-top">
-            <!-- Ícono quitado (como pediste) -->
-
-            <span
-              class="badge"
-              :class="p.status === 'completo' ? 'badge-ok' : 'badge-warn'"
-            >
+            <span class="badge" :class="p.status === 'completo' ? 'badge-ok' : 'badge-warn'">
               {{ p.status === "completo" ? "Completo" : "En edición" }}
             </span>
           </div>
@@ -155,7 +198,6 @@ function removeProject(id) {
                 <span class="material-symbols-outlined">edit</span>
               </button>
 
-              <!-- BOTÓN ELIMINAR -->
               <button
                 class="icon-btn danger"
                 type="button"
@@ -173,7 +215,6 @@ function removeProject(id) {
           </div>
         </article>
 
-        <!-- TARJETA "nuevo análisis" abre modal -->
         <button class="card dashed" type="button" @click="openModal">
           <div class="dashed-icon">
             <span class="material-symbols-outlined">add</span>
@@ -353,6 +394,8 @@ function removeProject(id) {
   height: 36px;
   border-radius: 999px;
   background: #e2e8f0;
+  background-size: cover;
+  background-position: center;
 }
 
 .user-text {
@@ -558,12 +601,10 @@ function removeProject(id) {
 .icon-btn:hover {
   color: var(--primary);
 }
-
 .icon-btn span {
   font-size: 20px;
 }
 
-/* Botón eliminar */
 .icon-btn.danger:hover {
   color: #ef4444;
 }

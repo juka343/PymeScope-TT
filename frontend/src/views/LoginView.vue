@@ -1,19 +1,91 @@
 <script setup>
 import { ref } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
+
+import { auth } from "@/firebase/config";
+import {
+  signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+} from "firebase/auth";
+
+const router = useRouter();
+
+const showPassword = ref(false);
 
 const email = ref("");
 const password = ref("");
 const rememberMe = ref(false);
 
-function handleSubmit() {
-  // TODO: aquí irá Firebase Auth (signInWithEmailAndPassword)
-  console.log("login", { email: email.value, password: password.value, rememberMe: rememberMe.value });
+const loading = ref(false);
+const errorMsg = ref("");
+
+function togglePassword() {
+  showPassword.value = !showPassword.value;
 }
 
-function handleGoogle() {
-  // TODO: aquí irá Google provider
-  console.log("login with google");
+function mapFirebaseError(code) {
+  switch (code) {
+    case "auth/invalid-email":
+      return "Correo inválido.";
+    case "auth/user-not-found":
+      return "No existe una cuenta con ese correo.";
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "Correo o contraseña incorrectos.";
+    case "auth/too-many-requests":
+      return "Demasiados intentos. Intenta más tarde.";
+    case "auth/popup-closed-by-user":
+      return "Cerraste la ventana de Google antes de terminar.";
+    default:
+      return "No se pudo iniciar sesión.";
+  }
+}
+
+async function handleSubmit() {
+  errorMsg.value = "";
+  loading.value = true;
+
+  try {
+    await setPersistence(
+      auth,
+      rememberMe.value ? browserLocalPersistence : browserSessionPersistence
+    );
+
+    await signInWithEmailAndPassword(auth, email.value, password.value);
+
+    router.push("/misProyectos");
+  } catch (err) {
+    console.error(err);
+    errorMsg.value = mapFirebaseError(err?.code);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function handleGoogle() {
+  errorMsg.value = "";
+  loading.value = true;
+
+  try {
+    await setPersistence(
+      auth,
+      rememberMe.value ? browserLocalPersistence : browserSessionPersistence
+    );
+
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+
+    router.push("/misProyectos");
+  } catch (err) {
+    console.error(err);
+    errorMsg.value = mapFirebaseError(err?.code);
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 
@@ -47,14 +119,16 @@ function handleGoogle() {
         </div>
       </aside>
 
-      <!-- PANEL DERECHO -->
-       
       <main class="main">
         <div class="card">
           <div class="card-body">
             <div class="head">
               <h1>Iniciar sesión</h1>
               <p>Bienvenido de nuevo a tu panel de control</p>
+
+              <p v-if="errorMsg" class="error">
+                {{ errorMsg }}
+              </p>
             </div>
 
             <form class="form" @submit.prevent="handleSubmit">
@@ -68,34 +142,47 @@ function handleGoogle() {
                     placeholder="nombre@empresa.com"
                     autocomplete="email"
                     required
+                    :disabled="loading"
                   />
                 </div>
               </label>
 
               <label class="field">
                 <span class="label">Contraseña</span>
-                <div class="control">
+
+                <div class="control password">
                   <span class="icon material-symbols-outlined">lock</span>
+
                   <input
                     v-model="password"
-                    type="password"
+                    :type="showPassword ? 'text' : 'password'"
                     placeholder="••••••••"
                     autocomplete="current-password"
                     required
                   />
+
+                  <button class="eye" type="button" @click="showPassword = !showPassword">
+                    <span class="material-symbols-outlined">
+                      {{ showPassword ? "visibility_off" : "visibility" }}
+                    </span>
+                  </button>
                 </div>
               </label>
 
+
+
               <div class="row">
                 <label class="check">
-                  <input v-model="rememberMe" type="checkbox" />
+                  <input v-model="rememberMe" type="checkbox" :disabled="loading" />
                   <span>Recordarme</span>
                 </label>
 
                 <a class="link" href="#">¿Olvidaste tu contraseña?</a>
               </div>
 
-              <button class="btn-primary" type="submit">Iniciar sesión</button>
+              <button class="btn-primary" type="submit" :disabled="loading">
+                {{ loading ? "Iniciando..." : "Iniciar sesión" }}
+              </button>
             </form>
 
             <div class="divider">
@@ -104,7 +191,7 @@ function handleGoogle() {
               <span></span>
             </div>
 
-            <button class="btn-outline" type="button" @click="handleGoogle">
+            <button class="btn-outline" type="button" @click="handleGoogle" :disabled="loading">
               <svg aria-hidden="true" class="google" viewBox="0 0 24 24">
                 <path
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -123,7 +210,7 @@ function handleGoogle() {
                   fill="#EA4335"
                 />
               </svg>
-              <span>Continuar con Google</span>
+              <span>{{ loading ? "Espera..." : "Continuar con Google" }}</span>
             </button>
           </div>
 
@@ -302,11 +389,108 @@ function handleGoogle() {
   font-size: 13px;
 }
 
+.error {
+  margin: 12px 0 0;
+  color: #ef4444;
+  font-weight: 900;
+  font-size: 13px;
+}
+
 .form {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
+
+.password {
+  position: relative;
+  width: 100%;
+
+}
+
+.password input {
+  width: 100%;
+  padding-right: 48px;
+}
+
+.eye {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eye:hover {
+  color: #475569;
+}
+
+.eye span {
+  font-size: 20px;
+}
+
+.control.password {
+  position: relative;
+}
+
+.control.password .icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.control.password input {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  padding-left: 42px;  /* espacio para el candado */
+  padding-right: 46px; /* espacio para el ojo */
+  font-size: 16px;
+  outline: none;
+}
+
+.control.password .eye {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  cursor: pointer;
+
+  color: #94a3b8;
+}
+
+.control.password .eye:hover {
+  color: #475569;
+}
+
+.control.password .eye span {
+  font-size: 22px;
+}
+
+
 
 .field {
   display: flex;
@@ -403,7 +587,7 @@ input:focus {
   font-weight: 900;
   font-size: 15px;
   box-shadow: 0 10px 22px rgba(41, 157, 224, 0.25);
-  transition: filter 0.15s ease, transform 0.05s ease;
+  transition: filter 0.15s ease, transform 0.05s ease, opacity 0.15s ease;
   margin-top: 6px;
 }
 
@@ -412,6 +596,11 @@ input:focus {
 }
 .btn-primary:active {
   transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .divider {
@@ -442,13 +631,17 @@ input:focus {
   gap: 10px;
   font-weight: 900;
   color: #334155;
-  transition: background 0.15s ease, transform 0.05s ease;
+  transition: background 0.15s ease, transform 0.05s ease, opacity 0.15s ease;
 }
 .btn-outline:hover {
   background: #f8fafc;
 }
 .btn-outline:active {
   transform: translateY(1px);
+}
+.btn-outline:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .google {
