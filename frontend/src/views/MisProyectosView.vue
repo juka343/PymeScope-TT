@@ -2,8 +2,9 @@
 import { onBeforeUnmount, onMounted, ref, computed } from "vue";
 import { useRouter } from "vue-router";
 
-import { auth } from "@/firebase/config";
+import { auth, db } from "@/firebase/config";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import { collection, doc, setDoc, getDocs, query, where, orderBy, serverTimestamp } from "firebase/firestore";
 
 const router = useRouter();
 
@@ -21,11 +22,14 @@ const userRole = computed(() => "Usuario");
 const userPhotoURL = computed(() => user.value?.photoURL || ""); // si alguien ve esto, las fotos solo funcioan con google xdddd
 
 onMounted(() => {
-  authUnsub.value = onAuthStateChanged(auth, (u) => {
+  authUnsub.value = onAuthStateChanged(auth, async (u) => {
     user.value = u;
 
     if (!u) {
       router.replace("/"); // sin sesión, fuera
+    } else {
+      // Cargar proyectos cuando hay usuario autenticado
+      await loadUserProjects();
     }
   });
 
@@ -70,35 +74,101 @@ function resetForm() {
 function handleCancel() {
   closeModal();
 }
-function handleCreate() {
-  // Sin funcionalidad real, solo UI
-  closeModal();
-  resetForm();
+const creating = ref(false);
+
+async function handleCreate() {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    alert("Debes iniciar sesión para crear un proyecto");
+    return;
+  }
+
+  if (!projectName.value.trim()) {
+    alert("El nombre del proyecto es obligatorio");
+    return;
+  }
+
+  creating.value = true;
+
+  try {
+    // Generar ID único para el proyecto
+    const projectId = crypto.randomUUID();
+    const projectRef = doc(db, "proyectos", projectId);
+
+    // Guardar en Firestore con userId para filtrado personal
+    await setDoc(projectRef, {
+      nombre: projectName.value.trim(),
+      empresa: companyName.value.trim() || null,
+      periodicidad: periodicity.value,
+      notas: notes.value.trim() || null,
+      userId: currentUser.uid, // Para que solo el dueño pueda verlo
+      status: "en_edicion", //Este campo se actualizará a "completo" cuando el análisis esté listo.
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    closeModal();
+    resetForm();
+
+    // Redirigir a la vista de carga de documentos
+    router.push(`/proyecto/${projectId}/cargar`);
+  } catch (error) {
+    console.error("Error creando proyecto:", error);
+    alert("Error al crear el proyecto. Intenta de nuevo.");
+  } finally {
+    creating.value = false;
+  }
 }
 
 function onKeydown(e) {
   if (e.key === "Escape" && isModalOpen.value) closeModal();
 }
 
-//  PROYECTOS (EJEMPLOOOO QUITAR (EMILIANO)) 
-const projects = ref([
-  {
-    id: "p1",
-    title: "Análisis Anual 2023",
-    status: "completo",
-    company: "Empresa ABC S.A.",
-    periods: "2021 - 2023",
-    modified: "12 Oct 2023",
-  },
-  {
-    id: "p2",
-    title: "Proyección Q4",
-    status: "edicion",
-    company: "Tech Solutions Ltda.",
-    periods: "2023 - 2024",
-    modified: "10 Oct 2023",
-  },
-]);
+//  PROYECTOS
+const projects = ref([]);
+const loadingProjects = ref(true);
+
+// Cargar proyectos del usuario desde Firestore
+async function loadUserProjects() {
+  const currentUser = auth.currentUser;
+  if (!currentUser) return;
+
+  loadingProjects.value = true;
+  try {
+    const projectsRef = collection(db, "proyectos");
+    // Query simple sin orderBy (evita necesidad de índice compuesto)
+    const q = query(
+      projectsRef,
+      where("userId", "==", currentUser.uid)
+    );
+    const snapshot = await getDocs(q);
+    
+    const projectsList = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        title: data.nombre || "Sin título",
+        status: data.status || "en_edicion", // Por ahora, asumimos que el proyecto se crea en estado "en edición".
+        company: data.empresa || "Sin empresa",
+        periods: data.periodicidad || "Sin periodicidad",
+        createdAt: data.createdAt?.toDate?.() || new Date(0),
+        modified: data.createdAt?.toDate?.()?.toLocaleDateString("es-MX", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }) || "Sin fecha",
+      };
+    });
+
+    // Ordenar en el cliente (más recientes primero)
+    projectsList.sort((a, b) => b.createdAt - a.createdAt);
+    projects.value = projectsList;
+  } catch (error) {
+    console.error("Error cargando proyectos:", error);
+  } finally {
+    loadingProjects.value = false;
+  }
+}
 
 function removeProject(id) {
   projects.value = projects.value.filter((p) => p.id !== id);
@@ -312,10 +382,15 @@ function removeProject(id) {
           </form>
 
           <div class="modal-actions">
-            <button class="btn-primary" type="button" @click="handleCreate">
-              Crear proyecto y continuar
+            <button 
+              class="btn-primary" 
+              type="button" 
+              @click="handleCreate"
+              :disabled="creating || !projectName.trim()"
+            >
+              {{ creating ? 'Creando...' : 'Crear proyecto y continuar' }}
             </button>
-            <button class="btn-secondary" type="button" @click="handleCancel">
+            <button class="btn-secondary" type="button" @click="handleCancel" :disabled="creating">
               Cancelar
             </button>
           </div>
