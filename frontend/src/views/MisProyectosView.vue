@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 
 import { auth, db } from "@/firebase/config";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { collection, doc, setDoc, getDocs, query, where, orderBy, serverTimestamp } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 const router = useRouter();
 
@@ -55,7 +55,7 @@ const isModalOpen = ref(false);
 
 // Form (solo UI)
 const projectName = ref("");
-const periodicity = ref("monthly"); // 
+const periodicity = ref("mensual");
 const companyName = ref("");
 const notes = ref("");
 
@@ -67,7 +67,7 @@ function closeModal() {
 }
 function resetForm() {
   projectName.value = "";
-  periodicity.value = "monthly";
+  periodicity.value = "mensual";
   companyName.value = "";
   notes.value = "";
 }
@@ -95,6 +95,8 @@ async function handleCreate() {
     const projectId = crypto.randomUUID();
     const projectRef = doc(db, "proyectos", projectId);
 
+    console.log("Creando proyecto en Firestore...", projectId);
+
     // Guardar en Firestore con userId para filtrado personal
     await setDoc(projectRef, {
       nombre: projectName.value.trim(),
@@ -106,6 +108,14 @@ async function handleCreate() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    // Verificar que el documento se guardó correctamente
+    const docSnap = await getDoc(projectRef);
+    if (!docSnap.exists()) {
+      throw new Error("El proyecto no se guardó correctamente en la base de datos");
+    }
+
+    console.log("Proyecto creado exitosamente:", docSnap.data());
 
     closeModal();
     resetForm();
@@ -170,8 +180,34 @@ async function loadUserProjects() {
   }
 }
 
-function removeProject(id) {
-  projects.value = projects.value.filter((p) => p.id !== id);
+const deleting = ref(null); // ID del proyecto que se está eliminando
+
+async function removeProject(id) {
+  // Buscar el proyecto para mostrar su nombre
+  // const project = projects.value.find((p) => p.id === id);
+  // const projectName = project?.title || "este proyecto";
+
+  // Confirmar eliminación (comentado por ahora)
+  // const confirmed = confirm(`¿Estás seguro de eliminar "${projectName}"?\n\nEsta acción no se puede deshacer.`);
+  // if (!confirmed) return;
+
+  deleting.value = id;
+
+  try {
+    // Eliminar de Firestore
+    const projectRef = doc(db, "proyectos", id);
+    await deleteDoc(projectRef);
+
+    console.log("Proyecto eliminado:", id);
+
+    // Eliminar del array local
+    projects.value = projects.value.filter((p) => p.id !== id);
+  } catch (error) {
+    console.error("Error eliminando proyecto:", error);
+    alert("Error al eliminar el proyecto. Intenta de nuevo.");
+  } finally {
+    deleting.value = null;
+  }
 }
 </script>
 
@@ -264,7 +300,12 @@ function removeProject(id) {
             <span class="modified">Modificado: {{ p.modified }}</span>
 
             <div class="actions">
-              <button class="icon-btn" type="button" title="Editar proyecto">
+              <button 
+                class="icon-btn" 
+                type="button" 
+                title="Editar proyecto"
+                @click="router.push(`/proyecto/${p.id}/cargar`)"
+              >
                 <span class="material-symbols-outlined">edit</span>
               </button>
 
@@ -273,8 +314,11 @@ function removeProject(id) {
                 type="button"
                 title="Eliminar proyecto"
                 @click="removeProject(p.id)"
+                :disabled="deleting === p.id"
               >
-                <span class="material-symbols-outlined">delete</span>
+                <span class="material-symbols-outlined">
+                  {{ deleting === p.id ? 'hourglass_empty' : 'delete' }}
+                </span>
               </button>
 
               <a class="link" href="#">
@@ -340,17 +384,17 @@ function removeProject(id) {
 
               <div class="radio-grid">
                 <label class="radio">
-                  <input v-model="periodicity" type="radio" value="monthly" />
+                  <input v-model="periodicity" type="radio" value="mensual" />
                   <span>Mensual</span>
                 </label>
 
                 <label class="radio">
-                  <input v-model="periodicity" type="radio" value="quarterly" />
+                  <input v-model="periodicity" type="radio" value="trimestral" />
                   <span>Trimestral</span>
                 </label>
 
                 <label class="radio">
-                  <input v-model="periodicity" type="radio" value="annual" />
+                  <input v-model="periodicity" type="radio" value="anual" />
                   <span>Anual</span>
                 </label>
               </div>

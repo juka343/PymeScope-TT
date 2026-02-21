@@ -2,8 +2,8 @@
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { db, storage } from "@/firebase/config";
-import { doc, getDoc } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { doc, getDoc, setDoc, getDocs, deleteDoc, collection } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from "firebase/storage";
 
 const route = useRoute();
 const projectId = route.params.id_proyecto;
@@ -45,8 +45,13 @@ onMounted(async () => {
       projectTitle.value = data.nombre || "Sin Título";
       periodicity.value = data.periodicidad || "Desconocida";
       
-      // Iniciamos con un periodo vacío
-      addPeriod();
+      // Cargar periodos existentes desde Firestore
+      await loadExistingPeriods();
+      
+      // Si no hay periodos, agregar uno vacío
+      if (periods.value.length === 0) {
+        addPeriod();
+      }
     } else {
       projectTitle.value = "Proyecto no encontrado";
     }
@@ -58,14 +63,70 @@ onMounted(async () => {
   }
 });
 
+// Cargar periodos existentes desde Firestore
+async function loadExistingPeriods() {
+  try {
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
+    
+    if (snapshot.empty) {
+      console.log("No hay periodos guardados");
+      return;
+    }
+
+    const loadedPeriods = [];
+    
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      loadedPeriods.push({
+        id: docSnap.id,
+        label: data.label || "Periodo",
+        balanceFile: data.balanceFile || null,
+        resultsFile: data.resultsFile || null,
+      });
+    });
+
+    // Ordenar por label (Periodo 1, Periodo 2, etc.)
+    loadedPeriods.sort((a, b) => {
+      const numA = parseInt(a.label.replace("Periodo ", "")) || 0;
+      const numB = parseInt(b.label.replace("Periodo ", "")) || 0;
+      return numA - numB;
+    });
+
+    periods.value = loadedPeriods;
+    console.log("Periodos cargados:", loadedPeriods.length);
+  } catch (error) {
+    console.error("Error cargando periodos:", error);
+  }
+}
+
 function addPeriod() {
   const next = periods.value.length + 1;
-  periods.value.push({
-    id: crypto.randomUUID(), // ID interno para el front
+  const newPeriod = {
+    id: crypto.randomUUID(),
     label: `Periodo ${next}`,
     balanceFile: null,
     resultsFile: null,
-  });
+  };
+  periods.value.push(newPeriod);
+  
+  // Guardar en Firestore
+  savePeriodToFirestore(newPeriod);
+}
+
+// Guardar periodo en Firestore
+async function savePeriodToFirestore(period) {
+  try {
+    const periodRef = doc(db, "proyectos", projectId, "periodos", period.id);
+    await setDoc(periodRef, {
+      label: period.label,
+      balanceFile: period.balanceFile,
+      resultsFile: period.resultsFile,
+    }, { merge: true });
+    console.log("Periodo guardado en Firestore:", period.id);
+  } catch (error) {
+    console.error("Error guardando periodo:", error);
+  }
 }
 
 // 1. Dispara el input oculto cuando el usuario da click en "Cargar"
@@ -106,12 +167,16 @@ async function handleFileChange(event, periodId, type) {
       uuid: fileUuid,      
       name: file.name, 
       url: downloadURL,
+      path: path,  // Guardar la ruta para poder eliminar después
       type: type           
     };
 
     if (p) {
       if (type === 'balance') p.balanceFile = fileMetadata;
       if (type === 'resultado') p.resultsFile = fileMetadata;
+      
+      // Guardar en Firestore
+      await savePeriodToFirestore(p);
     }
 
   } catch (error) {
@@ -211,21 +276,25 @@ async function removeDocument(periodId, type) {
 
   if (!confirm(`¿Estás seguro de eliminar el archivo: ${fileData.name}?`)) return;
 
-  isUploading.value = true; // Reusamos el estado de carga para bloquear botones
+  isUploading.value = true;
 
   try {
-    // 1. Crear referencia al archivo en Firebase para borrarlo
-    // Firebase es listo: si le pasas la URL de descarga, sabe qué archivo es.
-    const fileRef = storageRef(storage, fileData.url);
+    // 1. Crear referencia usando el path guardado (o reconstruirlo para archivos antiguos)
+    const filePath = fileData.path || `uploads/${projectId}/${periodId}/${type}_${fileData.uuid}.pdf`;
+    const fileRef = storageRef(storage, filePath);
 
-    // 2. Borrar de la Nube
+    // 2. Borrar de Storage
     await deleteObject(fileRef);
+    console.log("Archivo eliminado de Storage:", filePath);
 
     // 3. Borrar de la Vista (Frontend)
     if (type === 'balance') p.balanceFile = null;
     if (type === 'resultado') p.resultsFile = null;
 
-    // 4. Limpiar el input file por si quieren subir el mismo nombre de nuevo
+    // 4. Actualizar en Firestore
+    await savePeriodToFirestore(p);
+
+    // 5. Limpiar el input file
     const input = fileInputRefs.value[`${periodId}_${type}`];
     if (input) input.value = '';
 
@@ -246,26 +315,33 @@ async function removePeriod(periodId) {
   isUploading.value = true;
 
   try {
-    // 1. Si tiene Balance cargado, borrarlo de Firebase
+    // 1. Si tiene Balance cargado, borrarlo de Firebase Storage
     if (p.balanceFile) {
-      const balanceRef = storageRef(storage, p.balanceFile.url);
+      const balancePath = p.balanceFile.path || `uploads/${projectId}/${periodId}/balance_${p.balanceFile.uuid}.pdf`;
+      const balanceRef = storageRef(storage, balancePath);
       await deleteObject(balanceRef).catch(e => console.warn("Balance ya no existía", e));
     }
 
-    // 2. Si tiene Resultados cargado, borrarlo de Firebase
+    // 2. Si tiene Resultados cargado, borrarlo de Firebase Storage
     if (p.resultsFile) {
-      const resultsRef = storageRef(storage, p.resultsFile.url);
+      const resultsPath = p.resultsFile.path || `uploads/${projectId}/${periodId}/resultado_${p.resultsFile.uuid}.pdf`;
+      const resultsRef = storageRef(storage, resultsPath);
       await deleteObject(resultsRef).catch(e => console.warn("Resultados ya no existía", e));
     }
 
-    // 3. Quitar el periodo de la lista visual
+    // 3. Eliminar periodo de Firestore
+    const periodRef = doc(db, "proyectos", projectId, "periodos", periodId);
+    await deleteDoc(periodRef);
+    console.log("Periodo eliminado de Firestore:", periodId);
+
+    // 4. Quitar el periodo de la lista visual
     periods.value = periods.value.filter(period => period.id !== periodId);
 
-    // (Opcional) Renombrar los periodos restantes (Periodo 1, 2...)
-    // para que no queden huecos como "Periodo 1, Periodo 3".
-    periods.value.forEach((period, index) => {
-      period.label = `Periodo ${index + 1}`;
-    });
+    // 5. Renombrar los periodos restantes y actualizar en Firestore
+    for (let i = 0; i < periods.value.length; i++) {
+      periods.value[i].label = `Periodo ${i + 1}`;
+      await savePeriodToFirestore(periods.value[i]);
+    }
 
   } catch (error) {
     console.error("Error eliminando periodo:", error);
