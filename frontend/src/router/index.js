@@ -19,8 +19,9 @@ const router = createRouter({
     { path: "/misProyectos", name: "misProyectos", component: () => import("../views/MisProyectosView.vue") },
 
     // RUTAS CON LAYOUT
+    // RUTAS CON LAYOUT
     {
-      path: "/app",
+      path: "/proyecto/:id_proyecto/dashboard", 
       component: DashboardLayout,
       children: [
         {

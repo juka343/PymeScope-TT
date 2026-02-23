@@ -5,11 +5,13 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.services.firebase_service import FirebaseDBManager
 from app.services.azure_document_service import AzureDocumentService
+from app.services.financial_calculator import FinancialCalculator
 
 #Servicios
 router = APIRouter()
 _db_manager = FirebaseDBManager()
 _azure_service = AzureDocumentService()
+_calculator = FinancialCalculator()
 
 #Varuiable global para la inicialización de firebase
 _is_initialized = False
@@ -27,6 +29,7 @@ def _ensure_firebase_initialized() -> None:
 	_is_initialized = True
 
 # --- MODELOS DE DATOS ---
+#modelo viejo, revisar después si quitar...
 class SolicitudProcesamientoAzure(BaseModel):
     project_id: str
     period_id: str
@@ -34,7 +37,54 @@ class SolicitudProcesamientoAzure(BaseModel):
     file_url: str
     file_type: str
 
+#nuevo modelo
+class SolicitudAnalisisPeriodo(BaseModel):
+    project_id: str
+    period_id: str
+    balance_url: str
+    resultados_url: str
+
 # --- ENDPOINTS ---
+@router.post("/documents/analyze-period")
+async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[str, Any]:
+    """
+    Recibe ambos documentos de un periodo, los procesa en Azure,
+    cruza los datos y calcula los KPIs financieros.
+    """
+    _ensure_firebase_initialized()
+    
+    print(f"🚀 Iniciando análisis cruzado para el periodo: {payload.period_id}")
+
+    try:
+        # 1. Extraer datos crudos con Azure (Balance)
+        print("-> Extrayendo Balance General...")
+        balance_data = _azure_service.process_financial_document(payload.balance_url)
+
+        # 2. Extraer datos crudos con Azure (Resultados)
+        print("-> Extrayendo Estado de Resultados...")
+        resultados_data = _azure_service.process_financial_document(payload.resultados_url)
+
+        # 3. Pasar la data por tu Motor Extractor para calcular rentabilidad
+        print("-> Calculando indicadores financieros...")
+        analisis_rentabilidad = _calculator.calcular_rentabilidad(balance_data, resultados_data)
+        analisis_liquidez = _calculator.calcular_liquidez(balance_data) # <-- NUEVO
+
+        # 4. Retornar el paquete completo listo para el Dashboard de Vue
+        return {
+            "estatus": "Completado",
+            "project_id": payload.project_id,
+            "period_id": payload.period_id,
+            "dashboard_data": {
+                "rentabilidad": analisis_rentabilidad,
+                "liquidez": analisis_liquidez
+            }
+        }    
+
+    except Exception as e:
+        print(f"Error en análisis cruzado: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error procesando el periodo: {str(e)}")
+
+#-----------------------------------------------------------------------------------------------------------
 @router.post("/documents/process-azure")
 async def procesar_documento_con_azure(payload: SolicitudProcesamientoAzure) -> Dict[str, Any]:
     """

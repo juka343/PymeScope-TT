@@ -4,9 +4,11 @@ import { computed } from "vue";
 
 const route = useRoute();
 
-const currentPath = computed(() => route.path);
+const projectId = computed(() => route.params.id_proyecto);
 
-const isActive = (path) => currentPath.value.startsWith(path);
+const isActive = (section) => {
+  return route.path.endsWith(section);
+};
 </script>
 
 <template>
@@ -30,18 +32,18 @@ const isActive = (path) => currentPath.value.startsWith(path);
       <p class="side-title">RAZONES FINANCIERAS</p>
 
       <RouterLink
-        to="/app/rentabilidad"
+        :to="`/proyecto/${projectId}/dashboard/rentabilidad`"
         class="side-link"
-        :class="{ active: isActive('/app/rentabilidad') }"
+        :class="{ active: isActive('rentabilidad') }"
       >
         <span class="material-symbols-outlined">trending_up</span>
         <span>Rentabilidad</span>
       </RouterLink>
 
       <RouterLink
-        to="/app/liquidez"
+        :to="`/proyecto/${projectId}/dashboard/liquidez`"
         class="side-link"
-        :class="{ active: isActive('/app/liquidez') }"
+        :class="{ active: isActive('liquidez') }"
       >
         <span class="material-symbols-outlined">attach_money</span>
         <span>Liquidez</span>
