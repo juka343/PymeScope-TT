@@ -1,11 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { RouterLink, useRoute } from "vue-router";
-import { db, storage } from "@/firebase/config";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { db, storage, auth } from "@/firebase/config";
 import { doc, getDoc, setDoc, getDocs, deleteDoc, collection } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject, listAll } from "firebase/storage";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 const route = useRoute();
+const router = useRouter(); 
 const projectId = route.params.id_proyecto;
 // ESTOS DATOS DEBEN VENIR DEL ARCHIVO, AHI LE PIENSAS COMO HACERLE EMMA XDD
 const projectTitle = ref("Cargando...");
@@ -69,11 +70,8 @@ async function loadExistingPeriods() {
     const periodosRef = collection(db, "proyectos", projectId, "periodos");
     const snapshot = await getDocs(periodosRef);
     
-    if (snapshot.empty) {
-      console.log("No hay periodos guardados");
-      return;
-    }
-
+    if (snapshot.empty)return;
+    
     const loadedPeriods = [];
     
     snapshot.forEach((docSnap) => {
@@ -83,6 +81,7 @@ async function loadExistingPeriods() {
         label: data.label || "Periodo",
         balanceFile: data.balanceFile || null,
         resultsFile: data.resultsFile || null,
+        hasChanges: false // bandera de cambios para saber si el periodo fue modificado después de la carga inicial
       });
     });
 
@@ -94,7 +93,6 @@ async function loadExistingPeriods() {
     });
 
     periods.value = loadedPeriods;
-    console.log("Periodos cargados:", loadedPeriods.length);
   } catch (error) {
     console.error("Error cargando periodos:", error);
   }
@@ -107,6 +105,7 @@ function addPeriod() {
     label: `Periodo ${next}`,
     balanceFile: null,
     resultsFile: null,
+    hasChanges: false
   };
   periods.value.push(newPeriod);
   
@@ -123,7 +122,6 @@ async function savePeriodToFirestore(period) {
       balanceFile: period.balanceFile,
       resultsFile: period.resultsFile,
     }, { merge: true });
-    console.log("Periodo guardado en Firestore:", period.id);
   } catch (error) {
     console.error("Error guardando periodo:", error);
   }
@@ -138,9 +136,7 @@ function triggerFileInput(periodId, type) {
 // 2. Maneja la selección del archivo y sube a Firebase
 async function handleFileChange(event, periodId, type) {
   const file = event.target.files[0];
-  if (!file) return;
 
-  // Validar que sea PDF (opcional pero recomendado)
   if (file.type !== "application/pdf") {
     alert("Por favor sube solo archivos PDF");
     return;
@@ -148,12 +144,14 @@ async function handleFileChange(event, periodId, type) {
 
   isUploading.value = true;
 
-  try {
-
-    const fileUuid = crypto.randomUUID();
-    // Definir la ruta: uploads/PROYECTO/PERIODO/TIPO.pdf
-    // Usamos el ID del periodo para organizar carpetas
-    const path = `uploads/${projectId}/${periodId}/${type}_${fileUuid}.pdf`;
+  try {    
+    // --- NUEVO CÓDIGO DE SEGURIDAD (EL CADENERO) ---
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Sesión no iniciada");
+    
+    const userId = currentUser.uid;
+    const fileUuid = crypto.randomUUID(); // Para evitar colisiones, aunque el nombre real se guarda en metadata
+    const path = `uploads/${userId}/${projectId}/${periodId}/${type}_${fileUuid}.pdf`;
     const fileRef = storageRef(storage, path);
 
     // C. Subir
@@ -163,17 +161,20 @@ async function handleFileChange(event, periodId, type) {
     // D. Guardar en estado local CON LA METADATA NECESARIA
     const p = periods.value.find((x) => x.id === periodId);
     
-    const fileMetadata = { 
-      uuid: fileUuid,      
-      name: file.name, 
-      url: downloadURL,
-      path: path,  // Guardar la ruta para poder eliminar después
-      type: type           
-    };
 
     if (p) {
+      const fileMetadata = { 
+        uuid: fileUuid,      
+        name: file.name, 
+        url: downloadURL,
+        path: path,  // Guardar la ruta para poder eliminar después
+        type: type           
+      };
+
       if (type === 'balance') p.balanceFile = fileMetadata;
       if (type === 'resultado') p.resultsFile = fileMetadata;
+
+      p.hasChanges = true; // Marcar que este periodo tiene cambios para saber que debe ser guardado antes de generar el análisis
       
       // Guardar en Firestore
       await savePeriodToFirestore(p);
@@ -189,60 +190,48 @@ async function handleFileChange(event, periodId, type) {
 }
 
 const canGenerate = computed(() => {
-  if (periods.value.length === 0) return false;
-  return periods.value.some((p) => p.balanceFile && p.resultsFile);
+  return periods.value.some((p) => p.balanceFile && p.resultsFile && p.hasChanges);
 });
 
 async function generateAnalysis() {
-   isProcessing.value = true;
+  isProcessing.value = true;
+  const validPeriods = periods.value.filter(p => p.balanceFile && p.resultsFile && p.hasChanges);
   
-  // Filtramos solo periodos completos
-  const validPeriods = periods.value.filter(p => p.balanceFile && p.resultsFile);
-  
-  if (validPeriods.length === 0) {
-    alert("Completa al menos un periodo.");
-    isProcessing.value = false;
-    return;
-  }
-
   try {
-    // Recorremos cada periodo y enviamos sus 2 archivos
-    // Usamos Promise.all para que sea más rápido (paralelo)
-    const promesas = [];
-
-    for (const p of validPeriods) {
-      // Preparar Balance
-      const payloadBalance = {
+    const promesas = validPeriods.map(p => {
+      const payload = {
         project_id: projectId,
-        period_id: p.label,       // "Periodo 1"
-        file_uuid: p.balanceFile.uuid,
-        file_url: p.balanceFile.url,
-        file_type: "Balance General"
+        period_id: p.id, // Usamos el ID real de Firestore
+        balance_url: p.balanceFile.url,
+        resultados_url: p.resultsFile.url
       };
 
-      // Preparar Resultados
-      const payloadResults = {
-        project_id: projectId,
-        period_id: p.label,
-        file_uuid: p.resultsFile.uuid,
-        file_url: p.resultsFile.url,
-        file_type: "Estado de Resultados"
-      };
+      return fetch('http://127.0.0.1:8000/api/documents/analyze-period', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(res => res.json());
+    });
 
-      // Agregar a la cola de envío
-      promesas.push(sendToAzure(payloadBalance));
-      promesas.push(sendToAzure(payloadResults));
+    const resultados = await Promise.all(promesas);
+    
+    for (const res of resultados) {
+      if (res.estatus === "Completado") {
+        const periodoRef = doc(db, "proyectos", projectId, "periodos", res.period_id);
+        await setDoc(periodoRef, {
+          analisis_rentabilidad: res.dashboard_data.rentabilidad,
+          analisis_liquidez: res.dashboard_data.liquidez
+        }, { merge: true });
+        
+        const pLocal = periods.value.find(p => p.id === res.period_id);
+        if (pLocal) pLocal.hasChanges = false; 
+      }
     }
 
-    // Esperar a que Azure procese todo
-    console.log(`Enviando ${promesas.length} documentos a Azure...`);
-    const resultados = await Promise.all(promesas);
+    const projectRef = doc(db, "proyectos", projectId);
+    await setDoc(projectRef, { status: "completo" }, { merge: true });
 
-    console.log("Resultados recibidos de Azure:", resultados);
-    alert("¡Análisis completado! Revisa la consola para ver el JSON de Azure.");
-    
-    // AQUÍ REDIRIGIRÍAS A LA PANTALLA DE RESULTADOS
-    // router.push(`/proyecto/${projectId}/resultados`);
+    router.push(`/proyecto/${projectId}/dashboard/rentabilidad`);
 
   } catch (error) {
     console.error("Error en el análisis:", error);
@@ -252,55 +241,31 @@ async function generateAnalysis() {
   }
 }
 
-async function sendToAzure(payload) {
-  // AJUSTA LA URL SI TU PUERTO ES DIFERENTE
-  const response = await fetch('http://127.0.0.1:8000/api/documents/process-azure', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error backend: ${response.statusText}`);
-  }
-  return await response.json();
-}
-
 async function removeDocument(periodId, type) {
   const p = periods.value.find((x) => x.id === periodId);
   if (!p) return;
 
   // Identificar qué archivo es
   const fileData = type === 'balance' ? p.balanceFile : p.resultsFile;
-  if (!fileData) return;
-
-  if (!confirm(`¿Estás seguro de eliminar el archivo: ${fileData.name}?`)) return;
+  if (!fileData || !confirm(`¿Eliminar ${fileData.name}?`)) return;
 
   isUploading.value = true;
 
   try {
-    // 1. Crear referencia usando el path guardado (o reconstruirlo para archivos antiguos)
-    const filePath = fileData.path || `uploads/${projectId}/${periodId}/${type}_${fileData.uuid}.pdf`;
-    const fileRef = storageRef(storage, filePath);
-
+    const fileRef = storageRef(storage, fileData.path);
     // 2. Borrar de Storage
     await deleteObject(fileRef);
-    console.log("Archivo eliminado de Storage:", filePath);
 
     // 3. Borrar de la Vista (Frontend)
     if (type === 'balance') p.balanceFile = null;
     if (type === 'resultado') p.resultsFile = null;
 
+    p.hasChanges = true;
     // 4. Actualizar en Firestore
     await savePeriodToFirestore(p);
 
-    // 5. Limpiar el input file
-    const input = fileInputRefs.value[`${periodId}_${type}`];
-    if (input) input.value = '';
-
   } catch (error) {
     console.error("Error eliminando archivo:", error);
-    alert("No se pudo eliminar el archivo de la nube.");
   } finally {
     isUploading.value = false;
   }
@@ -308,44 +273,23 @@ async function removeDocument(periodId, type) {
 
 async function removePeriod(periodId) {
   const p = periods.value.find((x) => x.id === periodId);
-  if (!p) return;
-
-  if (!confirm(`¿Eliminar ${p.label} y todos sus archivos cargados?`)) return;
+  if (!p || !confirm(`¿Eliminar ${p.label}?`)) return;
 
   isUploading.value = true;
-
   try {
-    // 1. Si tiene Balance cargado, borrarlo de Firebase Storage
-    if (p.balanceFile) {
-      const balancePath = p.balanceFile.path || `uploads/${projectId}/${periodId}/balance_${p.balanceFile.uuid}.pdf`;
-      const balanceRef = storageRef(storage, balancePath);
-      await deleteObject(balanceRef).catch(e => console.warn("Balance ya no existía", e));
-    }
+    if (p.balanceFile) await deleteObject(storageRef(storage, p.balanceFile.path)).catch(() => {});
+    if (p.resultsFile) await deleteObject(storageRef(storage, p.resultsFile.path)).catch(() => {});
 
-    // 2. Si tiene Resultados cargado, borrarlo de Firebase Storage
-    if (p.resultsFile) {
-      const resultsPath = p.resultsFile.path || `uploads/${projectId}/${periodId}/resultado_${p.resultsFile.uuid}.pdf`;
-      const resultsRef = storageRef(storage, resultsPath);
-      await deleteObject(resultsRef).catch(e => console.warn("Resultados ya no existía", e));
-    }
-
-    // 3. Eliminar periodo de Firestore
-    const periodRef = doc(db, "proyectos", projectId, "periodos", periodId);
-    await deleteDoc(periodRef);
-    console.log("Periodo eliminado de Firestore:", periodId);
-
-    // 4. Quitar el periodo de la lista visual
+    await deleteDoc(doc(db, "proyectos", projectId, "periodos", periodId));
     periods.value = periods.value.filter(period => period.id !== periodId);
 
-    // 5. Renombrar los periodos restantes y actualizar en Firestore
+    // Re-etiquetado y actualización en lote
     for (let i = 0; i < periods.value.length; i++) {
       periods.value[i].label = `Periodo ${i + 1}`;
       await savePeriodToFirestore(periods.value[i]);
     }
-
   } catch (error) {
-    console.error("Error eliminando periodo:", error);
-    alert("Hubo un error al limpiar los archivos del periodo.");
+    console.error("Error:", error);
   } finally {
     isUploading.value = false;
   }
@@ -429,67 +373,6 @@ async function removePeriod(periodId) {
         </button>
       </section>
 
-      <!-- LISTA DE PERIODOS (EJEMPLO) -->
-      <!-- <section v-if="periods.length" class="periods">
-        <article v-for="p in periods" :key="p.id" class="period-card">
-          <header class="period-card-head">
-            <h3>{{ p.label }}</h3>
-            <span class="mini-pill">{{ periodicity }}</span>
-          </header>
-
-          <div class="docs">
-            <div class="doc">
-              <div class="doc-left">
-                <span class="material-symbols-outlined">description</span>
-                <div>
-                  <p class="doc-title">Balance General</p>
-                  <p class="doc-sub">
-                    <span v-if="p.balanceFile" style="color: green">{{ p.balanceFile.name }}</span>
-                    <span v-else>No cargado</span>
-                  </p>
-                </div>
-              </div>
-              
-              <input 
-                type="file" 
-                hidden 
-                accept="application/pdf"
-                :ref="(el) => setInputRef(el, p.id, 'balance')"
-                @change="(e) => handleFileChange(e, p.id, 'balance')"
-              />
-
-              <button class="btn-secondary" type="button" @click="triggerFileInput(p.id, 'balance')">
-                {{ p.balanceFile ? 'Cambiar' : 'Cargar' }}
-              </button>
-            </div>
-
-            <div class="doc">
-              <div class="doc-left">
-                <span class="material-symbols-outlined">receipt_long</span>
-                <div>
-                  <p class="doc-title">Estado de Resultados</p>
-                  <p class="doc-sub">
-                    <span v-if="p.resultsFile" style="color: green">{{ p.resultsFile.name }}</span>
-                    <span v-else>No cargado</span>
-                  </p>
-                </div>
-              </div>
-
-              <input 
-                type="file" 
-                hidden 
-                accept="application/pdf"
-                :ref="(el) => setInputRef(el, p.id, 'resultado')"
-                @change="(e) => handleFileChange(e, p.id, 'resultado')"
-              />
-
-              <button class="btn-secondary" type="button" @click="triggerFileInput(p.id, 'resultado')">
-                {{ p.resultsFile ? 'Cambiar' : 'Cargar' }}
-              </button>
-            </div>
-          </div>
-        </article>
-      </section> -->
       <section v-if="periods.length" class="periods">
         <article v-for="p in periods" :key="p.id" class="period-card">
           

@@ -1,32 +1,80 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { db } from "@/firebase/config";
+import { collection, getDocs } from "firebase/firestore";
 
-/**
- * Solo UI (sin backend)
- * Esta view asume que ya está dentro de DashboardLayout.vue
- * (Topbar + Sidebar viven en el layout, NO aquí).
- */
+const route = useRoute();
+const projectId = route.params.id_proyecto;
 
-const kpis = ref([
-  { label: "Margen de Rentabilidad", value: "12.8%", status: "ok" },
-  { label: "Rendimiento sobre Activos Totales (RAT)", value: "8.5%", status: "warn" },
-  { label: "Rendimiento sobre el Patrimonio", value: "15.4%", status: "ok" },
-]);
+// Estado de carga
+const isLoading = ref(true);
 
-const periodRows = ref([
-  {
-    period: "Q3 2024",
-    ingresos: "$4,250,000",
-    utilidad: "$845,000",
-    margen: "19.8%",
-  },
-]);
+// Variables reactivas (ahora empiezan vacías)
+const kpis = ref([]);
+const periodRows = ref([]);
 
+// Las recomendaciones siguen estáticas por ahora (se pueden hacer dinámicas después)
 const recommendations = ref([
   "Control de costos operativos",
   "Revisión de estrategia de precios",
   "Optimización de procesos internos",
 ]);
+
+// Función auxiliar para darle formato de dinero a los números (ej. 1500000 -> $1,500,000)
+const formatCurrency = (value) => {
+  if (value === undefined || value === null) return "$0";
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+};
+
+onMounted(async () => {
+  if (!projectId) return;
+
+  try {
+    // 1. Ir a la subcolección de periodos del proyecto actual
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    const rowsTemp = [];
+    let ultimosKpis = null;
+
+    // 2. Recorrer todos los periodos que encontremos
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      
+      // Si el periodo ya tiene un análisis guardado...
+      if (data.analisis_rentabilidad) {
+        const analisis = data.analisis_rentabilidad;
+        const crudos = analisis.datos_crudos;
+
+        // Guardamos los KPIs más recientes para las tarjetas superiores
+        ultimosKpis = analisis.kpis;
+
+        // Armamos la fila para la tabla inferior
+        rowsTemp.push({
+          period: data.label || docSnap.id,
+          ingresos: formatCurrency(crudos.ventas_netas),
+          utilidad: formatCurrency(crudos.utilidad_neta),
+          margen: analisis.kpis.find(k => k.label === "Margen de Rentabilidad")?.value || "0%"
+        });
+      }
+    });
+
+    // 3. Ordenar la tabla (opcional: asume que la etiqueta es "Periodo 1", "Periodo 2")
+    rowsTemp.sort((a, b) => a.period.localeCompare(b.period));
+
+    // 4. Asignar los datos a las variables que usa el HTML
+    if (ultimosKpis) {
+      kpis.value = ultimosKpis;
+    }
+    periodRows.value = rowsTemp;
+
+  } catch (error) {
+    console.error("Error al cargar los datos del dashboard:", error);
+  } finally {
+    isLoading.value = false;
+  }
+});
 </script>
 
 <template>

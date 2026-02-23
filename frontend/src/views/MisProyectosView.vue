@@ -1,8 +1,9 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, computed } from "vue";
 import { useRouter } from "vue-router";
+import { ref as storageRef, deleteObject } from "firebase/storage"; 
 
-import { auth, db } from "@/firebase/config";
+import { auth, db, storage } from "@/firebase/config";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "firebase/firestore";
 
@@ -183,25 +184,54 @@ async function loadUserProjects() {
 const deleting = ref(null); // ID del proyecto que se está eliminando
 
 async function removeProject(id) {
-  // Buscar el proyecto para mostrar su nombre
-  // const project = projects.value.find((p) => p.id === id);
-  // const projectName = project?.title || "este proyecto";
-
-  // Confirmar eliminación (comentado por ahora)
-  // const confirmed = confirm(`¿Estás seguro de eliminar "${projectName}"?\n\nEsta acción no se puede deshacer.`);
-  // if (!confirmed) return;
+  // Confirmar eliminación
+  const confirmed = confirm("¿Estás seguro de eliminar este proyecto y TODOS sus archivos?\n\nEsta acción no se puede deshacer.");
+  if (!confirmed) return;
 
   deleting.value = id;
 
   try {
-    // Eliminar de Firestore
+    // 1. Obtener todos los periodos del proyecto
+    const periodosRef = collection(db, "proyectos", id, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    // 2. Borrar archivos de Storage y documentos de los periodos
+    const promesasLimpieza = [];
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+
+      // Preparar borrado del Balance en Storage
+      if (data.balanceFile && data.balanceFile.path) {
+        const bRef = storageRef(storage, data.balanceFile.path);
+        promesasLimpieza.push(deleteObject(bRef).catch(e => console.warn("Balance no hallado", e)));
+      }
+      
+      // Preparar borrado del Resultado en Storage
+      if (data.resultsFile && data.resultsFile.path) {
+        const rRef = storageRef(storage, data.resultsFile.path);
+        promesasLimpieza.push(deleteObject(rRef).catch(e => console.warn("Resultado no hallado", e)));
+      }
+
+      // Preparar borrado del documento del periodo en Firestore
+      promesasLimpieza.push(deleteDoc(docSnap.ref));
+    });
+
+    // Esperar a que se borren todos los PDFs y periodos al mismo tiempo
+    if (promesasLimpieza.length > 0) {
+      console.log(`Limpiando ${promesasLimpieza.length} elementos internos...`);
+      await Promise.all(promesasLimpieza);
+    }
+
+    // 3. Borrar el proyecto principal en Firestore
     const projectRef = doc(db, "proyectos", id);
     await deleteDoc(projectRef);
 
-    console.log("Proyecto eliminado:", id);
+    console.log("Proyecto y archivos eliminados por completo:", id);
 
-    // Eliminar del array local
+    // 4. Quitarlo de la vista
     projects.value = projects.value.filter((p) => p.id !== id);
+    
   } catch (error) {
     console.error("Error eliminando proyecto:", error);
     alert("Error al eliminar el proyecto. Intenta de nuevo.");
@@ -209,6 +239,7 @@ async function removeProject(id) {
     deleting.value = null;
   }
 }
+
 </script>
 
 <template>
@@ -321,10 +352,15 @@ async function removeProject(id) {
                 </span>
               </button>
 
-              <a class="link" href="#">
+              <button 
+                class="link" 
+                type="button"
+                :disabled="p.status !== 'completo'"
+                @click="router.push(`/proyecto/${p.id}/dashboard/rentabilidad`)"
+              >
                 Ver análisis
                 <span class="material-symbols-outlined">arrow_forward</span>
-              </a>
+              </button>
             </div>
           </div>
         </article>
@@ -729,16 +765,26 @@ async function removeProject(id) {
 }
 
 .link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--primary);
   font-weight: 900;
   font-size: 14px;
-  text-decoration: none;
 }
 .link span {
   font-size: 18px;
+}
+
+.link:disabled {
+  color: #94a3b8; 
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Dashed card */

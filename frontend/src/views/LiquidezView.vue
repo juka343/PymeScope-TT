@@ -1,24 +1,16 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { db } from "@/firebase/config";
+import { collection, getDocs } from "firebase/firestore";
 
-/**
- * Solo UI (sin backend)
- */
+const route = useRoute();
+const projectId = route.params.id_proyecto;
 
-const kpis = ref([
-  { label: "Razón Circulante", value: "1.56", status: "ok" },
-  { label: "Prueba Ácida", value: "0.92", status: "warn" },
-  { label: "Capital de Trabajo", value: "$1,250,000", status: "ok" },
-]);
-
-const periodRows = ref([
-  {
-    period: "Q3 2024",
-    activo: "$3,500,000",
-    pasivo: "$2,250,000",
-    capital: "$1,250,000",
-  },
-]);
+// Variables reactivas (empiezan vacías esperando a Firebase)
+const kpis = ref([]);
+const periodRows = ref([]);
+const isLoading = ref(true);
 
 const recommendations = ref([
   "Optimizar rotación de inventarios",
@@ -27,8 +19,61 @@ const recommendations = ref([
 ]);
 
 const interpretation = ref(
-  "La empresa muestra una razón circulante saludable de 1.56, indicando capacidad para cubrir obligaciones. Sin embargo, la prueba ácida por debajo de 1.0 sugiere cierta dependencia de la rotación de inventarios para obtener liquidez inmediata."
+  "Los indicadores de liquidez muestran la capacidad operativa a corto plazo. Revisa la prueba ácida para entender la dependencia del inventario."
 );
+
+// Función auxiliar para formato moneda ($1,500,000.00)
+const formatCurrency = (value) => {
+  if (value === undefined || value === null) return "$0";
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+};
+
+onMounted(async () => {
+  if (!projectId) return;
+
+  try {
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    const rowsTemp = [];
+    let ultimosKpis = null;
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      
+      // Buscamos específicamente la etiqueta de liquidez que guardó tu nuevo backend
+      if (data.analisis_liquidez) {
+        const analisis = data.analisis_liquidez;
+        const crudos = analisis.datos_crudos;
+
+        // Guardamos las 3 tarjetas blancas superiores
+        ultimosKpis = analisis.kpis;
+
+        // Armamos la fila mapeando exactamente a lo que pide tu HTML (r.activo, r.pasivo, r.capital)
+        rowsTemp.push({
+          period: data.label || docSnap.id,
+          activo: formatCurrency(crudos.activo_circulante),
+          pasivo: formatCurrency(crudos.pasivo_circulante),
+          // El capital de trabajo es la resta directa entre activo circulante y pasivo circulante
+          capital: formatCurrency(crudos.activo_circulante - crudos.pasivo_circulante)
+        });
+      }
+    });
+
+    // Ordenar por nombre de periodo
+    rowsTemp.sort((a, b) => a.period.localeCompare(b.period));
+
+    if (ultimosKpis) {
+      kpis.value = ultimosKpis;
+    }
+    periodRows.value = rowsTemp;
+
+  } catch (error) {
+    console.error("Error al cargar los datos de liquidez:", error);
+  } finally {
+    isLoading.value = false;
+  }
+});
 </script>
 
 <template>

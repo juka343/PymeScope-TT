@@ -1,10 +1,11 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "@/firebase/config";
 
 const router = useRouter();
+const route = useRoute();
 
 // ====== USER ======
 const user = ref(null);
@@ -102,7 +103,11 @@ async function handleLogout() {
     </div>
 
     <div class="header-right">
-      <button class="btn-secondary" type="button">
+      <button 
+        class="btn-secondary" 
+        type="button"
+        @click="router.push(`/proyecto/${route.params.id_proyecto}/cargar`)"
+      >
         <span class="material-symbols-outlined">edit</span>
         Editar proyecto
       </button>
