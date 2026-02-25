@@ -214,6 +214,8 @@ async function generateAnalysis() {
     });
 
     const resultados = await Promise.all(promesas);
+
+    console.log("DATOS CRUDOS RECIBIDOS DE AZURE:", resultados);
     
     for (const res of resultados) {
       if (res.estatus === "Completado") {
