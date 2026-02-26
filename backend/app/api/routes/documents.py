@@ -53,7 +53,7 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
     """
     _ensure_firebase_initialized()
     
-    print(f"🚀 Iniciando análisis cruzado para el periodo: {payload.period_id}")
+    print(f"Iniciando análisis cruzado para el periodo: {payload.period_id}")
 
     try:
         # 1. Extraer datos crudos con Azure (Balance)

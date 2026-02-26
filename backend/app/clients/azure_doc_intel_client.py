@@ -14,7 +14,7 @@ class AzureDocIntelClient:
         Envía una URL a Azure y espera el resultado.
         Usamos el modelo 'prebuilt-layout' que es ideal para tablas financieras.
         """
-        print(f"📡 Enviando a Azure: {file_url}")
+        print(f"Enviando a Azure: {file_url}")
         
         # Iniciamos el análisis (es una operación larga, por eso el 'begin')
         poller = self.client.begin_analyze_document_from_url(
@@ -24,5 +24,5 @@ class AzureDocIntelClient:
         # Esperamos a que termine
         result = poller.result()
         
-        print("✅ Análisis de Azure completado.")
+        print("Análisis de Azure completado.")
         return result
