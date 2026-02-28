@@ -34,6 +34,21 @@ const router = createRouter({
           name: "liquidez",
           component: () => import("../views/LiquidezView.vue"),
         },
+        {
+          path: "endeudamiento",
+          name: "endeudamiento",
+          component: () => import("../views/EndeudamientoView.vue"),
+        },
+        {
+          path: "rotacion",
+          name: "rotacion",
+          component: () => import("../views/RotacionDeActivosView.vue"),
+        },
+        {
+          path: "estructura",
+          name: "estructura",
+          component: () => import("../views/EstructuraView.vue"),
+        },
       ],
     },
   ],

@@ -50,27 +50,27 @@ const isActive = (section) => {
       </RouterLink>
 
       <RouterLink
-        to="/app/endeudamiento"
+        :to="`/proyecto/${projectId}/dashboard/endeudamiento`"
         class="side-link"
-        :class="{ active: isActive('/app/endeudamiento') }"
+        :class="{ active: isActive('endeudamiento') }"
       >
         <span class="material-symbols-outlined">account_balance_wallet</span>
         <span>Endeudamiento</span>
       </RouterLink>
 
       <RouterLink
-        to="/app/rotacion"
+        :to="`/proyecto/${projectId}/dashboard/rotacion`"
         class="side-link"
-        :class="{ active: isActive('/app/rotacion') }"
+        :class="{ active: isActive('rotacion') }"
       >
         <span class="material-symbols-outlined">sync_alt</span>
         <span>Rotación de Activos</span>
       </RouterLink>
 
       <RouterLink
-        to="/app/estructura"
+        :to="`/proyecto/${projectId}/dashboard/estructura`"
         class="side-link"
-        :class="{ active: isActive('/app/estructura') }"
+        :class="{ active: isActive('estructura') }"
       >
         <span class="material-symbols-outlined">layers</span>
         <span>Estructura Financiera</span>
