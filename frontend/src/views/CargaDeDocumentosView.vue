@@ -203,7 +203,8 @@ async function generateAnalysis() {
         project_id: projectId,
         period_id: p.id, // Usamos el ID real de Firestore
         balance_url: p.balanceFile.url,
-        resultados_url: p.resultsFile.url
+        resultados_url: p.resultsFile.url,
+        periodicidad: periodicity.value
       };
 
       return fetch('http://127.0.0.1:8000/api/documents/analyze-period', {
@@ -222,7 +223,10 @@ async function generateAnalysis() {
         const periodoRef = doc(db, "proyectos", projectId, "periodos", res.period_id);
         await setDoc(periodoRef, {
           analisis_rentabilidad: res.dashboard_data.rentabilidad,
-          analisis_liquidez: res.dashboard_data.liquidez
+          analisis_liquidez: res.dashboard_data.liquidez,
+          analisis_endeudamiento: res.dashboard_data.endeudamiento,
+          analisis_rotacion: res.dashboard_data.rotacion,
+          analisis_estructura: res.dashboard_data.estructura
         }, { merge: true });
         
         const pLocal = periods.value.find(p => p.id === res.period_id);

@@ -12,6 +12,7 @@ class FinancialCalculator:
 
     def __init__(self) -> None:
         # ===== Rentabilidad =====
+        # ===== Rentabilidad =====
         self.kw_utilidad_neta = [
             "utilidad neta", "resultado neto", "ganancia neta",
             "utilidad del ejercicio", "utilidad (pérdida) neta",
@@ -22,6 +23,7 @@ class FinancialCalculator:
             "resul. ejerc. en curso", "resul ejerc en curso",
             "resultado ejerc en curso", "resultado del ejerc en curso",
             "resultado del ejercicio en curso",
+            "utilidad total", 
         ]
 
         self.kw_utilidad_antes_impuestos = [
@@ -36,19 +38,23 @@ class FinancialCalculator:
             "importe de ventas", "productos y servicios",
             "ingresos por venta", "venta de inmuebles",
             "ingresos por arrendamiento", "ingresos por rentas",
+            "ingresos", 
         ]
 
         self.kw_activo_total = [
             "total de activos", "activo total", "suma del activo",
             "activos totales", "total del activo", "activo general",
             "activo circulante y fijo", "activo corriente y no corriente",
+            "total activos:", 
+            "total activos",
         ]
 
+        # CORRECCIÓN 1: Quitamos "capital social" para obligar a buscar el CONTABLE
         self.kw_capital = [
             "capital contable", "total capital contable", "patrimonio neto",
             "total patrimonio", "total capital", "capital y reservas",
             "capital propio", "capital financiero", "patrimonio",
-            "capital social",
+            # "capital social", <--- ELIMINADO: Causaba error al tomar el valor nominal y no el real
         ]
 
         # ===== Liquidez =====
@@ -56,6 +62,7 @@ class FinancialCalculator:
             "activo circulante", "total activo circulante",
             "total de activo circulante", "activos corrientes",
             "total de activos corrientes", "suma del activo circulante",
+            "activo a corto plazo", 
         ]
 
         self.kw_pasivo_circulante = [
@@ -70,6 +77,68 @@ class FinancialCalculator:
             "almacen", "mercancías", "mercancias",
         ]
 
+        # ===== Endeudamiento =====
+        # CORRECCIÓN 2: Quitamos "total pasivo" para que no lea la línea "Total Pasivo + Capital"
+        self.kw_pasivo_total = [
+            "pasivo total", "total del pasivo", "suma del pasivo", 
+            "pasivos totales", "total pasivos",
+            # "total pasivo", <--- ELIMINADO: Peligroso en formatos que suman Capital
+        ]
+        
+        self.kw_utilidad_operacion = [
+            "utilidad de operación", "utilidad de operacion", "utilidad operativa", 
+            "resultado de operación", "resultado de operacion", "resultado operativo", 
+            "ganancia operativa",
+        ]
+        
+        self.kw_intereses = [
+            "gastos financieros", 
+            "costo integral de financiamiento",
+            # Quitamos los específicos que pueden capturar sub-cuentas pequeñas
+        ]
+
+        # ===== Rotación de activos =====
+        self.kw_cuentas_por_cobrar = [
+            "cuentas por cobrar", "clientes", "cxc",
+        ]
+
+        # ===== Rotación de activos (Ajuste Final) =====
+        self.kw_costo_de_ventas = [
+            "costo de venta", "costos de venta", # TAAS usa "Costo de venta y/o servicio"
+            "costo de ventas", "costos de ventas", 
+            "costo de lo vendido",
+        ]
+
+        self.kw_activo_fijo = [
+            "activo a largo plazo", # TÉRMINO CLAVE PARA TAAS LOGISTICS
+            "propiedades planta y equipo",
+            "propiedad, planta y equipo",
+            "activo fijo neto", "activo fijo",
+            "inmuebles maquinaria y equipo",
+        ]
+
+        # ===== Estructura =====
+        self.kw_capital_social = [
+            "capital social", 
+            "capital social fijo",      # Muy común en S.A. de C.V.
+            "capital social variable",  # Muy común en S.A. de C.V.
+            "capital aportado", 
+            "capital pagado",
+            "capital contribuido",      # Término formal de las NIF
+            "capital suscrito",
+        ]
+
+        self.kw_pasivo_largo_plazo = [
+            "pasivo a largo plazo", 
+            "pasivo no circulante",     # Término estándar actual
+            "pasivos a largo plazo",
+            "pasivo fijo",              # Término antiguo pero común
+            "total pasivo a largo plazo", 
+            "total de pasivo a largo plazo",
+            "pasivos no corrientes",    # Común en traducciones o software internacional
+            "deuda a largo plazo",      # A veces se etiqueta así la deuda bancaria
+            "créditos a largo plazo",
+        ]
     # -------------------------------------------------------------------------
     # Parsing de números
     # -------------------------------------------------------------------------
@@ -258,6 +327,240 @@ class FinancialCalculator:
                     "label": "Capital de Trabajo",
                     "value": f"${capital_trabajo:,.2f}",
                     "status": "ok" if capital_trabajo > 0 else "warn",
+                },
+            ],
+        }
+
+    def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Calcula indicadores de endeudamiento cruzando Balance General y Estado de Resultados."""
+        tablas_balance = balance_data.get("tables_data", []) or []
+        tablas_resultados = resultados_data.get("tables_data", []) or []
+
+        # --- EXTRACCIÓN DEL BALANCE ---
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total)
+        capital_social = self._find_value(tablas_balance, self.kw_capital)
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total)
+
+        # Lógica de rescate para Pasivo Total (Ecuación Contable: P = A - C)
+        if pasivo_total_doc == 0 and activo_total > 0:
+            pasivo_total = activo_total - capital_social
+        else:
+            pasivo_total = pasivo_total_doc
+        
+        # Limpieza de signos
+        if pasivo_total < 0: pasivo_total = abs(pasivo_total)
+
+        # --- EXTRACCIÓN DEL ESTADO DE RESULTADOS ---
+        utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=True)
+        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=True)
+        
+        if intereses < 0: intereses = abs(intereses)
+
+        # --- LÓGICA DE RESCATE PARA UTILIDAD DE OPERACIÓN (NUEVO) ---
+        # Si no encontramos "Utilidad de Operación", usamos EBIT aproximado:
+        # Utilidad Operativa ≈ Utilidad Neta + Intereses
+        if utilidad_operacion == 0:
+            utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=True)
+            
+            # Solo aplicamos el rescate si tenemos utilidad neta confirmada
+            if utilidad_neta != 0:
+                utilidad_operacion = utilidad_neta + intereses
+
+        # --- CÁLCULOS ---
+        apalancamiento = (pasivo_total / activo_total) if activo_total else 0
+        cobertura_intereses = (utilidad_operacion / intereses) if intereses else 0
+        estabilidad_financiera = (pasivo_total / capital_social) if capital_social else 0
+
+        return {
+            "datos_crudos": {
+                "pasivo_total": pasivo_total,
+                "activo_total": activo_total,
+                "capital_social": capital_social,
+                "utilidad_operacion": utilidad_operacion,
+                "intereses": intereses,
+            },
+            "kpis": [
+                {
+                    "label": "Apalancamiento",
+                    "value": f"{apalancamiento:.2f}",
+                    "status": "ok" if apalancamiento <= 0.5 and apalancamiento > 0 else "warn",
+                },
+                {
+                    "label": "Razón de Cobertura de Intereses",
+                    "value": f"{cobertura_intereses:.2f}",
+                    "status": "ok" if cobertura_intereses >= 1.5 else "warn",
+                },
+                {
+                    "label": "Estabilidad Financiera",
+                    "value": f"{estabilidad_financiera:.2f}",
+                    "status": "ok" if estabilidad_financiera <= 1.0 and estabilidad_financiera > 0 else "warn",
+                },
+            ],
+        }
+
+    # En financial_calculator.py
+
+    def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual") -> Dict[str, Any]:
+        """Calcula indicadores de rotación ajustando los días según la periodicidad."""
+        tablas_balance = balance_data.get("tables_data", []) or []
+        tablas_resultados = resultados_data.get("tables_data", []) or []
+
+        # Valores del Balance
+        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar)
+        inventario = self._find_value(tablas_balance, self.kw_inventario)
+        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo)
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total)
+
+        # Valores de Resultados
+        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=True)
+        costo_ventas = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=True)
+        
+        if costo_ventas < 0: costo_ventas = abs(costo_ventas)
+
+        # --- LÓGICA DE PERIODICIDAD ---
+        # Definimos cuántos días representa el estado de resultados proporcionado
+        dias_periodo = 360 # Default anual
+        p = str(periodicidad).lower().strip()
+        
+        if p == "mensual":
+            dias_periodo = 30
+        elif p == "trimestral":
+            dias_periodo = 90
+        elif p == "semestral":
+            dias_periodo = 180
+            
+        print(f"Calculando rotación con base en: {p} ({dias_periodo} días)")
+
+        # CÁLCULOS
+        
+        # 1. Rotación de Cartera (Veces que se cobra en el periodo analizado)
+        # Si vendiste 100 en el mes y te deben 200, tu rotación es 0.5 veces.
+        rotacion_cartera = (ventas_netas / cuentas_por_cobrar) if cuentas_por_cobrar else 0
+        
+        # 2. Días de Cobro (Periodo Promedio de Recaudo)
+        # Fórmula: (Cuentas por Cobrar / Ventas del Periodo) * Días del Periodo
+        # Equivalente a: Cuentas por Cobrar / Venta Diaria
+        ventas_diarias = (ventas_netas / dias_periodo) if dias_periodo else 0
+        periodo_recaudo = (cuentas_por_cobrar / ventas_diarias) if ventas_diarias else 0
+        
+        rotacion_inventarios = (costo_ventas / inventario) if inventario else 0
+        rotacion_activos_fijos = (ventas_netas / activo_fijo_neto) if activo_fijo_neto else 0
+        rotacion_activos_totales = (ventas_netas / activo_total) if activo_total else 0
+
+        return {
+            "datos_crudos": {
+                "cuentas_por_cobrar": cuentas_por_cobrar,
+                "inventario": inventario,
+                "activo_fijo_neto": activo_fijo_neto,
+                "activo_total": activo_total,
+                "ventas_netas": ventas_netas,
+                "costo_ventas": costo_ventas,
+                "dias_calculo": dias_periodo # Útil para debug
+            },
+            "kpis": [
+                {
+                    "label": "Rotación de la Cartera",
+                    "value": f"{rotacion_cartera:.2f}",
+                    "status": "ok" if rotacion_cartera > 0 else "warn",
+                },
+                {
+                    "label": "Periodo Promedio de Recaudo",
+                    "value": f"{periodo_recaudo:,.0f} días",
+                    # Ajustamos el semáforo: 60 días está bien, pero si es mensual y sale >30 es alerta
+                    "status": "ok" if periodo_recaudo <= 60 and periodo_recaudo > 0 else "warn",
+                },
+                {
+                    "label": "Rotación de Inventarios",
+                    "value": f"{rotacion_inventarios:.2f}",
+                    "status": "ok" if rotacion_inventarios > 0 else "warn",
+                },
+                {
+                    "label": "Rotación de Activos Fijos",
+                    "value": f"{rotacion_activos_fijos:.2f}",
+                    "status": "ok" if rotacion_activos_fijos >= 1.0 else "warn",
+                },
+                {
+                    "label": "Rotación de Activos Totales",
+                    "value": f"{rotacion_activos_totales:.2f}",
+                    "status": "ok" if rotacion_activos_totales >= 1.0 else "warn",
+                },
+            ],
+        }
+
+    def calcular_estructura(self, balance_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Calcula indicadores de Estructura Financiera basados en el Balance General."""
+        tablas_balance = balance_data.get("tables_data", []) or []
+
+        # Valores del Balance
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total)
+        # Nota: Asegúrate de que kw_activo_fijo incluya "activo a largo plazo" como vimos antes
+        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo) 
+        
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total)
+        capital_contable = self._find_value(tablas_balance, self.kw_capital)
+        capital_social = self._find_value(tablas_balance, self.kw_capital_social)
+        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo)
+
+        # Rescate para Pasivo Total
+        if pasivo_total_doc == 0 and activo_total > 0:
+            pasivo_total = activo_total - capital_contable
+        else:
+            pasivo_total = pasivo_total_doc
+            
+        if pasivo_total < 0: pasivo_total = abs(pasivo_total)
+
+        # --- CÁLCULOS CORREGIDOS ---
+
+        # 1. Solvencia
+        solvencia = (activo_total / pasivo_total) if pasivo_total else 0
+
+        # 2. Seguridad a largo plazo (CORRECCIÓN DEL ERROR DE DIVISIÓN POR CERO)
+        # Si hay deuda, calculamos. Si no hay (0), asignamos None.
+        if pasivo_largo_plazo and pasivo_largo_plazo > 0:
+            seguridad_largo_plazo = activo_fijo / pasivo_largo_plazo
+        else:
+            seguridad_largo_plazo = None 
+
+        # 3. Inmovilización del capital social
+        inmovilizacion_social = (activo_fijo / capital_social) if capital_social else 0
+
+        # 4. Inmovilización del capital contable
+        inmovilizacion_contable = (activo_fijo / capital_contable) if capital_contable else 0
+
+        return {
+            "datos_crudos": {
+                "activo_total": activo_total,
+                "pasivo_total": pasivo_total,
+                "capital_social": capital_social,
+                "capital_contable": capital_contable,
+                "activo_fijo": activo_fijo,
+                "pasivo_largo_plazo": pasivo_largo_plazo
+            },
+            "kpis": [
+                {
+                    "label": "Solvencia General",
+                    "value": f"{solvencia:.2f}",
+                    "status": "ok" if solvencia > 1.0 else "warn",
+                },
+                {
+                    "label": "Seguridad a largo plazo",
+                    # LÓGICA DE VISUALIZACIÓN:
+                    # Si es None, mostramos texto amigable. Si es número, mostramos el valor.
+                    "value": "Sin Deuda LP" if seguridad_largo_plazo is None else f"{seguridad_largo_plazo:.2f}",
+                    # El status siempre es OK si no hay deuda o si la cobertura es mayor a 1
+                    "status": "ok" if (seguridad_largo_plazo is None or seguridad_largo_plazo >= 1.0) else "warn",
+                },
+                {
+                    "label": "Inmovilización de Cap. Social",
+                    "value": f"{inmovilizacion_social:.2f}",
+                    "status": "ok" if inmovilizacion_social <= 1.0 else "warn", 
+                    # Nota: A veces es normal que sea > 1 si la empresa ha crecido mucho, 
+                    # pero la teoría estricta prefiere < 1. Puedes ajustar el semáforo a tu gusto.
+                },
+                {
+                    "label": "Inmovilización de Cap. Contable",
+                    "value": f"{inmovilizacion_contable:.2f}",
+                    "status": "ok" if inmovilizacion_contable <= 1.0 else "warn",
                 },
             ],
         }
