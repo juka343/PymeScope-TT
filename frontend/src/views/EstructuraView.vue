@@ -1,32 +1,77 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { db } from "@/firebase/config";
+import { collection, getDocs } from "firebase/firestore";
 
-const kpis = ref([
-  { label: "Solvencia", value: "2.15", dot: "ok" },
-  { label: "Seguridad a largo plazo", value: "1.84", dot: "ok" },
-  { label: "Inmov. cap. social", value: "0.92", dot: "warn" },
-  { label: "Inmov. cap. contable", value: "1.15", dot: "bad" },
-]);
+const route = useRoute();
+const projectId = route.params.id_proyecto;
 
-const periodRows = ref([
-  {
-    period: "Q3 2024",
-    activoTotal: "$3,500,000",
-    pasivoTotal: "$2,250,000",
-    capitalSocial: "$800,000",
-    capitalContable: "$1,250,000",
-  },
-]);
+const kpis = ref([]);
+const periodRows = ref([]);
 
 const interpretation = ref(
-  "Durante el periodo analizado, la empresa presenta una estructura financiera sólida; sin embargo, el nivel de inmovilización del capital contable podría limitar su capacidad de adaptación."
+  "Los indicadores de estructura revelan la composición del capital de la empresa. Evalúa si el equilibrio entre deuda y capital propio apoya la viabilidad a largo plazo."
 );
 
 const recommendations = ref([
-  "Reequilibrar la estructura de financiamiento",
-  "Reducir la inmovilización excesiva de capital",
-  "Evaluar alternativas de inversión en activos fijos",
+  "Reequilibrar la estructura de financiamiento si el nivel de deuda supera al capital propio de forma riesgosa",
+  "Reducir la inmovilización excesiva de capital cuando la relación exceda parámetros saludables",
+  "Evaluar alternativas de inversión o liquidación de activos fijos inactivos",
 ]);
+
+const formatCurrency = (value) => {
+  if (value === undefined || value === null) return "$0";
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+};
+
+onMounted(async () => {
+  if (!projectId) return;
+
+  try {
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    const rowsTemp = [];
+    let ultimosKpis = null;
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      
+      if (data.analisis_estructura) {
+        const analisis = data.analisis_estructura;
+        const crudos = analisis.datos_crudos;
+
+        ultimosKpis = analisis.kpis;
+
+        // "ACTIVO TOTAL", "PASIVO TOTAL", "CAPITAL SOCIAL", "CAPITAL CONTABLE", "PASIVO FIJO", "ACTIVO FIJO"
+        rowsTemp.push({
+          period: data.label || docSnap.id,
+          activoTotal: formatCurrency(crudos.activo_total),
+          pasivoTotal: formatCurrency(crudos.pasivo_total),
+          capitalSocial: formatCurrency(crudos.capital_social),
+          capitalContable: formatCurrency(crudos.capital_contable),
+          pasivoFijo: formatCurrency(crudos.pasivo_largo_plazo),
+          activoFijo: formatCurrency(crudos.activo_fijo),
+        });
+      }
+    });
+
+    rowsTemp.sort((a, b) => a.period.localeCompare(b.period));
+
+    if (ultimosKpis) {
+      kpis.value = ultimosKpis.map(k => ({
+         label: k.label,
+         value: k.value,
+         dot: k.status === 'ok' ? 'ok' : 'warn' 
+      }));
+    }
+    periodRows.value = rowsTemp;
+
+  } catch (error) {
+    console.error("Error al cargar los datos de estructura financiera:", error);
+  }
+});
 </script>
 
 <template>
@@ -64,7 +109,9 @@ const recommendations = ref([
             <tr>
               <th>PERIODO</th>
               <th>ACTIVO TOTAL</th>
+              <th>ACTIVO FIJO</th>
               <th>PASIVO TOTAL</th>
+              <th>PASIVO FIJO (LP)</th>
               <th>CAPITAL SOCIAL</th>
               <th>CAPITAL CONTABLE</th>
             </tr>
@@ -74,7 +121,9 @@ const recommendations = ref([
             <tr v-for="r in periodRows" :key="r.period">
               <td class="strong">{{ r.period }}</td>
               <td class="muted">{{ r.activoTotal }}</td>
+              <td class="muted">{{ r.activoFijo }}</td>
               <td class="muted">{{ r.pasivoTotal }}</td>
+              <td class="muted">{{ r.pasivoFijo }}</td>
               <td class="muted">{{ r.capitalSocial }}</td>
               <td>
                 <span class="pill">{{ r.capitalContable }}</span>

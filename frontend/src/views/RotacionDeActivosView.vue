@@ -1,33 +1,76 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { db } from "@/firebase/config";
+import { collection, getDocs } from "firebase/firestore";
 
-const kpis = ref([
-  { label: "Rotación de la cartera", value: "4.4", dot: "ok" },
-  { label: "Periodo promedio de recaudo", value: "82 días", dot: "bad" },
-  { label: "Rotación de inventarios", value: "4.2", dot: "ok" },
-  { label: "Rotación de activos fijos", value: "2.8", dot: "warn" },
-  { label: "Rotación de activos totales", value: "1.16", dot: "warn" },
-]);
+const route = useRoute();
+const projectId = route.params.id_proyecto;
 
-const periodRows = ref([
-  {
-    period: "Q3 2024",
-    ventas: "$3,500,000",
-    costo: "$2,100,000",
-    inventarios: "$500,000",
-    cxc: "$800,000",
-  },
-]);
+const kpis = ref([]);
+const periodRows = ref([]);
 
 const interpretation = ref(
-  "Durante el periodo analizado, la empresa presenta una rotación de inventarios adecuada; sin embargo, el periodo promedio de recaudo es elevado, lo que podría generar presión sobre la liquidez."
+  "Los indicadores de rotación evalúan el grado de eficiencia con el que la empresa utiliza sus recursos operativos y financieros para generar ingresos."
 );
 
 const recommendations = ref([
-  "Mejorar políticas de cobranza",
-  "Ajustar niveles de inventario",
-  "Optimizar el uso de activos fijos existentes",
+  "Mejorar políticas de cobranza para reducir el periodo de recaudo",
+  "Ajustar niveles de inventario para evitar sobrestock",
+  "Optimizar el uso de activos fijos existentes para maximizar la generación de ventas",
 ]);
+
+const formatCurrency = (value) => {
+  if (value === undefined || value === null) return "$0";
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+};
+
+onMounted(async () => {
+  if (!projectId) return;
+
+  try {
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    const rowsTemp = [];
+    let ultimosKpis = null;
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      
+      if (data.analisis_rotacion) {
+        const analisis = data.analisis_rotacion;
+        const crudos = analisis.datos_crudos;
+
+        ultimosKpis = analisis.kpis;
+
+        // "VENTAS NETAS", "COSTO DE VENTAS", "INVENTARIOS", "CUENTAS POR COBRAR"
+        rowsTemp.push({
+          period: data.label || docSnap.id,
+          ventas: formatCurrency(crudos.ventas_netas),
+          costo: formatCurrency(crudos.costo_ventas),
+          inventarios: formatCurrency(crudos.inventario),
+          cxc: formatCurrency(crudos.cuentas_por_cobrar)
+        });
+      }
+    });
+
+    rowsTemp.sort((a, b) => a.period.localeCompare(b.period));
+
+    if (ultimosKpis) {
+      // Mapeamos ".status" a ".dot" que es la clase de CSS que usa este componente. 
+      kpis.value = ultimosKpis.map(k => ({
+         label: k.label,
+         value: k.value,
+         dot: k.status === 'ok' ? 'ok' : 'warn' 
+      }));
+    }
+    periodRows.value = rowsTemp;
+
+  } catch (error) {
+    console.error("Error al cargar los datos de rotación de activos:", error);
+  }
+});
 </script>
 
 <template>

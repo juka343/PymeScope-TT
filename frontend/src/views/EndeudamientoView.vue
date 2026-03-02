@@ -1,42 +1,92 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { db } from "@/firebase/config";
+import { collection, getDocs } from "firebase/firestore";
 
-const kpis = ref([
-  { label: "Apalancamiento", value: "0.65", status: "ok" },
-  { label: "Estabilidad Financiera", value: "1.2", status: "warn" },
-  { label: "Solvencia", value: "1.56", status: "ok" },
-]);
+const route = useRoute();
+const projectId = route.params.id_proyecto;
 
-const periodRows = ref([
-  {
-    period: "Q3 2024",
-    pasivoTotal: "$2,250,000",
-    activoTotal: "$3,500,000",
-    capital: "$1,250,000",
-  },
-]);
+const kpis = ref([]);
+const periodRows = ref([]);
 
 const capitalPie = ref({
-  totalLabel: "$3.5M",
-  // porcentajes
-  cortoPct: 25,
-  largoPct: 40,
-  capPct: 35,
-  // montos
-  corto: "$875,000",
-  largo: "$1,375,000",
-  cap: "$1,250,000",
+  totalLabel: "$0",
+  pasivoPct: 0,
+  capPct: 0,
+  pasivo: "$0",
+  cap: "$0",
 });
 
 const interpretation = ref(
-  "El nivel de endeudamiento total se encuentra en un rango manejable (0.65). Sin embargo, la dependencia de pasivos a corto plazo podría comprometer el flujo de caja operativo si no se gestiona adecuadamente. Se observa una sólida base patrimonial que respalda la solvencia general."
+  "Los indicadores de endeudamiento muestran la dependencia de la empresa frente a terceros y la suficiencia del capital propio."
 );
 
 const recommendations = ref([
-  "Reestructurar deuda de corto plazo a largo plazo",
+  "Reestructurar deuda si el apalancamiento es alto",
   "Evaluar opciones de financiamiento interno",
   "Mantener la política actual de reinversión de utilidades",
 ]);
+
+const formatCurrency = (value) => {
+  if (value === undefined || value === null) return "$0";
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+};
+
+onMounted(async () => {
+  if (!projectId) return;
+
+  try {
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    const rowsTemp = [];
+    let ultimosKpis = null;
+    let ultimoPasivo = 0;
+    let ultimoCapital = 0;
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      
+      if (data.analisis_endeudamiento) {
+        const analisis = data.analisis_endeudamiento;
+        const crudos = analisis.datos_crudos;
+
+        ultimosKpis = analisis.kpis;
+        ultimoPasivo = crudos.pasivo_total || 0;
+        ultimoCapital = crudos.capital_social || 0;
+
+        rowsTemp.push({
+          period: data.label || docSnap.id,
+          pasivoTotal: formatCurrency(crudos.pasivo_total),
+          activoTotal: formatCurrency(crudos.activo_total),
+          capital: formatCurrency(crudos.capital_social)
+        });
+      }
+    });
+
+    rowsTemp.sort((a, b) => a.period.localeCompare(b.period));
+
+    if (ultimosKpis) {
+      kpis.value = ultimosKpis;
+    }
+    periodRows.value = rowsTemp;
+
+    const total = ultimoPasivo + ultimoCapital;
+    if (total > 0) {
+      capitalPie.value = {
+        totalLabel: formatCurrency(total),
+        pasivoPct: Math.round((ultimoPasivo / total) * 100),
+        capPct: Math.round((ultimoCapital / total) * 100),
+        pasivo: formatCurrency(ultimoPasivo),
+        cap: formatCurrency(ultimoCapital)
+      };
+    }
+
+  } catch (error) {
+    console.error("Error al cargar los datos de endeudamiento:", error);
+  }
+});
 </script>
 
 <template>
@@ -115,14 +165,13 @@ const recommendations = ref([
           class="pie"
           :style="{
             background: `conic-gradient(
-              #60a5fa 0% ${capitalPie.cortoPct}%,
-              #bfdbfe ${capitalPie.cortoPct}% ${capitalPie.cortoPct + capitalPie.largoPct}%,
-              #34d399 ${capitalPie.cortoPct + capitalPie.largoPct}% 100%
+              #60a5fa 0% ${capitalPie.pasivoPct}%,
+              #34d399 ${capitalPie.pasivoPct}% 100%
             )`,
           }"
         >
           <div class="pie-inner">
-            <span class="pie-label">Total</span>
+            <span class="pie-label">Suma</span>
             <span class="pie-total">{{ capitalPie.totalLabel }}</span>
           </div>
         </div>
@@ -132,19 +181,9 @@ const recommendations = ref([
             <span class="dot-color blue"></span>
             <div class="legend-text">
               <span class="legend-title">
-                Pasivo C.P. <span class="pct">{{ capitalPie.cortoPct }}%</span>
+                Pasivo Total <span class="pct">{{ capitalPie.pasivoPct }}%</span>
               </span>
-              <span class="legend-value">{{ capitalPie.corto }}</span>
-            </div>
-          </div>
-
-          <div class="legend-item">
-            <span class="dot-color sky"></span>
-            <div class="legend-text">
-              <span class="legend-title">
-                Pasivo L.P. <span class="pct">{{ capitalPie.largoPct }}%</span>
-              </span>
-              <span class="legend-value">{{ capitalPie.largo }}</span>
+              <span class="legend-value">{{ capitalPie.pasivo }}</span>
             </div>
           </div>
 

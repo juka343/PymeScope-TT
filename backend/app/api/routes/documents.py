@@ -43,6 +43,7 @@ class SolicitudAnalisisPeriodo(BaseModel):
     period_id: str
     balance_url: str
     resultados_url: str
+    periodicidad: str
 
 # --- ENDPOINTS ---
 @router.post("/documents/analyze-period")
@@ -68,6 +69,9 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
         print("-> Calculando indicadores financieros...")
         analisis_rentabilidad = _calculator.calcular_rentabilidad(balance_data, resultados_data)
         analisis_liquidez = _calculator.calcular_liquidez(balance_data) # <-- NUEVO
+        analisis_endeudamiento = _calculator.calcular_endeudamiento(balance_data, resultados_data)
+        analisis_rotacion = _calculator.calcular_rotacion(balance_data, resultados_data, periodicidad=payload.periodicidad)
+        analisis_estructura = _calculator.calcular_estructura(balance_data)
 
         # 4. Retornar el paquete completo listo para el Dashboard de Vue
         return {
@@ -76,7 +80,10 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
             "period_id": payload.period_id,
             "dashboard_data": {
                 "rentabilidad": analisis_rentabilidad,
-                "liquidez": analisis_liquidez
+                "liquidez": analisis_liquidez,
+                "endeudamiento": analisis_endeudamiento,
+                "rotacion": analisis_rotacion,
+                "estructura": analisis_estructura
             }
         }    
 
