@@ -49,6 +49,11 @@ const router = createRouter({
           name: "estructura",
           component: () => import("../views/EstructuraView.vue"),
         },
+        {
+          path: "proyecciones",
+          name: "proyecciones",
+          component: () => import("../views/ProyeccionesView.vue"),
+        },
       ],
     },
   ],

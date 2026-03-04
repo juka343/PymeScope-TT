@@ -103,6 +103,13 @@ async function handleLogout() {
     </div>
 
     <div class="header-right">
+        <div class="actions">
+          <RouterLink class="back" to="/misProyectos">
+            <span class="material-symbols-outlined">arrow_back</span>
+            <span class="back-text">Volver a proyectos</span>
+          </RouterLink>
+        </div>
+      
       <button 
         class="btn-secondary" 
         type="button"
@@ -154,6 +161,28 @@ async function handleLogout() {
   gap: 18px;
   min-width: 0;
 }
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 180px;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary);
+  font-weight: 800;
+  font-size: 14px;
+}
+.back:hover {
+  color: var(--primary-dark);
+}
+.back span.material-symbols-outlined {
+  font-size: 20px;
+}
+
 
 .brand {
   display: flex;
