@@ -82,9 +82,9 @@ const isActive = (section) => {
       <p class="side-title">PROYECCIONES PROFORMA</p>
 
       <RouterLink
-        to="/app/proyecciones"
+        :to="`/proyecto/${projectId}/dashboard/proyecciones`"
         class="side-link"
-        :class="{ active: isActive('/app/proyecciones') }"
+        :class="{ active: isActive('proyecciones') }"
       >
         <span class="material-symbols-outlined">bar_chart</span>
         <span>Proyecciones</span>
