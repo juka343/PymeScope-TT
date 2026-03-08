@@ -25,6 +25,11 @@ const router = createRouter({
       component: DashboardLayout,
       children: [
         {
+          path: "resumen",
+          name: "resumen",
+          component: () => import("../views/ResumenGeneralMonoView.vue"),
+        },
+        {
           path: "rentabilidad",
           name: "rentabilidad",
           component: () => import("../views/RentabilidadView.vue"),
