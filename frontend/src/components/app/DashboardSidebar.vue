@@ -18,9 +18,9 @@ const isActive = (section) => {
       <p class="side-title">RESUMEN RAZONES FINANCIERAS</p>
 
       <RouterLink
-        to="/app/resumen"
+        :to="`/proyecto/${projectId}/dashboard/resumen`"
         class="side-link"
-        :class="{ active: isActive('/app/resumen') }"
+        :class="{ active: isActive('resumen') }"
       >
         <span class="material-symbols-outlined">grid_view</span>
         <span>Resumen General</span>
