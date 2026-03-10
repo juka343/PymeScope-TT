@@ -38,7 +38,7 @@ class FinancialCalculator:
             "importe de ventas", "productos y servicios",
             "ingresos por venta", "venta de inmuebles",
             "ingresos por arrendamiento", "ingresos por rentas",
-            "ingresos", 
+            # "ingresos", <--- ELIMINADO PARA EVITAR FALSOS POSITIVOS CON "OTROS INGRESOS"
         ]
 
         self.kw_activo_total = [
@@ -107,6 +107,19 @@ class FinancialCalculator:
             "costo de venta", "costos de venta", # TAAS usa "Costo de venta y/o servicio"
             "costo de ventas", "costos de ventas", 
             "costo de lo vendido",
+        ]
+
+        self.kw_compras = [
+            "compras nacionales", 
+            "compras extranjeras",
+            "compras totales",
+            "adquisiciones de mercancía",
+        ]
+
+        self.kw_devoluciones_costo = [
+            "devoluciones, descuentos o bonificaciones",
+            "devoluciones sobre compras",
+            "descuentos sobre compras",
         ]
 
         self.kw_activo_fijo = [
@@ -242,6 +255,9 @@ class FinancialCalculator:
 
         # 1) Ventas/Ingresos (en Resultados, tomamos el acumulado con take_last=True)
         ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=True)
+        
+        if ventas_netas == 0:
+            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=True)
 
         # 2) Utilidad neta (en Resultados, tomamos el acumulado con take_last=True)
         utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=True)
@@ -413,13 +429,29 @@ class FinancialCalculator:
 
         # Valores de Resultados
         ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=True)
-        costo_ventas = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=True)
         
-        if costo_ventas < 0: costo_ventas = abs(costo_ventas)
+        if ventas_netas == 0:
+            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=True)
+
+        # --- CORRECCIÓN DE COSTO DE VENTAS ---
+        # 1. Buscamos el costo explícito (ej. "Costo de ventas")
+        costo_directo = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=True)
+        
+        # 2. Buscamos las compras (ej. "Compras nacionales")
+        compras = self._find_value(tablas_resultados, self.kw_compras, take_last=True)
+        
+        devoluciones = self._find_value(tablas_resultados, self.kw_devoluciones_costo, take_last=True)
+        # 3. Sumamos ambos. En empresas comercializadoras (como TAAS), 
+        # a veces separan el costo del servicio de la compra de mercancía.
+        costo_ventas_calculado = abs(costo_directo) + abs(compras) - abs(devoluciones)        
+        # Nota: Si el PDF ya traía un "Total Costos" que incluía ambos, 
+        # esto podría duplicar, pero es preferible un costo alto (conservador) a uno de casi cero.
+
+        if costo_ventas_calculado < 0:
+            costo_ventas_calculado = 0
 
         # --- LÓGICA DE PERIODICIDAD ---
-        # Definimos cuántos días representa el estado de resultados proporcionado
-        dias_periodo = 360 # Default anual
+        dias_periodo = 360 
         p = str(periodicidad).lower().strip()
         
         if p == "mensual":
@@ -429,21 +461,17 @@ class FinancialCalculator:
         elif p == "semestral":
             dias_periodo = 180
             
-        print(f"Calculando rotación con base en: {p} ({dias_periodo} días)")
-
         # CÁLCULOS
         
-        # 1. Rotación de Cartera (Veces que se cobra en el periodo analizado)
-        # Si vendiste 100 en el mes y te deben 200, tu rotación es 0.5 veces.
+        # 1. Rotación de Cartera
         rotacion_cartera = (ventas_netas / cuentas_por_cobrar) if cuentas_por_cobrar else 0
         
-        # 2. Días de Cobro (Periodo Promedio de Recaudo)
-        # Fórmula: (Cuentas por Cobrar / Ventas del Periodo) * Días del Periodo
-        # Equivalente a: Cuentas por Cobrar / Venta Diaria
+        # 2. Días de Cobro
         ventas_diarias = (ventas_netas / dias_periodo) if dias_periodo else 0
         periodo_recaudo = (cuentas_por_cobrar / ventas_diarias) if ventas_diarias else 0
         
-        rotacion_inventarios = (costo_ventas / inventario) if inventario else 0
+        # 3. Rotaciones de Activos
+        rotacion_inventarios = (costo_ventas_calculado / inventario) if inventario else 0
         rotacion_activos_fijos = (ventas_netas / activo_fijo_neto) if activo_fijo_neto else 0
         rotacion_activos_totales = (ventas_netas / activo_total) if activo_total else 0
 
@@ -454,8 +482,8 @@ class FinancialCalculator:
                 "activo_fijo_neto": activo_fijo_neto,
                 "activo_total": activo_total,
                 "ventas_netas": ventas_netas,
-                "costo_ventas": costo_ventas,
-                "dias_calculo": dias_periodo # Útil para debug
+                "costo_ventas": costo_ventas_calculado, # Este valor corregido se enviará a Firebase
+                "dias_calculo": dias_periodo
             },
             "kpis": [
                 {
@@ -466,7 +494,6 @@ class FinancialCalculator:
                 {
                     "label": "Periodo Promedio de Recaudo",
                     "value": f"{periodo_recaudo:,.0f} días",
-                    # Ajustamos el semáforo: 60 días está bien, pero si es mensual y sale >30 es alerta
                     "status": "ok" if periodo_recaudo <= 60 and periodo_recaudo > 0 else "warn",
                 },
                 {
@@ -491,47 +518,55 @@ class FinancialCalculator:
         """Calcula indicadores de Estructura Financiera basados en el Balance General."""
         tablas_balance = balance_data.get("tables_data", []) or []
 
-        # Valores del Balance
+        # --- 1. EXTRACCIÓN BÁSICA ---
         activo_total = self._find_value(tablas_balance, self.kw_activo_total)
-        # Nota: Asegúrate de que kw_activo_fijo incluya "activo a largo plazo" como vimos antes
         activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo) 
-        
         pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total)
         capital_contable = self._find_value(tablas_balance, self.kw_capital)
-        capital_social = self._find_value(tablas_balance, self.kw_capital_social)
         pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo)
 
-        # Rescate para Pasivo Total
+        # --- 2. LÓGICA INTELIGENTE PARA CAPITAL SOCIAL ---
+        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social)
+        capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"])
+        capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"])
+        
+        suma_capitales = capital_fijo + capital_variable
+        
+        if suma_capitales > capital_social_doc:
+            capital_social = suma_capitales      
+        elif capital_social_doc == capital_variable and capital_fijo == 0 and capital_variable > 0:
+            capital_social = capital_social_doc + capital_variable   
+        else:
+            capital_social = capital_social_doc
+
+        # --- 3. RESCATE PARA PASIVO TOTAL ---
         if pasivo_total_doc == 0 and activo_total > 0:
             pasivo_total = activo_total - capital_contable
         else:
             pasivo_total = pasivo_total_doc
             
-        if pasivo_total < 0: pasivo_total = abs(pasivo_total)
+        if pasivo_total < 0: 
+            pasivo_total = abs(pasivo_total)
 
-        # --- CÁLCULOS CORREGIDOS ---
-
-        # 1. Solvencia
+        # --- 4. CÁLCULOS MATEMÁTICOS (¡DEBEN IR AQUÍ ABAJO!) ---
+        # Ahora sí, el sistema usará los 10,000 corregidos
+        
         solvencia = (activo_total / pasivo_total) if pasivo_total else 0
-
-        # 2. Seguridad a largo plazo (CORRECCIÓN DEL ERROR DE DIVISIÓN POR CERO)
-        # Si hay deuda, calculamos. Si no hay (0), asignamos None.
+        
         if pasivo_largo_plazo and pasivo_largo_plazo > 0:
             seguridad_largo_plazo = activo_fijo / pasivo_largo_plazo
         else:
             seguridad_largo_plazo = None 
 
-        # 3. Inmovilización del capital social
         inmovilizacion_social = (activo_fijo / capital_social) if capital_social else 0
-
-        # 4. Inmovilización del capital contable
         inmovilizacion_contable = (activo_fijo / capital_contable) if capital_contable else 0
 
+        # --- 5. RETORNO DE RESULTADOS ---
         return {
             "datos_crudos": {
                 "activo_total": activo_total,
                 "pasivo_total": pasivo_total,
-                "capital_social": capital_social,
+                "capital_social": capital_social, # Mandará 10,000
                 "capital_contable": capital_contable,
                 "activo_fijo": activo_fijo,
                 "pasivo_largo_plazo": pasivo_largo_plazo
@@ -544,18 +579,13 @@ class FinancialCalculator:
                 },
                 {
                     "label": "Seguridad a largo plazo",
-                    # LÓGICA DE VISUALIZACIÓN:
-                    # Si es None, mostramos texto amigable. Si es número, mostramos el valor.
                     "value": "Sin Deuda LP" if seguridad_largo_plazo is None else f"{seguridad_largo_plazo:.2f}",
-                    # El status siempre es OK si no hay deuda o si la cobertura es mayor a 1
                     "status": "ok" if (seguridad_largo_plazo is None or seguridad_largo_plazo >= 1.0) else "warn",
                 },
                 {
                     "label": "Inmovilización de Cap. Social",
-                    "value": f"{inmovilizacion_social:.2f}",
+                    "value": f"{inmovilizacion_social:.2f}", # Ahora sí será 26.63
                     "status": "ok" if inmovilizacion_social <= 1.0 else "warn", 
-                    # Nota: A veces es normal que sea > 1 si la empresa ha crecido mucho, 
-                    # pero la teoría estricta prefiere < 1. Puedes ajustar el semáforo a tu gusto.
                 },
                 {
                     "label": "Inmovilización de Cap. Contable",

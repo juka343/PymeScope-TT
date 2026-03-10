@@ -1,83 +1,217 @@
 <script setup>
-import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { ref, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { collection, getDocs } from "firebase/firestore"; 
+import { db } from "@/firebase/config"; 
 
 const router = useRouter();
+const route = useRoute();
 
-// ===== Datos dummy (luego lo conectas a tu backend) =====
+const loading = ref(true);
+const projectId = ref(null);
+
+// Formateadores
+const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 });
+const percentFmt = new Intl.NumberFormat('es-MX', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 2 });
+
+// ===== ESTADO REACTIVO =====
 const kpis = ref([
-  { label: "Ingresos Totales", value: "$4,250,000", status: "ok" },
-  { label: "Utilidad Neta", value: "$845,000", status: "ok" },
-  { label: "Margen Rentabilidad", value: "19.8%", status: "ok" },
-  { label: "Liquidez General", value: "1.5", status: "ok" },
+  { label: "Ingresos Totales", value: "$0", status: "gray" },
+  { label: "Utilidad Neta", value: "$0", status: "gray" },
+  { label: "Margen Neto", value: "0%", status: "gray" },
+  { label: "Liquidez General", value: "0.0", status: "gray" },
 ]);
 
 const cards = ref([
-  {
-    title: "Rentabilidad",
-    icon: "trending_up",
-    detailRoute: "rentabilidad",
-    items: [
-      { label: "ROE (Retorno s/ Capital)", target: "Objetivo: >15%", value: "15.4%", dot: "ok" },
-      { label: "ROA (Retorno s/ Activos)", target: "Objetivo: >10%", value: "8.2%", dot: "warn" },
-    ],
-  },
-  {
-    title: "Liquidez",
-    icon: "attach_money",
-    detailRoute: "liquidez",
-    items: [
-      { label: "Prueba Ácida", target: "Objetivo: >1.0", value: "1.2", dot: "ok" },
-      { label: "Capital de Trabajo", target: "Suficiente para 3m", value: "$520k", dot: "ok" },
-    ],
-  },
-  {
-    title: "Endeudamiento",
-    icon: "account_balance_wallet",
-    detailRoute: "endeudamiento",
-    items: [
-      { label: "Razón de Deuda", target: "Objetivo: <0.5", value: "0.45", dot: "ok" },
-      { label: "Cobertura Intereses", target: "Capacidad de pago", value: "3.8x", dot: "warn" },
-    ],
-  },
-  {
-    title: "Estructura Financiera",
-    icon: "layers",
-    detailRoute: "estructura",
-    items: [
-      { label: "Solvencia", target: "Objetivo: >1.5", value: "1.82", dot: "ok" },
-      { label: "Seguridad a Largo Plazo", target: "Ratio de garantía", value: "2.1x", dot: "ok" },
-    ],
-  },
+  { title: "Rentabilidad", icon: "trending_up", detailRoute: "rentabilidad", items: [] },
+  { title: "Liquidez", icon: "attach_money", detailRoute: "liquidez", items: [] },
+  { title: "Endeudamiento", icon: "account_balance_wallet", detailRoute: "endeudamiento", items: [] },
+  { title: "Estructura Financiera", icon: "layers", detailRoute: "estructura", items: [] },
 ]);
 
-const periodLabel = ref("Q3 2024");
+const edoResultados = ref([]);
+const periodLabel = ref(""); 
+const interpretation = ref("Cargando datos...");
 
-const edoResultados = ref([
-  { concept: "Ventas Netas", value: "$4,250,000", pct: "100%", tone: "normal" },
-  { concept: "Costo de Ventas", value: "($2,465,000)", pct: "58.0%", tone: "neg" },
-  { concept: "Utilidad Bruta", value: "$1,785,000", pct: "42.0%", tone: "strong" },
-  { concept: "Gastos de Operación", value: "($943,500)", pct: "22.2%", tone: "neg" },
-  { concept: "Utilidad de Operación", value: "$841,500", pct: "19.8%", tone: "strong" },
-]);
+// ===== LÓGICA DE CARGA DE DATOS =====
+const fetchDashboardData = async () => {
+  try {
+    projectId.value = route.params.id_proyecto; 
+    
+    if (!projectId.value) {
+        console.error("Falta ID Proyecto");
+        return;
+    }
 
-const interpretation = ref(
-  "El margen operativo presenta un rendimiento sólido en el periodo actual, aunque el margen neto se ve afectado por costos financieros elevados."
-);
+    const periodosRef = collection(db, "proyectos", projectId.value, "periodos");
+    const snapshot = await getDocs(periodosRef);
 
-const recommendations = ref([
-  "Control de costos operativos",
-  "Revisión de estrategia de precios",
-  "Optimización de procesos internos",
-]);
+    let data_list = [];
 
-function goDetail(path) {
-  router.push(path);
+    snapshot.forEach((docSnap) => {
+      const pData = docSnap.data();
+      // Validamos si guardaste como 'rentabilidad' o 'analisis_rentabilidad'
+      if (pData.rentabilidad || pData.analisis_rentabilidad) {
+         data_list.push({
+            id: docSnap.id,
+            label: pData.label || docSnap.id,
+            data: pData
+         });
+      }
+    });
+
+    if (data_list.length > 0) {
+      // Ordenar alfabéticamente por label y tomar el último
+      data_list.sort((a, b) => a.label.localeCompare(b.label));
+      const latest = data_list[data_list.length - 1];
+      const d = latest.data;
+
+      // Unificamos estructura (Backend -> Frontend)
+      const dashboardData = {
+        rentabilidad: d.rentabilidad || d.analisis_rentabilidad || {},
+        liquidez: d.liquidez || d.analisis_liquidez || {},
+        endeudamiento: d.endeudamiento || d.analisis_endeudamiento || {},
+        estructura: d.estructura || d.analisis_estructura || {},
+        rotacion: d.rotacion || d.analisis_rotacion || {},
+        periodo: latest.label
+      };
+
+      mapDataToDashboard(dashboardData);
+      periodLabel.value = dashboardData.periodo ? `Periodo: ${dashboardData.periodo}` : 'Periodo Actual';
+    } else {
+        interpretation.value = "No hay análisis disponibles.";
+    }
+  } catch (error) {
+    console.error("Error cargando dashboard:", error);
+    interpretation.value = "Error de conexión.";
+  } finally {
+    loading.value = false;
+  }
+};
+
+// ===== MAPEO DE DATOS =====
+const mapDataToDashboard = (data) => {
+  // Inicializamos objetos vacíos si falla la carga parcial
+  const rent = data.rentabilidad || { datos_crudos: {}, kpis: [] };
+  const liq = data.liquidez || { datos_crudos: {}, kpis: [] };
+  const end = data.endeudamiento || { datos_crudos: {}, kpis: [] };
+  const est = data.estructura || { datos_crudos: {}, kpis: [] };
+  const rot = data.rotacion || { datos_crudos: {} };
+
+  // --- 1. EXTRACCIÓN DE DATOS CRUDOS ---
+  // Estos nombres vienen DIRECTO de tu Python (return "datos_crudos": {...})
+  
+  // Python: "ventas_netas" en calcular_rentabilidad
+  const ventas = rent.datos_crudos?.ventas_netas || 0;
+  
+  // Python: "utilidad_neta" en calcular_rentabilidad
+  const ut_neta = rent.datos_crudos?.utilidad_neta || 0;
+  
+  // Python: "costo_ventas" en calcular_rotacion
+  const costo = rot.datos_crudos?.costo_ventas || 0; 
+  
+  // Python: "utilidad_operacion" en calcular_endeudamiento
+  const ut_operacion = end.datos_crudos?.utilidad_operacion || 0;
+  
+  // Cálculos derivados para la tabla visual
+  const ut_bruta = ventas - costo;
+  const gastos_op = ut_bruta - ut_operacion;
+
+  // --- 2. KPIS PRINCIPALES (TOP BAR) ---
+  kpis.value = [
+    { label: "Ingresos Totales", value: currencyFmt.format(ventas), status: ventas > 0 ? "ok" : "warn" },
+    { label: "Utilidad Neta", value: currencyFmt.format(ut_neta), status: ut_neta > 0 ? "ok" : "warn" },
+    { label: "Margen Neto", value: percentFmt.format(ventas ? ut_neta / ventas : 0), status: (ventas && (ut_neta/ventas) > 0.10) ? "ok" : "warn" },
+    
+    // CORRECCIÓN: Python emite "Razón de Liquidez"
+    { 
+      label: "Liquidez General", 
+      value: findKpiValue(liq.kpis, "Razón de Liquidez") || "0.0", 
+      status: isStatusOk(liq.kpis, "Razón de Liquidez") ? "ok" : "warn" 
+    },
+  ];
+
+  // --- 3. TARJETAS (MAPPING EXACTO CON PYTHON) ---
+  
+  // A) Rentabilidad
+  cards.value[0].items = [
+    // Python label: "Rendimiento sobre el Patrimonio"
+    { label: "ROE", target: ">10%", value: findKpiValue(rent.kpis, "Patrimonio") || "-", dot: getDotColor(rent.kpis, "Patrimonio") },
+    // Python label: "Margen de Rentabilidad"
+    { label: "Margen Neto", target: ">10%", value: findKpiValue(rent.kpis, "Margen de Rentabilidad") || "-", dot: getDotColor(rent.kpis, "Margen de Rentabilidad") },
+  ];
+
+  // B) Liquidez
+  cards.value[1].items = [
+    // Python label: "Prueba del Ácido"
+    { label: "Prueba Ácida", target: ">0.8", value: findKpiValue(liq.kpis, "Prueba del Ácido") || "-", dot: getDotColor(liq.kpis, "Prueba del Ácido") },
+    // Python label: "Capital de Trabajo"
+    { label: "Cap. Trabajo", target: "+", value: findKpiValue(liq.kpis, "Capital de Trabajo") || "-", dot: getDotColor(liq.kpis, "Capital de Trabajo") },
+  ];
+
+  // C) Endeudamiento
+  cards.value[2].items = [
+    // Python label: "Apalancamiento" (NO es "Nivel Deuda")
+    { label: "Nivel Deuda", target: "<0.5", value: findKpiValue(end.kpis, "Apalancamiento") || "-", dot: getDotColor(end.kpis, "Apalancamiento") },
+    // Python label: "Razón de Cobertura de Intereses"
+    { label: "Cobertura Int.", target: ">1.5x", value: findKpiValue(end.kpis, "Cobertura de Intereses") || "-", dot: getDotColor(end.kpis, "Cobertura de Intereses") },
+  ];
+
+  // D) Estructura
+  cards.value[3].items = [
+    // Python label: "Solvencia General"
+    { label: "Solvencia", target: ">1.5", value: findKpiValue(est.kpis, "Solvencia General") || "-", dot: getDotColor(est.kpis, "Solvencia General") },
+    // Python label: "Seguridad a largo plazo"
+    { label: "Seguridad LP", target: "Garantía", value: findKpiValue(est.kpis, "Seguridad a largo plazo") || "-", dot: getDotColor(est.kpis, "Seguridad a largo plazo") },
+  ];
+
+  // --- 4. TABLA ESTADO DE RESULTADOS ---
+  edoResultados.value = [
+    { concept: "Ventas Netas", value: currencyFmt.format(ventas), pct: "100%", tone: "normal" },
+    { concept: "Costo de Ventas", value: currencyFmt.format(costo), pct: calcPct(costo, ventas), tone: "neg" },
+    { concept: "Utilidad Bruta", value: currencyFmt.format(ut_bruta), pct: calcPct(ut_bruta, ventas), tone: "strong" },
+    { concept: "Gastos Operación", value: currencyFmt.format(gastos_op), pct: calcPct(gastos_op, ventas), tone: "neg" },
+    { concept: "Utilidad Operación", value: currencyFmt.format(ut_operacion), pct: calcPct(ut_operacion, ventas), tone: "strong" },
+    { concept: "Utilidad Neta", value: currencyFmt.format(ut_neta), pct: calcPct(ut_neta, ventas), tone: "strong" },
+  ];
+
+  interpretation.value = ut_neta > 0 
+    ? "La empresa genera utilidades netas positivas." 
+    : "La empresa reporta pérdidas o faltan datos.";
+};
+
+// ===== FUNCIONES AUXILIARES =====
+const findKpiValue = (list, labelPart) => {
+    if (!list) return null;
+    // Buscamos si la etiqueta del backend INCLUYE el texto que le pasamos
+    const item = list.find(k => k.label.toLowerCase().includes(labelPart.toLowerCase()));
+    return item ? item.value : null;
+};
+
+const getDotColor = (list, labelPart) => {
+    if (!list) return "gray";
+    const item = list.find(k => k.label.toLowerCase().includes(labelPart.toLowerCase()));
+    if (!item) return "gray";
+    return item.status === 'ok' ? 'ok' : 'warn';
+};
+
+const isStatusOk = (list, labelPart) => {
+    return getDotColor(list, labelPart) === 'ok';
+};
+
+const calcPct = (val, total) => {
+    if (!total) return "0%";
+    return ((val / total) * 100).toFixed(1) + "%";
+};
+
+function goDetail(routeName) {
+  if (!projectId.value) return;
+  router.push({ name: routeName, params: { id_proyecto: projectId.value } });
 }
 
-function viewFullIncomeStatement() {
-  console.log("Ver estado de resultados completo");
-}
+onMounted(() => {
+    fetchDashboardData();
+});
 </script>
 
 <template>
@@ -130,7 +264,7 @@ function viewFullIncomeStatement() {
           <span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>
           <h4>Estructura del Resultado</h4>
         </div>
-        <!-- <span class="pill">{{ periodLabel }}</span> -->
+        <span class="pill" v-if="periodLabel">{{ periodLabel }}</span>
       </div>
 
       <div class="table-wrap">
@@ -271,6 +405,23 @@ function viewFullIncomeStatement() {
   background: #22c55e;
   box-shadow: 0 0 8px rgba(34,197,94,0.4);
 }
+
+/* Para el punto grande del KPI */
+.kpi-dot.warn {
+  background: #facc15; /* Amarillo alerta */
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+.kpi-dot.alert { /* Por si decides usar rojo */
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+.kpi-dot.gray {
+  background: #9ca3af; /* Gris mientras carga */
+}
+
+/* Para el punto pequeño de las listas */
+.mini-dot.gray { background: #9ca3af; }
+.mini-dot.alert { background: #ef4444; }
 
 .kpi-value {
   margin-top: 8px;

@@ -21,7 +21,7 @@ const router = createRouter({
     // RUTAS CON LAYOUT
     // RUTAS CON LAYOUT
     {
-      path: "/proyecto/:id_proyecto/dashboard", 
+      path: "/proyecto/:id_proyecto/dashboard",
       component: DashboardLayout,
       children: [
         {
