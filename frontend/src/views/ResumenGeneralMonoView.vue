@@ -11,7 +11,7 @@ const loading = ref(true);
 const projectId = ref(null);
 
 // Formateadores
-const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 });
+const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const percentFmt = new Intl.NumberFormat('es-MX', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 2 });
 
 // ===== ESTADO REACTIVO =====
@@ -146,7 +146,7 @@ const mapDataToDashboard = (data) => {
     // Python label: "Prueba del Ácido"
     { label: "Prueba Ácida", target: ">0.8", value: findKpiValue(liq.kpis, "Prueba del Ácido") || "-", dot: getDotColor(liq.kpis, "Prueba del Ácido") },
     // Python label: "Capital de Trabajo"
-    { label: "Cap. Trabajo", target: "+", value: findKpiValue(liq.kpis, "Capital de Trabajo") || "-", dot: getDotColor(liq.kpis, "Capital de Trabajo") },
+    { label: "Cap. Trabajo", target: "> $0", value: findKpiValue(liq.kpis, "Capital de Trabajo") || "-", dot: getDotColor(liq.kpis, "Capital de Trabajo") },
   ];
 
   // C) Endeudamiento
@@ -160,9 +160,9 @@ const mapDataToDashboard = (data) => {
   // D) Estructura
   cards.value[3].items = [
     // Python label: "Solvencia General"
-    { label: "Solvencia", target: ">1.5", value: findKpiValue(est.kpis, "Solvencia General") || "-", dot: getDotColor(est.kpis, "Solvencia General") },
+    { label: "Solvencia", target: ">1.0", value: findKpiValue(est.kpis, "Solvencia General") || "-", dot: getDotColor(est.kpis, "Solvencia General") },
     // Python label: "Seguridad a largo plazo"
-    { label: "Seguridad LP", target: "Garantía", value: findKpiValue(est.kpis, "Seguridad a largo plazo") || "-", dot: getDotColor(est.kpis, "Seguridad a largo plazo") },
+    { label: "Seguridad LP", target: ">=1.0", value: findKpiValue(est.kpis, "Seguridad a largo plazo") || "-", dot: getDotColor(est.kpis, "Seguridad a largo plazo") },
   ];
 
   // --- 4. TABLA ESTADO DE RESULTADOS ---
