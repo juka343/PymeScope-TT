@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from "vue-router";
 import LandingView from "../views/LandingView.vue";
+
 import DashboardLayout from "@/layouts/DashboardLayout.vue";
+import DashboardLayoutMulti from "@/layouts/DashboardLayoutMulti.vue"; // <-- crea este archivo
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,14 +18,28 @@ const router = createRouter({
       component: () => import("../views/CargaDeDocumentosView.vue"),
     },
 
-    { path: "/misProyectos", name: "misProyectos", component: () => import("../views/MisProyectosView.vue") },
+    {
+      path: "/misProyectos",
+      name: "misProyectos",
+      component: () => import("../views/MisProyectosView.vue"),
+    },
 
-    // RUTAS CON LAYOUT
-    // RUTAS CON LAYOUT
+    //PANTALLAS DE TEORIA
+        {
+          path: "/teoriaRentabilidad",
+          name: "teoriaRentabilidad",
+          component: () => import("../views/TeoriaRentabilidadView.vue"), 
+        },
+
+    // =========================
+    // DASHBOARD MONOPERIODO
+    // =========================
     {
       path: "/proyecto/:id_proyecto/dashboard",
       component: DashboardLayout,
       children: [
+        { path: "", redirect: { name: "resumen" } }, // default
+
         {
           path: "resumen",
           name: "resumen",
@@ -61,6 +77,56 @@ const router = createRouter({
         },
       ],
     },
+
+    // =========================
+    // DASHBOARD MULTIPERIODO
+    // =========================
+    {
+      path: "/proyecto/:id_proyecto/dashboard-multi",
+      component: DashboardLayoutMulti,
+      children: [
+        { path: "", redirect: { name: "rentabilidadMulti" } }, // default
+
+        // {
+        //   path: "resumen",
+        //   name: "resumenMulti",
+        //   component: () => import("../views/ResumenGeneralMultiView.vue"),
+        // },
+        {
+          path: "rentabilidad",
+          name: "rentabilidadMulti",
+          component: () => import("../views/RentabilidadMultiperiodoView.vue"), 
+        },
+        {
+          path: "liquidez",
+          name: "liquidezMulti",
+          component: () => import("../views/LiquidezMultiperiodoView.vue"), // crea este
+        },
+        // {
+        //   path: "endeudamiento",
+        //   name: "endeudamientoMulti",
+        //   component: () => import("../views/EndeudamientoMultiperiodoView.vue"), // crea este
+        // },
+        // {
+        //   path: "rotacion",
+        //   name: "rotacionMulti",
+        //   component: () => import("../views/RotacionDeActivosMultiView.vue"), // crea este
+        // },
+        // {
+        //   path: "estructura",
+        //   name: "estructuraMulti",
+        //   component: () => import("../views/EstructuraMultiView.vue"), // crea este
+        // },
+        // {
+        //   path: "proyecciones",
+        //   name: "proyeccionesMulti",
+        //   component: () => import("../views/ProyeccionesMultiView.vue"), // crea este
+        // },
+      ],
+    },
+
+    // fallback opcional
+    { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
 });
 
