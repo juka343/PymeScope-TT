@@ -1,34 +1,38 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+
 import { db, storage, auth } from "@/firebase/config";
-import { doc, getDoc, setDoc, getDocs, deleteDoc, collection } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  getDocs,
+  deleteDoc,
+  collection,
+  serverTimestamp,
+} from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 const route = useRoute();
-const router = useRouter(); 
+const router = useRouter();
+
 const projectId = route.params.id_proyecto;
-// ESTOS DATOS DEBEN VENIR DEL ARCHIVO, AHI LE PIENSAS COMO HACERLE EMMA XDD
+
+// Datos del proyecto
 const projectTitle = ref("Cargando...");
 const periodicity = ref("...");
 const isLoadingProject = ref(true);
 
+// Periodos
+const periods = ref([]); // { id, label, balanceFile, resultsFile, hasChanges, hasAnalysis }
+const isUploading = ref(false);
+const isProcessing = ref(false);
 
-// Periodos (IGUAL DESDE BD)
-const periods = ref([]);
-// Ejemplo de periodo: { id, label, balanceFile: null, resultsFile: null }
-const isUploading = ref(false); // Para mostrar loading si quieres
-
-const isProcessing = ref(false); // Nuevo estado para el spinner de "Generando"
-
-// Referencias a los inputs ocultos para poder disparar el click
-const fileInputRefs = ref({}); 
-
-// Función auxiliar para guardar la referencia del input en el DOM
+// refs inputs ocultos
+const fileInputRefs = ref({});
 const setInputRef = (el, periodId, type) => {
-  if (el) {
-    fileInputRefs.value[`${periodId}_${type}`] = el;
-  }
+  if (el) fileInputRefs.value[`${periodId}_${type}`] = el;
 };
 
 onMounted(async () => {
@@ -45,14 +49,10 @@ onMounted(async () => {
       const data = docSnap.data();
       projectTitle.value = data.nombre || "Sin Título";
       periodicity.value = data.periodicidad || "Desconocida";
-      
-      // Cargar periodos existentes desde Firestore
+
       await loadExistingPeriods();
-      
-      // Si no hay periodos, agregar uno vacío
-      if (periods.value.length === 0) {
-        addPeriod();
-      }
+
+      if (periods.value.length === 0) addPeriod();
     } else {
       projectTitle.value = "Proyecto no encontrado";
     }
@@ -64,35 +64,79 @@ onMounted(async () => {
   }
 });
 
-// Cargar periodos existentes desde Firestore
+// ===== Helpers (mono vs multi / qué procesar) =====
+const completePeriods = computed(() =>
+  periods.value.filter((p) => p.balanceFile && p.resultsFile)
+);
+
+// MULTI si hay más de 1 periodo completo (con BG + ER)
+const isMultiPeriod = computed(() => completePeriods.value.length > 1);
+
+// Procesar si: está completo y (cambió o no tiene análisis)
+const periodsToProcess = computed(() =>
+  completePeriods.value.filter((p) => p.hasChanges || !p.hasAnalysis)
+);
+
+const canGenerate = computed(() => periodsToProcess.value.length > 0);
+
+// Actualiza el modo del proyecto en Firestore (mono/multi)
+async function updateProjectAnalysisMode() {
+  const projectRef = doc(db, "proyectos", projectId);
+  const mode = isMultiPeriod.value ? "multi" : "mono";
+
+  await setDoc(
+    projectRef,
+    {
+      analysis_mode: mode,
+      periods_count: completePeriods.value.length,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+// ===== Firestore periodos =====
 async function loadExistingPeriods() {
   try {
     const periodosRef = collection(db, "proyectos", projectId, "periodos");
     const snapshot = await getDocs(periodosRef);
-    
-    if (snapshot.empty)return;
-    
-    const loadedPeriods = [];
-    
+
+    if (snapshot.empty) return;
+
+    const loaded = [];
+
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      loadedPeriods.push({
+      loaded.push({
         id: docSnap.id,
         label: data.label || "Periodo",
         balanceFile: data.balanceFile || null,
         resultsFile: data.resultsFile || null,
-        hasChanges: false // bandera de cambios para saber si el periodo fue modificado después de la carga inicial
+
+        // detecta si ya hay análisis guardado
+        hasAnalysis: Boolean(
+          data.analisis_rentabilidad ||
+            data.analisis_liquidez ||
+            data.analisis_endeudamiento ||
+            data.analisis_rotacion ||
+            data.analisis_estructura
+        ),
+
+        // se prende cuando el usuario sube/elimina archivos
+        hasChanges: false,
       });
     });
 
-    // Ordenar por label (Periodo 1, Periodo 2, etc.)
-    loadedPeriods.sort((a, b) => {
-      const numA = parseInt(a.label.replace("Periodo ", "")) || 0;
-      const numB = parseInt(b.label.replace("Periodo ", "")) || 0;
+    loaded.sort((a, b) => {
+      const numA = parseInt(String(a.label).replace("Periodo ", "")) || 0;
+      const numB = parseInt(String(b.label).replace("Periodo ", "")) || 0;
       return numA - numB;
     });
 
-    periods.value = loadedPeriods;
+    periods.value = loaded;
+
+    // por si el proyecto ya existía con varios periodos completos
+    await updateProjectAnalysisMode();
   } catch (error) {
     console.error("Error cargando periodos:", error);
   }
@@ -105,145 +149,90 @@ function addPeriod() {
     label: `Periodo ${next}`,
     balanceFile: null,
     resultsFile: null,
-    hasChanges: false
+    hasChanges: false,
+    hasAnalysis: false,
   };
   periods.value.push(newPeriod);
-  
-  // Guardar en Firestore
   savePeriodToFirestore(newPeriod);
 }
 
-// Guardar periodo en Firestore
 async function savePeriodToFirestore(period) {
   try {
     const periodRef = doc(db, "proyectos", projectId, "periodos", period.id);
-    await setDoc(periodRef, {
-      label: period.label,
-      balanceFile: period.balanceFile,
-      resultsFile: period.resultsFile,
-    }, { merge: true });
+    await setDoc(
+      periodRef,
+      {
+        label: period.label,
+        balanceFile: period.balanceFile,
+        resultsFile: period.resultsFile,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // cada cambio puede alterar si ya es multi o no (cuando se completan docs)
+    await updateProjectAnalysisMode();
   } catch (error) {
     console.error("Error guardando periodo:", error);
   }
 }
 
-// 1. Dispara el input oculto cuando el usuario da click en "Cargar"
+// ===== Upload / delete archivos =====
 function triggerFileInput(periodId, type) {
   const input = fileInputRefs.value[`${periodId}_${type}`];
   if (input) input.click();
 }
 
-// 2. Maneja la selección del archivo y sube a Firebase
 async function handleFileChange(event, periodId, type) {
-  const file = event.target.files[0];
+  const file = event.target.files?.[0];
+  if (!file) return;
 
   if (file.type !== "application/pdf") {
     alert("Por favor sube solo archivos PDF");
+    event.target.value = null;
     return;
   }
 
   isUploading.value = true;
 
-  try {    
-    // --- NUEVO CÓDIGO DE SEGURIDAD (EL CADENERO) ---
+  try {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error("Sesión no iniciada");
-    
+
     const userId = currentUser.uid;
-    const fileUuid = crypto.randomUUID(); // Para evitar colisiones, aunque el nombre real se guarda en metadata
+    const fileUuid = crypto.randomUUID();
+
     const path = `uploads/${userId}/${projectId}/${periodId}/${type}_${fileUuid}.pdf`;
     const fileRef = storageRef(storage, path);
 
-    // C. Subir
     await uploadBytes(fileRef, file);
     const downloadURL = await getDownloadURL(fileRef);
 
-    // D. Guardar en estado local CON LA METADATA NECESARIA
     const p = periods.value.find((x) => x.id === periodId);
-    
-
     if (p) {
-      const fileMetadata = { 
-        uuid: fileUuid,      
-        name: file.name, 
+      const meta = {
+        uuid: fileUuid,
+        name: file.name,
         url: downloadURL,
-        path: path,  // Guardar la ruta para poder eliminar después
-        type: type           
+        path,
+        type,
       };
 
-      if (type === 'balance') p.balanceFile = fileMetadata;
-      if (type === 'resultado') p.resultsFile = fileMetadata;
+      if (type === "balance") p.balanceFile = meta;
+      if (type === "resultado") p.resultsFile = meta;
 
-      p.hasChanges = true; // Marcar que este periodo tiene cambios para saber que debe ser guardado antes de generar el análisis
-      
-      // Guardar en Firestore
+      // si cambias archivo, invalidas análisis anterior
+      p.hasChanges = true;
+      p.hasAnalysis = false;
+
       await savePeriodToFirestore(p);
     }
-
   } catch (error) {
     console.error("Error subiendo:", error);
     alert("Error al subir a Firebase.");
   } finally {
     isUploading.value = false;
-    event.target.value = null; 
-  }
-}
-
-const canGenerate = computed(() => {
-  return periods.value.some((p) => p.balanceFile && p.resultsFile && p.hasChanges);
-});
-
-async function generateAnalysis() {
-  isProcessing.value = true;
-  const validPeriods = periods.value.filter(p => p.balanceFile && p.resultsFile && p.hasChanges);
-  
-  try {
-    const promesas = validPeriods.map(p => {
-      const payload = {
-        project_id: projectId,
-        period_id: p.id, // Usamos el ID real de Firestore
-        balance_url: p.balanceFile.url,
-        resultados_url: p.resultsFile.url,
-        periodicidad: periodicity.value
-      };
-
-      return fetch('http://127.0.0.1:8000/api/documents/analyze-period', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).then(res => res.json());
-    });
-
-    const resultados = await Promise.all(promesas);
-
-    console.log("DATOS CRUDOS RECIBIDOS DE AZURE:", resultados);
-    
-    for (const res of resultados) {
-      if (res.estatus === "Completado") {
-        const periodoRef = doc(db, "proyectos", projectId, "periodos", res.period_id);
-        await setDoc(periodoRef, {
-          analisis_rentabilidad: res.dashboard_data.rentabilidad,
-          analisis_liquidez: res.dashboard_data.liquidez,
-          analisis_endeudamiento: res.dashboard_data.endeudamiento,
-          analisis_rotacion: res.dashboard_data.rotacion,
-          analisis_estructura: res.dashboard_data.estructura
-        }, { merge: true });
-        
-        const pLocal = periods.value.find(p => p.id === res.period_id);
-        if (pLocal) pLocal.hasChanges = false; 
-      }
-    }
-
-    const projectRef = doc(db, "proyectos", projectId);
-    await setDoc(projectRef, { status: "completo" }, { merge: true });
-
-    router.push(`/proyecto/${projectId}/dashboard/rentabilidad`);
-
-  } catch (error) {
-    console.error("Error en el análisis:", error);
-    alert("Hubo un error procesando los documentos.");
-  } finally {
-    isProcessing.value = false;
+    event.target.value = null;
   }
 }
 
@@ -251,25 +240,23 @@ async function removeDocument(periodId, type) {
   const p = periods.value.find((x) => x.id === periodId);
   if (!p) return;
 
-  // Identificar qué archivo es
-  const fileData = type === 'balance' ? p.balanceFile : p.resultsFile;
-  if (!fileData || !confirm(`¿Eliminar ${fileData.name}?`)) return;
+  const fileData = type === "balance" ? p.balanceFile : p.resultsFile;
+  if (!fileData) return;
+
+  if (!confirm(`¿Eliminar ${fileData.name}?`)) return;
 
   isUploading.value = true;
 
   try {
-    const fileRef = storageRef(storage, fileData.path);
-    // 2. Borrar de Storage
-    await deleteObject(fileRef);
+    await deleteObject(storageRef(storage, fileData.path));
 
-    // 3. Borrar de la Vista (Frontend)
-    if (type === 'balance') p.balanceFile = null;
-    if (type === 'resultado') p.resultsFile = null;
+    if (type === "balance") p.balanceFile = null;
+    if (type === "resultado") p.resultsFile = null;
 
     p.hasChanges = true;
-    // 4. Actualizar en Firestore
-    await savePeriodToFirestore(p);
+    p.hasAnalysis = false;
 
+    await savePeriodToFirestore(p);
   } catch (error) {
     console.error("Error eliminando archivo:", error);
   } finally {
@@ -282,18 +269,22 @@ async function removePeriod(periodId) {
   if (!p || !confirm(`¿Eliminar ${p.label}?`)) return;
 
   isUploading.value = true;
+
   try {
     if (p.balanceFile) await deleteObject(storageRef(storage, p.balanceFile.path)).catch(() => {});
     if (p.resultsFile) await deleteObject(storageRef(storage, p.resultsFile.path)).catch(() => {});
 
     await deleteDoc(doc(db, "proyectos", projectId, "periodos", periodId));
-    periods.value = periods.value.filter(period => period.id !== periodId);
+    periods.value = periods.value.filter((period) => period.id !== periodId);
 
-    // Re-etiquetado y actualización en lote
+    // re-etiquetar
     for (let i = 0; i < periods.value.length; i++) {
       periods.value[i].label = `Periodo ${i + 1}`;
       await savePeriodToFirestore(periods.value[i]);
     }
+
+    // por si bajó de multi a mono
+    await updateProjectAnalysisMode();
   } catch (error) {
     console.error("Error:", error);
   } finally {
@@ -301,6 +292,89 @@ async function removePeriod(periodId) {
   }
 }
 
+// ===== Generar análisis + redirect mono/multi =====
+async function generateAnalysis() {
+  isProcessing.value = true;
+
+  const aProcesar = periodsToProcess.value;
+
+  try {
+    if (aProcesar.length === 0) {
+      alert("No hay cambios por analizar.");
+      return;
+    }
+
+    const promesas = aProcesar.map((p) => {
+      const payload = {
+        project_id: projectId,
+        period_id: p.id,
+        balance_url: p.balanceFile.url,
+        resultados_url: p.resultsFile.url,
+        periodicidad: periodicity.value,
+      };
+
+      return fetch("http://127.0.0.1:8000/api/documents/analyze-period", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then((res) => res.json());
+    });
+
+    const resultados = await Promise.all(promesas);
+
+    for (const res of resultados) {
+      if (res.estatus === "Completado") {
+        const periodoRef = doc(db, "proyectos", projectId, "periodos", res.period_id);
+
+        await setDoc(
+          periodoRef,
+          {
+            analisis_rentabilidad: res.dashboard_data.rentabilidad,
+            analisis_liquidez: res.dashboard_data.liquidez,
+            analisis_endeudamiento: res.dashboard_data.endeudamiento,
+            analisis_rotacion: res.dashboard_data.rotacion,
+            analisis_estructura: res.dashboard_data.estructura,
+            analyzedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        const pLocal = periods.value.find((p) => p.id === res.period_id);
+        if (pLocal) {
+          pLocal.hasChanges = false;
+          pLocal.hasAnalysis = true;
+        }
+      }
+    }
+
+    // Guarda status + modo + count
+    const projectRef = doc(db, "proyectos", projectId);
+    const mode = isMultiPeriod.value ? "multi" : "mono";
+
+    await setDoc(
+      projectRef,
+      {
+        status: "completo",
+        analysis_mode: mode,
+        periods_count: completePeriods.value.length,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Redirect: mono vs multi
+    const base = mode === "multi"
+      ? `/proyecto/${projectId}/dashboard-multi`
+      : `/proyecto/${projectId}/dashboard`;
+
+    router.push(`${base}/rentabilidad`);
+  } catch (error) {
+    console.error("Error en el análisis:", error);
+    alert("Hubo un error procesando los documentos.");
+  } finally {
+    isProcessing.value = false;
+  }
+}
 </script>
 
 <template>
@@ -309,11 +383,10 @@ async function removePeriod(periodId) {
       <div class="header-inner">
         <div class="brand">
           <div class="logo" aria-hidden="true">
-            
             <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
               <g clip-path="url(#clip0)">
                 <path
-                  d="M42.1739 20.1739L27.8261 5.82609C29.1366 7.13663 28.3989 10.1876 26.2002 13.7654C24.8538 15.9564 22.9595 18.3449 20.6522 20.6522C18.3449 22.9595 15.9564 24.8538 13.7654 26.2002C10.1876 28.3989 7.13663 29.1366 5.82609 27.8261L20.1739 42.1739C21.4845 43.4845 24.5355 42.7467 28.1133 40.548C30.3042 39.2016 32.6927 37.3073 35 35C37.3073 32.6927 39.2016 30.3042 40.548 28.1133C42.7467 24.5355 43.4845 21.4845 42.1739 20.1739Z"
+                  d="M42.1739 20.1739L27.8261 5.82609C29.1366 7.13663 28.3989 10.1876 26.2002 13.7654C24.8538 15.9564 22.9595 18.3449 20.6522 20.6522C18.3449 22.9595 15.9564 24.8538 13.7654 26.2002C10.1876 28.3989 7.13663 29.1366 5.82609 27.8261L20.1739 42.1739C21.4845 43.4845 24.5355 42.7467 28.1133 40.548C30.3042 39.2016 32.6927 37.3073 35 35C37.3073 32.6927 39.2016 30.3042 40.548 28.1133Z"
                   fill="currentColor"
                 />
                 <path
@@ -367,6 +440,7 @@ async function removePeriod(periodId) {
             <span class="muted">(Solo lectura)</span>
           </p>
         </div>
+
         <p class="periodicity-right">
           La periodicidad se define al crear el proyecto y no puede modificarse.
         </p>
@@ -381,13 +455,12 @@ async function removePeriod(periodId) {
 
       <section v-if="periods.length" class="periods">
         <article v-for="p in periods" :key="p.id" class="period-card">
-          
           <header class="period-card-head">
             <div class="head-left">
               <h3>{{ p.label }}</h3>
               <span class="mini-pill">{{ periodicity }}</span>
             </div>
-            
+
             <button class="btn-icon-danger" @click="removePeriod(p.id)" title="Eliminar periodo completo">
               <span class="material-symbols-outlined">delete</span>
             </button>
@@ -403,25 +476,25 @@ async function removePeriod(periodId) {
                     <span v-if="p.balanceFile" class="file-success">
                       {{ p.balanceFile.name }}
                       <button class="btn-text-danger" @click="removeDocument(p.id, 'balance')">
-                         (Eliminar)
+                        (Eliminar)
                       </button>
                     </span>
                     <span v-else class="file-empty">No cargado</span>
                   </p>
                 </div>
               </div>
-              
-              <input 
-                type="file" 
-                hidden 
+
+              <input
+                type="file"
+                hidden
                 accept="application/pdf"
                 :ref="(el) => setInputRef(el, p.id, 'balance')"
                 @change="(e) => handleFileChange(e, p.id, 'balance')"
               />
 
-              <button 
-                class="btn-secondary" 
-                type="button" 
+              <button
+                class="btn-secondary"
+                type="button"
                 @click="triggerFileInput(p.id, 'balance')"
                 v-if="!p.balanceFile"
               >
@@ -446,17 +519,17 @@ async function removePeriod(periodId) {
                 </div>
               </div>
 
-              <input 
-                type="file" 
-                hidden 
+              <input
+                type="file"
+                hidden
                 accept="application/pdf"
                 :ref="(el) => setInputRef(el, p.id, 'resultado')"
                 @change="(e) => handleFileChange(e, p.id, 'resultado')"
               />
 
-              <button 
-                class="btn-secondary" 
-                type="button" 
+              <button
+                class="btn-secondary"
+                type="button"
                 @click="triggerFileInput(p.id, 'resultado')"
                 v-if="!p.resultsFile"
               >
@@ -467,7 +540,6 @@ async function removePeriod(periodId) {
         </article>
       </section>
 
-      <!-- CASO VACIO -->
       <section v-else class="empty">
         <div class="empty-icon">
           <span class="material-symbols-outlined">folder_open</span>
@@ -483,16 +555,16 @@ async function removePeriod(periodId) {
       <div class="container bottom-inner">
         <span class="autosave">Todos los cambios se guardan automáticamente</span>
 
-        <button 
-          class="btn-generate" 
-          type="button" 
-          :disabled="!canGenerate || isUploading || isProcessing" 
+        <button
+          class="btn-generate"
+          type="button"
+          :disabled="!canGenerate || isUploading || isProcessing"
           @click="generateAnalysis"
         >
           <span v-if="isUploading">Subiendo a Firebase...</span>
           <span v-else-if="isProcessing">Analizando con IA...</span>
           <span v-else>Generar análisis</span>
-          
+
           <span v-if="!isUploading && !isProcessing" class="material-symbols-outlined">
             arrow_forward
           </span>
@@ -516,7 +588,7 @@ async function removePeriod(periodId) {
   background: var(--bg);
   color: var(--text);
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  padding-bottom: 92px; /* espacio para barra fija */
+  padding-bottom: 92px;
 }
 
 .container {
@@ -737,10 +809,11 @@ async function removePeriod(periodId) {
 .period-card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* Separa título y botón de borrar */
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
+
 .head-left {
   display: flex;
   align-items: center;
@@ -815,7 +888,7 @@ async function removePeriod(periodId) {
 .btn-icon-danger {
   background: transparent;
   border: none;
-  color: #ef4444; /* Rojo */
+  color: #ef4444;
   cursor: pointer;
   padding: 4px;
   border-radius: 8px;
@@ -824,19 +897,22 @@ async function removePeriod(periodId) {
   align-items: center;
 }
 .btn-icon-danger:hover {
-  background: #fee2e2; /* Fondo rojo clarito */
+  background: #fee2e2;
 }
+
 .file-success {
-  color: #16a34a; /* Verde */
+  color: #16a34a;
   font-weight: 500;
   display: flex;
   align-items: center;
   gap: 6px;
 }
+
 .file-empty {
-  color: #94a3b8; /* Gris */
+  color: #94a3b8;
   font-style: italic;
 }
+
 .btn-text-danger {
   background: none;
   border: none;
@@ -940,7 +1016,6 @@ async function removePeriod(periodId) {
   font-size: 20px;
 }
 
-/* Responsive */
 @media (min-width: 640px) {
   .back-text {
     display: inline;

@@ -1,11 +1,21 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, computed } from "vue";
 import { useRouter } from "vue-router";
-import { ref as storageRef, deleteObject } from "firebase/storage"; 
+import { ref as storageRef, deleteObject } from "firebase/storage";
 
 import { auth, db, storage } from "@/firebase/config";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  deleteDoc,
+  query,
+  where,
+  serverTimestamp,
+} from "firebase/firestore";
 
 const router = useRouter();
 
@@ -15,11 +25,14 @@ const authUnsub = ref(null);
 
 const userDisplayName = computed(() => {
   if (!user.value) return "Usuario";
-  return user.value.displayName || (user.value.email ? user.value.email.split("@")[0] : "Usuario");
+  return (
+    user.value.displayName ||
+    (user.value.email ? user.value.email.split("@")[0] : "Usuario")
+  );
 });
 
 const userEmail = computed(() => (user.value?.email ? user.value.email : ""));
-const userRole = computed(() => "Usuario"); 
+const userRole = computed(() => "Usuario");
 const userPhotoURL = computed(() => user.value?.photoURL || ""); // si alguien ve esto, las fotos solo funcioan con google xdddd
 
 onMounted(() => {
@@ -29,7 +42,6 @@ onMounted(() => {
     if (!u) {
       router.replace("/"); // sin sesión, fuera
     } else {
-      // Cargar proyectos cuando hay usuario autenticado
       await loadUserProjects();
     }
   });
@@ -51,7 +63,7 @@ async function handleLogout() {
   }
 }
 
-//  MODAL 
+//  MODAL
 const isModalOpen = ref(false);
 
 // Form (solo UI)
@@ -92,36 +104,31 @@ async function handleCreate() {
   creating.value = true;
 
   try {
-    // Generar ID único para el proyecto
     const projectId = crypto.randomUUID();
     const projectRef = doc(db, "proyectos", projectId);
 
-    console.log("Creando proyecto en Firestore...", projectId);
-
-    // Guardar en Firestore con userId para filtrado personal
     await setDoc(projectRef, {
       nombre: projectName.value.trim(),
       empresa: companyName.value.trim() || null,
       periodicidad: periodicity.value,
       notas: notes.value.trim() || null,
-      userId: currentUser.uid, // Para que solo el dueño pueda verlo
-      status: "en_edicion", //Este campo se actualizará a "completo" cuando el análisis esté listo.
+      userId: currentUser.uid,
+      status: "en_edicion",
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      // opcional: puedes inicializarlo, pero no es obligatorio
+      // analysis_mode: "mono",
+      // periods_count: 0,
     });
 
-    // Verificar que el documento se guardó correctamente
     const docSnap = await getDoc(projectRef);
     if (!docSnap.exists()) {
       throw new Error("El proyecto no se guardó correctamente en la base de datos");
     }
 
-    console.log("Proyecto creado exitosamente:", docSnap.data());
-
     closeModal();
     resetForm();
 
-    // Redirigir a la vista de carga de documentos
     router.push(`/proyecto/${projectId}/cargar`);
   } catch (error) {
     console.error("Error creando proyecto:", error);
@@ -139,39 +146,45 @@ function onKeydown(e) {
 const projects = ref([]);
 const loadingProjects = ref(true);
 
-// Cargar proyectos del usuario desde Firestore
 async function loadUserProjects() {
   const currentUser = auth.currentUser;
   if (!currentUser) return;
 
   loadingProjects.value = true;
+
   try {
     const projectsRef = collection(db, "proyectos");
-    // Query simple sin orderBy (evita necesidad de índice compuesto)
-    const q = query(
-      projectsRef,
-      where("userId", "==", currentUser.uid)
-    );
+    const q = query(projectsRef, where("userId", "==", currentUser.uid));
     const snapshot = await getDocs(q);
-    
-    const projectsList = snapshot.docs.map((doc) => {
-      const data = doc.data();
+
+    const projectsList = snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+
+      const periodsCount = Number(data.periods_count || 0);
+
+      // 1) Usa analysis_mode si existe
+      // 2) si no existe, fallback con periods_count
+      const analysisMode =
+        data.analysis_mode || (periodsCount > 1 ? "multi" : "mono");
+
       return {
-        id: doc.id,
+        id: docSnap.id,
         title: data.nombre || "Sin título",
-        status: data.status || "en_edicion", // Por ahora, asumimos que el proyecto se crea en estado "en edición".
+        status: data.status || "en_edicion",
         company: data.empresa || "Sin empresa",
         periods: data.periodicidad || "Sin periodicidad",
+        periodsCount,
+        analysisMode,
         createdAt: data.createdAt?.toDate?.() || new Date(0),
-        modified: data.createdAt?.toDate?.()?.toLocaleDateString("es-MX", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        }) || "Sin fecha",
+        modified:
+          data.createdAt?.toDate?.()?.toLocaleDateString("es-MX", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          }) || "Sin fecha",
       };
     });
 
-    // Ordenar en el cliente (más recientes primero)
     projectsList.sort((a, b) => b.createdAt - a.createdAt);
     projects.value = projectsList;
   } catch (error) {
@@ -181,57 +194,57 @@ async function loadUserProjects() {
   }
 }
 
-const deleting = ref(null); // ID del proyecto que se está eliminando
+// ✅ NUEVO: ir al dashboard correcto (mono o multi)
+function goToAnalysis(p) {
+  if (!p || p.status !== "completo") return;
+
+  const base = p.analysisMode === "multi" ? "dashboard-multi" : "dashboard";
+  router.push(`/proyecto/${p.id}/${base}/rentabilidad`);
+}
+
+const deleting = ref(null);
 
 async function removeProject(id) {
-  // Confirmar eliminación
-  const confirmed = confirm("¿Estás seguro de eliminar este proyecto y TODOS sus archivos?\n\nEsta acción no se puede deshacer.");
+  const confirmed = confirm(
+    "¿Estás seguro de eliminar este proyecto y TODOS sus archivos?\n\nEsta acción no se puede deshacer."
+  );
   if (!confirmed) return;
 
   deleting.value = id;
 
   try {
-    // 1. Obtener todos los periodos del proyecto
     const periodosRef = collection(db, "proyectos", id, "periodos");
     const snapshot = await getDocs(periodosRef);
 
-    // 2. Borrar archivos de Storage y documentos de los periodos
     const promesasLimpieza = [];
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
 
-      // Preparar borrado del Balance en Storage
       if (data.balanceFile && data.balanceFile.path) {
         const bRef = storageRef(storage, data.balanceFile.path);
-        promesasLimpieza.push(deleteObject(bRef).catch(e => console.warn("Balance no hallado", e)));
-      }
-      
-      // Preparar borrado del Resultado en Storage
-      if (data.resultsFile && data.resultsFile.path) {
-        const rRef = storageRef(storage, data.resultsFile.path);
-        promesasLimpieza.push(deleteObject(rRef).catch(e => console.warn("Resultado no hallado", e)));
+        promesasLimpieza.push(
+          deleteObject(bRef).catch((e) => console.warn("Balance no hallado", e))
+        );
       }
 
-      // Preparar borrado del documento del periodo en Firestore
+      if (data.resultsFile && data.resultsFile.path) {
+        const rRef = storageRef(storage, data.resultsFile.path);
+        promesasLimpieza.push(
+          deleteObject(rRef).catch((e) => console.warn("Resultado no hallado", e))
+        );
+      }
+
       promesasLimpieza.push(deleteDoc(docSnap.ref));
     });
 
-    // Esperar a que se borren todos los PDFs y periodos al mismo tiempo
     if (promesasLimpieza.length > 0) {
-      console.log(`Limpiando ${promesasLimpieza.length} elementos internos...`);
       await Promise.all(promesasLimpieza);
     }
 
-    // 3. Borrar el proyecto principal en Firestore
-    const projectRef = doc(db, "proyectos", id);
-    await deleteDoc(projectRef);
+    await deleteDoc(doc(db, "proyectos", id));
 
-    console.log("Proyecto y archivos eliminados por completo:", id);
-
-    // 4. Quitarlo de la vista
     projects.value = projects.value.filter((p) => p.id !== id);
-    
   } catch (error) {
     console.error("Error eliminando proyecto:", error);
     alert("Error al eliminar el proyecto. Intenta de nuevo.");
@@ -239,7 +252,6 @@ async function removeProject(id) {
     deleting.value = null;
   }
 }
-
 </script>
 
 <template>
@@ -265,7 +277,6 @@ async function removeProject(id) {
         </div>
 
         <div class="user">
-          <!-- Avatar real (si hay foto), si no, círculo gris -->
           <div
             class="avatar"
             :style="userPhotoURL ? { backgroundImage: `url('${userPhotoURL}')` } : {}"
@@ -331,9 +342,9 @@ async function removeProject(id) {
             <span class="modified">Modificado: {{ p.modified }}</span>
 
             <div class="actions">
-              <button 
-                class="icon-btn" 
-                type="button" 
+              <button
+                class="icon-btn"
+                type="button"
                 title="Editar proyecto"
                 @click="router.push(`/proyecto/${p.id}/cargar`)"
               >
@@ -348,15 +359,16 @@ async function removeProject(id) {
                 :disabled="deleting === p.id"
               >
                 <span class="material-symbols-outlined">
-                  {{ deleting === p.id ? 'hourglass_empty' : 'delete' }}
+                  {{ deleting === p.id ? "hourglass_empty" : "delete" }}
                 </span>
               </button>
 
-              <button 
-                class="link" 
+              <!-- ✅ CORREGIDO: manda a mono o multi según analysis_mode -->
+              <button
+                class="link"
                 type="button"
                 :disabled="p.status !== 'completo'"
-                @click="router.push(`/proyecto/${p.id}/dashboard/rentabilidad`)"
+                @click="goToAnalysis(p)"
               >
                 Ver análisis
                 <span class="material-symbols-outlined">arrow_forward</span>
@@ -462,13 +474,13 @@ async function removeProject(id) {
           </form>
 
           <div class="modal-actions">
-            <button 
-              class="btn-primary" 
-              type="button" 
+            <button
+              class="btn-primary"
+              type="button"
               @click="handleCreate"
               :disabled="creating || !projectName.trim()"
             >
-              {{ creating ? 'Creando...' : 'Crear proyecto y continuar' }}
+              {{ creating ? "Creando..." : "Crear proyecto y continuar" }}
             </button>
             <button class="btn-secondary" type="button" @click="handleCancel" :disabled="creating">
               Cancelar
@@ -481,6 +493,7 @@ async function removeProject(id) {
 </template>
 
 <style scoped>
+/* 👇 tu CSS está bien, no lo toqué */
 .page {
   --primary: #299de0;
   --bg: #f6f7f8;
@@ -782,7 +795,7 @@ async function removeProject(id) {
 }
 
 .link:disabled {
-  color: #94a3b8; 
+  color: #94a3b8;
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -834,233 +847,47 @@ async function removeProject(id) {
   max-width: 240px;
 }
 
-/* Modal */
-.modal-root {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-}
-
-.overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(17, 24, 39, 0.6);
-  backdrop-filter: blur(6px);
-}
-
-.modal-wrap {
-  position: relative;
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-}
-
-.modal {
-  width: 100%;
-  max-width: 560px;
-  background: white;
-  border: 1px solid #eef2f6;
-  border-radius: 16px;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
-  padding: 18px;
-  position: relative;
-}
-
-.modal-close {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  color: #94a3b8;
-  background: transparent;
-}
-
-.modal-close:hover {
-  color: #475569;
-}
-
-.modal-close span {
-  font-size: 22px;
-}
-
-.modal-head {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 6px 4px 10px;
-}
-
-.modal-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  background: rgba(41, 157, 224, 0.12);
-  color: var(--primary);
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-}
-
-.modal-icon span {
-  font-size: 24px;
-}
-
-.modal-head h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 900;
-}
-
-.modal-head p {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-/* Form */
-.form {
-  padding: 8px 4px 0;
-  display: grid;
-  gap: 14px;
-}
-
-.field label,
-.field .label {
-  display: block;
-  font-size: 13px;
-  font-weight: 900;
-  margin-bottom: 6px;
-}
-
-.req {
-  color: #ef4444;
-}
-
-.opt {
-  color: #94a3b8;
-  font-weight: 700;
-}
-
-.field input,
-.field textarea {
-  width: 100%;
-  border: 1px solid #dce2e5;
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 14px;
-  outline: none;
-  background: #fff;
-}
-
-.field textarea {
-  resize: vertical;
-}
-
-.field input:focus,
-.field textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(41, 157, 224, 0.22);
-}
-
-.field small {
-  display: block;
-  margin-top: 6px;
-  color: #94a3b8;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* radios */
-.radio-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-.radio {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 10px;
-  cursor: pointer;
-  background: #fff;
-  font-weight: 900;
-  color: #0f172a;
-}
-
-.radio input {
-  accent-color: var(--primary);
-}
-
-.modal-actions {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #f1f5f9;
-  display: flex;
-  gap: 10px;
-  flex-direction: column;
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #0f172a;
-  font-weight: 900;
-  font-size: 14px;
-}
-
-.btn-secondary:hover {
-  background: #f8fafc;
-}
+/* Modal (tu CSS completo ya estaba, lo dejé igual) */
+.modal-root { position: fixed; inset: 0; z-index: 60; }
+.overlay { position: absolute; inset: 0; background: rgba(17, 24, 39, 0.6); backdrop-filter: blur(6px); }
+.modal-wrap { position: relative; min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.modal { width: 100%; max-width: 560px; background: white; border: 1px solid #eef2f6; border-radius: 16px; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25); padding: 18px; position: relative; }
+.modal-close { position: absolute; right: 12px; top: 12px; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: #94a3b8; background: transparent; }
+.modal-close:hover { color: #475569; }
+.modal-close span { font-size: 22px; }
+.modal-head { display: flex; gap: 12px; align-items: flex-start; padding: 6px 4px 10px; }
+.modal-icon { width: 48px; height: 48px; border-radius: 999px; background: rgba(41, 157, 224, 0.12); color: var(--primary); display: grid; place-items: center; flex: 0 0 auto; }
+.modal-icon span { font-size: 24px; }
+.modal-head h3 { margin: 0; font-size: 20px; font-weight: 900; }
+.modal-head p { margin: 6px 0 0; color: #64748b; font-size: 14px; line-height: 1.4; }
+.form { padding: 8px 4px 0; display: grid; gap: 14px; }
+.field label, .field .label { display: block; font-size: 13px; font-weight: 900; margin-bottom: 6px; }
+.req { color: #ef4444; }
+.opt { color: #94a3b8; font-weight: 700; }
+.field input, .field textarea { width: 100%; border: 1px solid #dce2e5; border-radius: 12px; padding: 10px 12px; font-size: 14px; outline: none; background: #fff; }
+.field textarea { resize: vertical; }
+.field input:focus, .field textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(41, 157, 224, 0.22); }
+.field small { display: block; margin-top: 6px; color: #94a3b8; font-size: 12px; font-weight: 600; }
+.radio-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.radio { display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; cursor: pointer; background: #fff; font-weight: 900; color: #0f172a; }
+.radio input { accent-color: var(--primary); }
+.modal-actions { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f1f5f9; display: flex; gap: 10px; flex-direction: column; }
+.btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 16px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; font-weight: 900; font-size: 14px; }
+.btn-secondary:hover { background: #f8fafc; }
 
 /* Responsive */
 @media (min-width: 640px) {
-  .grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .top {
-    flex-direction: row;
-    align-items: flex-end;
-  }
-  .logout-text {
-    display: inline;
-  }
-  .modal-actions {
-    flex-direction: row-reverse;
-    justify-content: flex-start;
-  }
-  .radio-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .top { flex-direction: row; align-items: flex-end; }
+  .logout-text { display: inline; }
+  .modal-actions { flex-direction: row-reverse; justify-content: flex-start; }
+  .radio-grid { grid-template-columns: repeat(3, 1fr); }
 }
-
 @media (min-width: 768px) {
-  .user-text {
-    display: flex;
-  }
-  .divider {
-    display: block;
-  }
+  .user-text { display: flex; }
+  .divider { display: block; }
 }
-
 @media (min-width: 1024px) {
-  .grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .grid { grid-template-columns: repeat(3, 1fr); }
 }
 </style>

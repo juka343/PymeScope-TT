@@ -2,17 +2,18 @@
 import { RouterView } from "vue-router";
 import DashboardTopbar from "@/components/app/DashboardTopbar.vue";
 import DashboardSidebar from "@/components/app/DashboardSidebar.vue";
+import DashboardTopbarMulti from "@/components/app/DashboardTopbarMulti.vue";
 </script>
 
 <template>
   <div class="dashboard-layout">
     <!-- TOPBAR -->
-    <DashboardTopbar />
+    <DashboardTopbarMulti />
 
     <!-- BODY -->
     <div class="dashboard-body">
       <!-- SIDEBAR -->
-      <DashboardSidebar mode="mono"/>
+      <DashboardSidebar mode="multi"/>
 
       <!-- CONTENT -->
       <main class="dashboard-content">

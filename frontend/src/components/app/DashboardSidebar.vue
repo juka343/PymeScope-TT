@@ -2,12 +2,24 @@
 import { useRoute } from "vue-router";
 import { computed } from "vue";
 
+const props = defineProps({
+  // "mono" -> /dashboard
+  // "multi" -> /dashboard-multi
+  mode: { type: String, default: "mono" },
+});
+
 const route = useRoute();
 
 const projectId = computed(() => route.params.id_proyecto);
 
+const base = computed(() => {
+  const segment = props.mode === "multi" ? "dashboard-multi" : "dashboard";
+  return `/proyecto/${projectId.value}/${segment}`;
+});
+
 const isActive = (section) => {
-  return route.path.endsWith(section);
+  // más robusto que endsWith (evita falsos positivos raros)
+  return route.path.split("/").pop() === section;
 };
 </script>
 
@@ -18,7 +30,7 @@ const isActive = (section) => {
       <p class="side-title">RESUMEN RAZONES FINANCIERAS</p>
 
       <RouterLink
-        :to="`/proyecto/${projectId}/dashboard/resumen`"
+        :to="`${base}/resumen`"
         class="side-link"
         :class="{ active: isActive('resumen') }"
       >
@@ -32,7 +44,7 @@ const isActive = (section) => {
       <p class="side-title">RAZONES FINANCIERAS</p>
 
       <RouterLink
-        :to="`/proyecto/${projectId}/dashboard/rentabilidad`"
+        :to="`${base}/rentabilidad`"
         class="side-link"
         :class="{ active: isActive('rentabilidad') }"
       >
@@ -41,7 +53,7 @@ const isActive = (section) => {
       </RouterLink>
 
       <RouterLink
-        :to="`/proyecto/${projectId}/dashboard/liquidez`"
+        :to="`${base}/liquidez`"
         class="side-link"
         :class="{ active: isActive('liquidez') }"
       >
@@ -50,7 +62,7 @@ const isActive = (section) => {
       </RouterLink>
 
       <RouterLink
-        :to="`/proyecto/${projectId}/dashboard/endeudamiento`"
+        :to="`${base}/endeudamiento`"
         class="side-link"
         :class="{ active: isActive('endeudamiento') }"
       >
@@ -59,7 +71,7 @@ const isActive = (section) => {
       </RouterLink>
 
       <RouterLink
-        :to="`/proyecto/${projectId}/dashboard/rotacion`"
+        :to="`${base}/rotacion`"
         class="side-link"
         :class="{ active: isActive('rotacion') }"
       >
@@ -68,7 +80,7 @@ const isActive = (section) => {
       </RouterLink>
 
       <RouterLink
-        :to="`/proyecto/${projectId}/dashboard/estructura`"
+        :to="`${base}/estructura`"
         class="side-link"
         :class="{ active: isActive('estructura') }"
       >
@@ -82,7 +94,7 @@ const isActive = (section) => {
       <p class="side-title">PROYECCIONES PROFORMA</p>
 
       <RouterLink
-        :to="`/proyecto/${projectId}/dashboard/proyecciones`"
+        :to="`${base}/proyecciones`"
         class="side-link"
         :class="{ active: isActive('proyecciones') }"
       >
