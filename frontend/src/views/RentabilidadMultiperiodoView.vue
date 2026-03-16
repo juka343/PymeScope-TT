@@ -1,347 +1,377 @@
 <script setup>
 import { computed, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
 
+/**
+ * UI demo: puedes conectar estos valores a Firestore después.
+ * Lo importante aquí: selectedMetric controla qué gráfica se muestra.
+ */
 
-// === Dummy data (luego lo conectas a backend / Firestore) ===
-const view = ref({
-  title: "Rentabilidad",
-  helpLabel: "Ir a centro de aprendizaje",
-  description: "Evalúa la capacidad de la empresa para generar utilidades",
-  note: "Indicadores calculados a partir del Estado de Resultados",
-});
-
-// “Periodo base” solo UI
-const basePeriod = ref("Q2 2024");
-
-// KPIs multiperiodo (valor actual + delta vs base)
-const kpis = ref([
+const metrics = [
   {
-    label: "Margen de Rentabilidad",
-    value: "12.8%",
-    dot: "ok",
-    delta: { type: "up", value: "+0.5%" },
+    key: "margen",
+    kpiTitle: "Margen de Rentabilidad",
+    kpiValue: "12.8%",
+    status: "ok",
+    deltaType: "up",
+    deltaValue: "+0.5%",
+    deltaText: "vs periodo base",
+
+    chartTitle: "Evolución de Margen de Rentabilidad",
+    chartSubtitle: "Tendencia histórica de Margen de Rentabilidad por trimestre",
+    legendLabel: "Margen de Rentabilidad (%)",
+    yAxisLabels: ["20%", "15%", "10%", "5%"],
+
+    // puntos del SVG (x fijo, y cambia por métrica)
+    points: [
+      { x: 50, y: 200, label: "Q3 '23" },
+      { x: 225, y: 190, label: "Q4 '23" },
+      { x: 400, y: 170, label: "Q1 '24" },
+      { x: 575, y: 185, label: "Q2 '24" },
+      { x: 750, y: 160, label: "Q3 '24", bold: true },
+    ],
   },
   {
-    label: "Rendimiento sobre Activos Totales (RAT)",
-    value: "15.4%",
-    dot: "ok",
-    delta: { type: "up", value: "+1.2%" },
-  },
-  {
-    label: "Rendimiento sobre el Patrimonio",
-    value: "21.0%",
-    dot: "warn",
-    delta: { type: "down", value: "-0.8%" },
-  },
-]);
+    key: "rat",
+    kpiTitle: "Rendimiento sobre Activos Totales (RAT)",
+    kpiValue: "15.4%",
+    status: "ok",
+    deltaType: "up",
+    deltaValue: "+1.2%",
+    deltaText: "vs periodo base",
 
-// Tabla comparativa multiperiodo
-const periodRows = ref([
-  {
-    period: "Q3 2024",
-    ingresos: "$4,250,000",
-    utilidad: "$845,000",
-    margen: "19.8%",
-    varTrimestral: "+5.2%",
-    varType: "up",
-    margenPill: "blue",
-  },
-  {
-    period: "Q2 2024",
-    ingresos: "$3,820,000",
-    utilidad: "$802,000",
-    margen: "21.0%",
-    varTrimestral: "+2.8%",
-    varType: "up",
-    margenPill: "gray",
-  },
-  {
-    period: "Q1 2024",
-    ingresos: "$3,500,000",
-    utilidad: "$715,000",
-    margen: "20.4%",
-    varTrimestral: "-1.2%",
-    varType: "down",
-    margenPill: "gray",
-  },
-]);
+    chartTitle: "Evolución de RAT",
+    chartSubtitle: "Tendencia histórica de RAT por trimestre",
+    legendLabel: "RAT (%)",
+    yAxisLabels: ["20%", "15%", "10%", "5%"],
 
-const interpretation = ref(
-  "La empresa presenta una mejora sostenida en el margen operativo, aunque el margen neto se ve afectado por costos financieros elevados."
+    points: [
+      { x: 50, y: 210, label: "Q3 '23" },
+      { x: 225, y: 195, label: "Q4 '23" },
+      { x: 400, y: 180, label: "Q1 '24" },
+      { x: 575, y: 165, label: "Q2 '24" },
+      { x: 750, y: 150, label: "Q3 '24", bold: true },
+    ],
+  },
+  {
+    key: "roe",
+    kpiTitle: "Rendimiento sobre el Patrimonio",
+    kpiValue: "21.0%",
+    status: "warn",
+    deltaType: "down",
+    deltaValue: "-0.8%",
+    deltaText: "vs periodo base",
+
+    chartTitle: "Evolución de ROE",
+    chartSubtitle: "Tendencia histórica de ROE por trimestre",
+    legendLabel: "ROE (%)",
+    yAxisLabels: ["30%", "25%", "20%", "15%"],
+
+    points: [
+      { x: 50, y: 160, label: "Q3 '23" },
+      { x: 225, y: 150, label: "Q4 '23" },
+      { x: 400, y: 165, label: "Q1 '24" },
+      { x: 575, y: 155, label: "Q2 '24" },
+      { x: 750, y: 170, label: "Q3 '24", bold: true },
+    ],
+  },
+];
+
+const selectedMetric = ref("margen");
+
+const activeMetric = computed(
+  () => metrics.find((m) => m.key === selectedMetric.value) || metrics[0]
 );
 
-const recommendations = ref([
-  "Control de costos operativos",
-  "Revisión de estrategia de precios",
-  "Optimización de procesos internos",
-]);
-
-const route = useRoute();
-const router=useRouter();
-
-function handleLearnMore() {
-
-  const resolved = router.resolve({
-    name: "teoriaRentabilidad", // el name de tu ruta
-  });
-
-  window.open(resolved.href, "_blank", "noopener,noreferrer");
+function selectMetric(key) {
+  selectedMetric.value = key;
 }
 
-const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
+// helpers SVG
+const baselineY = 230;
+
+const linePath = computed(() => {
+  const pts = activeMetric.value.points;
+  if (!pts.length) return "";
+  return pts
+    .map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`))
+    .join(" ");
+});
+
+const areaPath = computed(() => {
+  const pts = activeMetric.value.points;
+  if (!pts.length) return "";
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const mid = pts.map((p) => `L${p.x} ${p.y}`).join(" ");
+  return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
+});
 </script>
 
 <template>
-  <div class="wrap">
-    <!-- TITLE -->
-    <div class="head">
-      <div class="head-title">
-        <h1>{{ view.title }}</h1>
+  <main class="main">
+    <div class="container">
+      <!-- Título -->
+      <section class="title">
+        <div class="title-row">
+          <h1>Rentabilidad</h1>
 
-        <button class="btn-info" type="button" @click="handleLearnMore">
-          <span class="material-symbols-outlined">info</span>
-          <span>{{ view.helpLabel }}</span>
-        </button>
-      </div>
-
-      <div class="sub">
-        <p>{{ view.description }}</p>
-        <span class="dot" aria-hidden="true">•</span>
-        <p class="small">{{ view.note }}</p>
-      </div>
-    </div>
-
-    <!-- KPIs -->
-    <section class="kpis">
-      <article v-for="k in kpis" :key="k.label" class="kpi">
-        <div class="kpi-top">
-          <p class="kpi-label">{{ k.label }}</p>
-          <span class="kpi-dot" :class="k.dot" aria-hidden="true"></span>
+          <router-link to="/teoriaRentabilidad" target="_blank" class="btn-info">
+            <span class="material-symbols-outlined">info</span>
+            <span>Saber más</span>
+          </router-link>
         </div>
 
-        <div class="kpi-value">{{ k.value }}</div>
+        <div class="subtitle">
+          <p class="subtitle-main">Evalúa la capacidad de la empresa para generar utilidades</p>
+          <span class="dot">•</span>
+          <p class="subtitle-secondary">Indicadores calculados a partir del Estado de Resultados</p>
+        </div>
+      </section>
 
-        <div class="kpi-delta">
-          <span
-            class="delta-badge"
-            :class="k.delta.type === 'up' ? 'delta-up' : 'delta-down'"
-          >
-            <span class="material-symbols-outlined">
-              {{ k.delta.type === "up" ? "trending_up" : "trending_down" }}
+      <!-- KPIs (clic cambia gráfica) -->
+      <section class="kpis">
+        <button
+          v-for="m in metrics"
+          :key="m.key"
+          type="button"
+          class="kpi"
+          :class="{ active: selectedMetric === m.key }"
+          @click="selectMetric(m.key)"
+        >
+          <div class="kpi-top">
+            <p class="kpi-title" :class="{ activeTitle: selectedMetric === m.key }">
+              {{ m.kpiTitle }}
+            </p>
+
+            <span class="status-dot" :class="m.status" aria-hidden="true"></span>
+          </div>
+
+          <div class="kpi-value">{{ m.kpiValue }}</div>
+
+          <div class="kpi-delta">
+            <span class="chip" :class="m.deltaType === 'up' ? 'chip-up' : 'chip-down'">
+              <span class="material-symbols-outlined">
+                {{ m.deltaType === "up" ? "trending_up" : "trending_down" }}
+              </span>
+              {{ m.deltaValue }}
             </span>
-            {{ k.delta.value }}
-          </span>
 
-          <span class="delta-note">vs periodo base</span>
-        </div>
-      </article>
-    </section>
-
-    <!-- CHART PANEL -->
-    <section class="panel">
-      <div class="panel-head">
-        <div>
-          <h3>Evolución de Rentabilidad</h3>
-          <p>Comparativa de Utilidad Neta y Margen Neto por trimestre</p>
-        </div>
-
-        <div class="legend">
-          <div class="legend-item">
-            <span class="legend-dot dot-utilidad"></span>
-            <span>Utilidad Neta ($)</span>
+            <span class="kpi-delta-text">{{ m.deltaText }}</span>
           </div>
-          <div class="legend-item">
-            <span class="legend-dot dot-margen"></span>
-            <span>Margen Neto (%)</span>
+        </button>
+      </section>
+
+      <!-- Gráfica (dinámica) -->
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h3>{{ activeMetric.chartTitle }}</h3>
+            <p>{{ activeMetric.chartSubtitle }}</p>
+          </div>
+
+          <div class="legend">
+            <div class="legend-item">
+              <span class="legend-dot legend-primary"></span>
+              <span>{{ activeMetric.legendLabel }}</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="chart">
-        <!-- SVG estático (igual que tu HTML) -->
-        <svg class="chart-svg" fill="none" preserveAspectRatio="none" viewBox="0 0 800 300">
-          <defs>
-            <linearGradient id="gradientUtilidad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stop-color="#299de0" stop-opacity="0.15" />
-              <stop offset="100%" stop-color="#299de0" stop-opacity="0" />
-            </linearGradient>
-          </defs>
+        <div class="chart">
+          <svg class="chart-svg" fill="none" preserveAspectRatio="none" viewBox="0 0 800 300">
+            <defs>
+              <linearGradient id="gradientMetric" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#299de0" stop-opacity="0.15"></stop>
+                <stop offset="100%" stop-color="#299de0" stop-opacity="0"></stop>
+              </linearGradient>
+            </defs>
 
-          <line x1="50" y1="50" x2="750" y2="50" stroke="#f1f5f9" stroke-width="1" />
-          <line x1="50" y1="110" x2="750" y2="110" stroke="#f1f5f9" stroke-width="1" />
-          <line x1="50" y1="170" x2="750" y2="170" stroke="#f1f5f9" stroke-width="1" />
-          <line x1="50" y1="230" x2="750" y2="230" stroke="#f1f5f9" stroke-width="1" />
+            <!-- grid -->
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="50" y2="50"></line>
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="110" y2="110"></line>
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="170" y2="170"></line>
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230"></line>
 
-          <path
-            d="M50 230 L 50 180 Q 150 160 225 140 T 400 130 T 575 100 T 750 60 L 750 230 Z"
-            fill="url(#gradientUtilidad)"
-          />
-          <path
-            d="M50 180 Q 150 160 225 140 T 400 130 T 575 100 T 750 60"
-            fill="none"
-            stroke="#299de0"
-            stroke-linecap="round"
-            stroke-width="3"
-          />
-          <path
-            d="M50 200 L 225 190 L 400 170 L 575 185 L 750 160"
-            fill="none"
-            stroke="#1e293b"
-            stroke-dasharray="6 4"
-            stroke-linecap="round"
-            stroke-width="2"
-          />
+            <!-- area + line -->
+            <path :d="areaPath" fill="url(#gradientMetric)"></path>
+            <path
+              :d="linePath"
+              fill="none"
+              stroke="#299de0"
+              stroke-linecap="round"
+              stroke-width="3"
+            ></path>
 
-          <circle cx="50" cy="180" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="225" cy="140" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="400" cy="130" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="575" cy="100" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="750" cy="60" r="4" fill="white" stroke="#299de0" stroke-width="2" />
+            <!-- points -->
+            <circle
+              v-for="(p, idx) in activeMetric.points"
+              :key="idx"
+              :cx="p.x"
+              :cy="p.y"
+              fill="white"
+              r="4"
+              stroke="#299de0"
+              stroke-width="2"
+            ></circle>
 
-          <circle cx="50" cy="200" r="3" fill="#1e293b" />
-          <circle cx="225" cy="190" r="3" fill="#1e293b" />
-          <circle cx="400" cy="170" r="3" fill="#1e293b" />
-          <circle cx="575" cy="185" r="3" fill="#1e293b" />
-          <circle cx="750" cy="160" r="3" fill="#1e293b" />
+            <!-- x labels -->
+            <text
+              v-for="(p, idx) in activeMetric.points"
+              :key="`t-${idx}`"
+              :x="p.x"
+              y="260"
+              text-anchor="middle"
+              font-family="Inter, sans-serif"
+              font-size="12"
+              :font-weight="p.bold ? 'bold' : 'normal'"
+              :fill="p.bold ? '#0e161b' : '#507c95'"
+            >
+              {{ p.label }}
+            </text>
+          </svg>
 
-          <text x="50" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q3 '23</text>
-          <text x="225" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q4 '23</text>
-          <text x="400" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q1 '24</text>
-          <text x="575" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q2 '24</text>
-          <text
-            x="750"
-            y="260"
-            text-anchor="middle"
-            font-size="12"
-            font-weight="bold"
-            fill="#0e161b"
-          >
-            Q3 '24
-          </text>
-        </svg>
+          <div class="chart-y">
+            <span v-for="(lab, i) in activeMetric.yAxisLabels" :key="i">{{ lab }}</span>
+          </div>
+        </div>
+      </section>
 
-        <div class="axis axis-left">
-          <span>$1M</span>
-          <span>$750k</span>
-          <span>$500k</span>
-          <span>$250k</span>
+      <!-- Tabla (por ahora estática como tu HTML) -->
+      <section class="table-card">
+        <div class="table-head">
+          <h3>Comparativo por Periodo</h3>
         </div>
 
-        <div class="axis axis-right">
-          <span>20%</span>
-          <span>15%</span>
-          <span>10%</span>
-          <span>5%</span>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Periodo</th>
+                <th>Ingresos</th>
+                <th>Utilidad Neta</th>
+                <th>Margen Neto</th>
+                <th class="right">Var. Trimestral</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr>
+                <td class="strong">Q3 2024</td>
+                <td class="muted">$4,250,000</td>
+                <td class="muted">$845,000</td>
+                <td><span class="badge badge-blue">19.8%</span></td>
+                <td class="right up">+5.2%</td>
+              </tr>
+
+              <tr>
+                <td class="strong">Q2 2024</td>
+                <td class="muted">$3,820,000</td>
+                <td class="muted">$802,000</td>
+                <td><span class="badge badge-gray">21.0%</span></td>
+                <td class="right up">+2.8%</td>
+              </tr>
+
+              <tr>
+                <td class="strong">Q1 2024</td>
+                <td class="muted">$3,500,000</td>
+                <td class="muted">$715,000</td>
+                <td><span class="badge badge-gray">20.4%</span></td>
+                <td class="right down">-1.2%</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- TABLE -->
-    <section class="table-panel">
-      <div class="table-head">
-        <h3>Comparativo por Periodo</h3>
-        <span class="base-pill">{{ basePeriodLabel }}</span>
-      </div>
+      <!-- Interpretación + recomendaciones -->
+      <section class="blocks">
+        <article class="block block-info">
+          <div class="block-bg-icon" aria-hidden="true">
+            <span class="material-symbols-outlined">warning</span>
+          </div>
 
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Periodo</th>
-              <th>Ingresos</th>
-              <th>Utilidad Neta</th>
-              <th>Margen Neto</th>
-              <th class="right">Var. Trimestral</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in periodRows" :key="r.period">
-              <td class="strong">{{ r.period }}</td>
-              <td class="muted">{{ r.ingresos }}</td>
-              <td class="muted">{{ r.utilidad }}</td>
-              <td>
-                <span class="pill" :class="r.margenPill === 'blue' ? 'pill-blue' : 'pill-gray'">
-                  {{ r.margen }}
-                </span>
-              </td>
-              <td class="right" :class="r.varType === 'up' ? 'var-up' : 'var-down'">
-                {{ r.varTrimestral }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+          <div class="block-body">
+            <div class="block-title">
+              <div class="block-icon block-icon-blue">
+                <span class="material-symbols-outlined">insights</span>
+              </div>
+              <h3>Interpretación y alertas</h3>
+            </div>
 
-    <!-- NOTES -->
-    <section class="notes">
-      <article class="note">
-        <div class="note-bg" aria-hidden="true">
-          <span class="material-symbols-outlined">warning</span>
-        </div>
+            <p>
+              La empresa presenta una mejora sostenida en el margen operativo, aunque el margen neto se ve afectado
+              por costos financieros elevados.
+            </p>
+          </div>
+        </article>
 
-        <div class="note-head">
-          <span class="tag tag-blue">
-            <span class="material-symbols-outlined">insights</span>
-          </span>
-          <h3>Interpretación y alertas</h3>
-        </div>
+        <article class="block block-reco">
+          <div class="block-title">
+            <div class="block-icon block-icon-green">
+              <span class="material-symbols-outlined">checklist</span>
+            </div>
+            <h3>Recomendaciones</h3>
+          </div>
 
-        <p class="note-text">{{ interpretation }}</p>
-      </article>
+          <ul class="reco-list">
+            <li>
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>Control de costos operativos</span>
+            </li>
+            <li>
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>Revisión de estrategia de precios</span>
+            </li>
+            <li>
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>Optimización de procesos internos</span>
+            </li>
+          </ul>
+        </article>
+      </section>
 
-      <article class="note">
-        <div class="note-head">
-          <span class="tag tag-green">
-            <span class="material-symbols-outlined">checklist</span>
-          </span>
-          <h3>Recomendaciones</h3>
-        </div>
-
-        <ul class="list">
-          <li v-for="(item, idx) in recommendations" :key="idx">
-            <span class="material-symbols-outlined">check_circle</span>
-            <span>{{ item }}</span>
-          </li>
-        </ul>
-      </article>
-    </section>
-
-    <footer class="foot">
-      <p>
-        Todos los datos son confidenciales.<br />
-        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
-      </p>
-    </footer>
-  </div>
+      <footer class="footer">
+        <p>
+          Todos los datos son confidenciales. <br />
+          Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
+        </p>
+      </footer>
+    </div>
+  </main>
 </template>
 
 <style scoped>
-.wrap {
-  width: min(1200px, 100%);
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  background: #f8fafb;
+}
+
+.container {
+  width: min(1200px, 92vw);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-/* Title */
-.head {
+/* ===== Title ===== */
+.title {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.head-title {
+.title-row {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.head-title h1 {
+.title-row h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 900;
   color: #0e161b;
 }
@@ -357,7 +387,8 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   color: #0e161b;
   font-size: 12px;
   font-weight: 800;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .btn-info:hover {
@@ -369,13 +400,23 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   font-size: 18px;
 }
 
-.sub {
+.subtitle {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+}
+
+.subtitle-main {
+  margin: 0;
   color: #507c95;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
+}
+
+.subtitle-secondary {
+  margin: 0;
+  color: #507c95;
+  font-size: 12px;
 }
 
 .dot {
@@ -383,64 +424,96 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   color: #d1d5db;
 }
 
-.small {
-  font-size: 12px;
+@media (min-width: 640px) {
+  .subtitle {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .dot {
+    display: inline;
+  }
 }
 
-/* KPIs */
+/* ===== KPIs ===== */
 .kpis {
   display: grid;
   grid-template-columns: 1fr;
   gap: 14px;
 }
 
+@media (min-width: 768px) {
+  .kpis {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+}
+
 .kpi {
-  background: #fff;
-  border: 1px solid #e8eff3;
+  text-align: left;
   border-radius: 14px;
+  border: 1px solid #e8eff3;
+  background: white;
   padding: 18px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.15s ease;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
 }
 
 .kpi:hover {
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  border-color: rgba(41, 157, 224, 0.5);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.06);
+}
+
+.kpi:active {
+  transform: translateY(1px);
+}
+
+.kpi.active {
+  border: 2px solid #299de0;
+  background: rgba(41, 157, 224, 0.12);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.08);
 }
 
 .kpi-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
-.kpi-label {
+.kpi-title {
   margin: 0;
-  color: #507c95;
   font-size: 13px;
   font-weight: 800;
+  color: #507c95;
 }
 
-.kpi-dot {
+.kpi-title.activeTitle {
+  color: #299de0;
+  font-weight: 900;
+}
+
+.status-dot {
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
-.kpi-dot.ok {
+.status-dot.ok {
   background: #22c55e;
   box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
 }
 
-.kpi-dot.warn {
+.status-dot.warn {
   background: #facc15;
   box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
 }
 
 .kpi-value {
-  margin-top: 10px;
-  font-size: 24px;
+  margin-top: 6px;
+  font-size: 26px;
   font-weight: 900;
   color: #0e161b;
 }
@@ -452,7 +525,7 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   gap: 8px;
 }
 
-.delta-badge {
+.chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -462,36 +535,35 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   font-weight: 900;
 }
 
-.delta-badge .material-symbols-outlined {
+.chip .material-symbols-outlined {
   font-size: 14px;
 }
 
-.delta-up {
+.chip-up {
   background: #dcfce7;
   color: #078836;
 }
 
-.delta-down {
+.chip-down {
   background: #fee2e2;
   color: #e73508;
 }
 
-.delta-note {
+.kpi-delta-text {
   font-size: 12px;
-  font-weight: 700;
   color: #507c95;
 }
 
-/* Panel (chart) */
-.panel {
-  background: #fff;
+/* ===== Card (Chart) ===== */
+.card {
   border: 1px solid #e8eff3;
+  background: white;
   border-radius: 14px;
   padding: 18px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.04);
 }
 
-.panel-head {
+.card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -499,34 +571,32 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   flex-wrap: wrap;
 }
 
-.panel-head h3 {
+.card-head h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 900;
   color: #0e161b;
 }
 
-.panel-head p {
+.card-head p {
   margin: 6px 0 0;
   font-size: 12px;
-  font-weight: 700;
   color: #507c95;
 }
 
 .legend {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .legend-item {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #0e161b;
   font-size: 12px;
-  font-weight: 800;
+  color: #0e161b;
+  font-weight: 700;
 }
 
 .legend-dot {
@@ -535,19 +605,14 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   border-radius: 999px;
 }
 
-.dot-utilidad {
+.legend-primary {
   background: #299de0;
-}
-
-.dot-margen {
-  background: #1e293b;
 }
 
 .chart {
   position: relative;
-  width: 100%;
-  height: 300px;
   margin-top: 12px;
+  height: 300px;
 }
 
 .chart-svg {
@@ -555,49 +620,34 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   height: 100%;
 }
 
-.axis {
+.chart-y {
   position: absolute;
+  left: 0;
   top: 0;
   bottom: 32px;
+  width: 42px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  color: #507c95;
   font-size: 12px;
   font-weight: 700;
-  color: #507c95;
-}
-
-.axis-left {
-  left: 0;
-  width: 48px;
   text-align: right;
-  padding-right: 8px;
+  padding-right: 10px;
 }
 
-.axis-right {
-  right: 0;
-  width: 48px;
-  text-align: left;
-  padding-left: 8px;
-}
-
-/* Table */
-.table-panel {
-  background: #fff;
+/* ===== Table ===== */
+.table-card {
   border: 1px solid #e8eff3;
+  background: white;
   border-radius: 14px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.04);
   overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 }
 
 .table-head {
   padding: 14px 18px;
   border-bottom: 1px solid #e8eff3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
 }
 
 .table-head h3 {
@@ -607,18 +657,6 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   color: #0e161b;
 }
 
-.base-pill {
-  font-size: 10px;
-  font-weight: 900;
-  color: #2563eb;
-  background: #eff6ff;
-  border: 1px solid #dbeafe;
-  padding: 4px 8px;
-  border-radius: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .table-wrap {
   overflow-x: auto;
 }
@@ -626,34 +664,37 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
 .table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 860px;
+  font-size: 13px;
 }
 
 .table thead th {
-  text-align: left;
-  font-size: 11px;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
   color: #507c95;
   background: #f8fafb;
   border-bottom: 1px solid #e8eff3;
   padding: 12px 18px;
+  text-align: left;
   font-weight: 900;
 }
 
 .table tbody td {
-  padding: 14px 18px;
+  padding: 12px 18px;
   border-bottom: 1px solid #e8eff3;
-  font-size: 13px;
+  color: #0e161b;
 }
 
 .table tbody tr:hover {
-  background: #f9fafb;
+  background: #fafafa;
+}
+
+.right {
+  text-align: right;
 }
 
 .strong {
   font-weight: 900;
-  color: #0e161b;
 }
 
 .muted {
@@ -661,79 +702,92 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   font-weight: 700;
 }
 
-.right {
-  text-align: right;
-}
-
-.pill {
+.badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 10px;
+  padding: 5px 8px;
+  border-radius: 8px;
 }
 
-.pill-blue {
+.badge-blue {
   background: #eff6ff;
   color: #1d4ed8;
 }
 
-.pill-gray {
+.badge-gray {
   background: #f3f4f6;
   color: #374151;
 }
 
-.var-up {
+.up {
   color: #16a34a;
-  font-weight: 800;
+  font-weight: 900;
 }
 
-.var-down {
+.down {
   color: #ef4444;
-  font-weight: 800;
+  font-weight: 900;
 }
 
-/* Notes */
-.notes {
+/* ===== Blocks ===== */
+.blocks {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 14px;
+  gap: 16px;
 }
 
-.note {
-  position: relative;
-  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
-  border: 1px solid #dbeafe;
+@media (min-width: 1024px) {
+  .blocks {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.block {
   border-radius: 14px;
-  padding: 16px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  border: 1px solid #dbeafe;
+  background: linear-gradient(135deg, #eff6ff, #ffffff);
+  padding: 18px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.04);
+  position: relative;
   overflow: hidden;
 }
 
-.note-bg {
+.block-info .block-bg-icon {
   position: absolute;
-  right: 10px;
-  top: 6px;
+  top: 0;
+  right: 0;
+  padding: 14px;
   opacity: 0.1;
 }
 
-.note-bg .material-symbols-outlined {
+.block-bg-icon .material-symbols-outlined {
   font-size: 120px;
   color: #299de0;
 }
 
-.note-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+.block-body {
   position: relative;
   z-index: 1;
 }
 
-.tag {
+.block-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.block-title h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.block-icon {
   width: 34px;
   height: 34px;
   border-radius: 10px;
@@ -741,94 +795,61 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   place-items: center;
 }
 
-.tag-blue {
+.block-icon .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.block-icon-blue {
   background: #dbeafe;
   color: #299de0;
 }
 
-.tag-green {
+.block-icon-green {
   background: #dcfce7;
   color: #15803d;
 }
 
-.tag .material-symbols-outlined {
-  font-size: 20px;
-}
-
-.note h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 900;
-  color: #0e161b;
-}
-
-.note-text {
+.block p {
   margin: 0;
   color: #0e161b;
-  font-weight: 700;
-  font-size: 14px;
-  line-height: 1.55;
-  position: relative;
-  z-index: 1;
+  line-height: 1.6;
+  font-size: 13px;
 }
 
-.list {
-  margin: 8px 0 0;
-  padding: 0;
+/* ===== Reco list ===== */
+.reco-list {
   list-style: none;
-  display: grid;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
-.list li {
+.reco-list li {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   color: #0e161b;
-  font-weight: 800;
   font-size: 13px;
+  font-weight: 700;
 }
 
-.list .material-symbols-outlined {
+.reco-list .material-symbols-outlined {
   color: #299de0;
   font-size: 18px;
   margin-top: 2px;
 }
 
-/* Footer */
-.foot {
-  margin: 8px 0 22px;
+/* ===== Footer ===== */
+.footer {
+  margin: 16px 0 6px;
   text-align: center;
   color: #9ca3af;
-  font-weight: 700;
   font-size: 12px;
 }
 
-.foot p {
+.footer p {
   margin: 0;
-}
-
-/* Responsive */
-@media (min-width: 640px) {
-  .sub {
-    flex-direction: row;
-    align-items: baseline;
-    gap: 10px;
-  }
-  .dot {
-    display: inline;
-  }
-}
-
-@media (min-width: 768px) {
-  .kpis {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (min-width: 1024px) {
-  .notes {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 </style>

@@ -1,238 +1,279 @@
 <script setup>
 import { computed, ref } from "vue";
 
-// === Dummy data (luego lo conectas a backend / Firestore) ===
-const view = ref({
-  title: "PRUEBA MULTI PANTALLA LIQUIDEZ, AUN NO ESTÁ LA INTERFAZ XDD, RIFATE MIENTRAS LA DE RENTABILIDAD SOLAMENTE",
-  helpLabel: "Saber más",
-  description: "Evalúa la capacidad de la empresa para generar utilidades",
-  note: "Indicadores calculados a partir del Estado de Resultados",
-});
+/**
+ * Dummy data (luego lo conectas a tu Firestore/API).
+ * Mantengo la UI tal cual tu Tailwind: KPIs seleccionables, chart SVG, “donuts”, tabla y cajas.
+ */
 
-// “Periodo base” solo UI
-const basePeriod = ref("Q2 2024");
+const activeKpi = ref("razon"); // razon | acida | capital
 
-// KPIs multiperiodo (valor actual + delta vs base)
 const kpis = ref([
   {
-    label: "Margen de Rentabilidad",
-    value: "12.8%",
-    dot: "ok",
-    delta: { type: "up", value: "+0.5%" },
+    key: "razon",
+    label: "Razón Circulante",
+    value: "1.85",
+    status: "ok",
+    deltaType: "up",
+    deltaValue: "+0.12",
+    deltaNote: "vs mes anterior",
   },
   {
-    label: "Rendimiento sobre Activos Totales (RAT)",
-    value: "15.4%",
-    dot: "ok",
-    delta: { type: "up", value: "+1.2%" },
+    key: "acida",
+    label: "Prueba Ácida",
+    value: "1.20",
+    status: "warn",
+    deltaType: "down",
+    deltaValue: "-0.05",
+    deltaNote: "vs mes anterior",
   },
   {
-    label: "Rendimiento sobre el Patrimonio",
-    value: "21.0%",
-    dot: "warn",
-    delta: { type: "down", value: "-0.8%" },
+    key: "capital",
+    label: "Capital de Trabajo",
+    value: "$1.25M",
+    status: "ok",
+    deltaType: "up",
+    deltaValue: "+5.4%",
+    deltaNote: "Recursos netos",
   },
 ]);
 
-// Tabla comparativa multiperiodo
-const periodRows = ref([
-  {
-    period: "Q3 2024",
-    ingresos: "$4,250,000",
-    utilidad: "$845,000",
-    margen: "19.8%",
-    varTrimestral: "+5.2%",
-    varType: "up",
-    margenPill: "blue",
-  },
-  {
-    period: "Q2 2024",
-    ingresos: "$3,820,000",
-    utilidad: "$802,000",
-    margen: "21.0%",
-    varTrimestral: "+2.8%",
-    varType: "up",
-    margenPill: "gray",
-  },
-  {
-    period: "Q1 2024",
-    ingresos: "$3,500,000",
-    utilidad: "$715,000",
-    margen: "20.4%",
-    varTrimestral: "-1.2%",
-    varType: "down",
-    margenPill: "gray",
-  },
-]);
+const selectedKpi = computed(() => kpis.value.find((k) => k.key === activeKpi.value) || kpis.value[0]);
 
-const interpretation = ref(
-  "La empresa presenta una mejora sostenida en el margen operativo, aunque el margen neto se ve afectado por costos financieros elevados."
-);
+const tableRows = ref([
+  { period: "Q3 '23", activo: "$2,664,500", pasivo: "$1,614,500", rc: "1.65", pa: "1.05", ct: "$1,050,000", highlight: false },
+  { period: "Q4 '23", activo: "$2,627,700", pasivo: "$1,527,700", rc: "1.72", pa: "1.10", ct: "$1,100,000", highlight: false },
+  { period: "Q1 '24", activo: "$2,624,300", pasivo: "$1,474,300", rc: "1.78", pa: "1.15", ct: "$1,150,000", highlight: false },
+  { period: "Q2 '24", activo: "$2,681,400", pasivo: "$1,481,400", rc: "1.81", pa: "1.18", ct: "$1,200,000", highlight: false },
+  { period: "Q3 '24", activo: "$2,720,500", pasivo: "$1,470,500", rc: "1.85", pa: "1.20", ct: "$1,250,000", highlight: true },
+]);
 
 const recommendations = ref([
-  "Control de costos operativos",
-  "Revisión de estrategia de precios",
-  "Optimización de procesos internos",
+  "Mejorar políticas de cobranza para reducir el ciclo de efectivo.",
+  "Optimizar niveles de inventario para liberar capital de trabajo.",
+  "Incrementar reservas de efectivo como contingencia operativa.",
 ]);
 
-function handleLearnMore() {
-  // UI only. Luego: modal, drawer, etc.
-  console.log("Saber más (rentabilidad)");
+function setActive(k) {
+  activeKpi.value = k;
 }
 
-const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
+function learnMore() {
+  // Aquí luego haces router.push a tu “Centro de aprendizaje” de Liquidez.
+  // Ej: router.push(`/proyecto/${route.params.id_proyecto}/dashboard-multi/learning/liquidez`)
+  console.log("TODO: navegar a teoría de Liquidez");
+}
 </script>
 
 <template>
   <div class="wrap">
     <!-- TITLE -->
-    <div class="head">
-      <div class="head-title">
-        <h1>{{ view.title }}</h1>
+    <div class="title">
+      <div class="title-row">
+        <h1>Liquidez</h1>
 
-        <button class="btn-info" type="button" @click="handleLearnMore">
+        <button class="btn-learn" type="button" @click="learnMore">
           <span class="material-symbols-outlined">info</span>
-          <span>{{ view.helpLabel }}</span>
+          <span>Saber más</span>
         </button>
       </div>
 
-      <div class="sub">
-        <p>{{ view.description }}</p>
+      <div class="subtitle">
+        <p>Capacidad de la empresa para cumplir con sus obligaciones a corto plazo</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">{{ view.note }}</p>
+        <p class="small">Indicadores calculados a partir del Balance General</p>
       </div>
     </div>
 
-    <!-- KPIs -->
+    <!-- KPI CARDS -->
     <section class="kpis">
-      <article v-for="k in kpis" :key="k.label" class="kpi">
+      <button
+        v-for="k in kpis"
+        :key="k.key"
+        type="button"
+        class="kpi"
+        :class="{ selected: activeKpi === k.key }"
+        @click="setActive(k.key)"
+      >
         <div class="kpi-top">
-          <p class="kpi-label">{{ k.label }}</p>
-          <span class="kpi-dot" :class="k.dot" aria-hidden="true"></span>
+          <p class="kpi-label" :class="{ 'kpi-label-selected': activeKpi === k.key }">{{ k.label }}</p>
+          <span class="kpi-dot" :class="k.status" aria-hidden="true"></span>
         </div>
 
         <div class="kpi-value">{{ k.value }}</div>
 
         <div class="kpi-delta">
           <span
-            class="delta-badge"
-            :class="k.delta.type === 'up' ? 'delta-up' : 'delta-down'"
+            class="delta-pill"
+            :class="k.deltaType === 'up' ? 'delta-up' : 'delta-down'"
           >
             <span class="material-symbols-outlined">
-              {{ k.delta.type === "up" ? "trending_up" : "trending_down" }}
+              {{ k.deltaType === "up" ? "trending_up" : "trending_down" }}
             </span>
-            {{ k.delta.value }}
+            {{ k.deltaValue }}
           </span>
-
-          <span class="delta-note">vs periodo base</span>
+          <span class="delta-note">{{ k.deltaNote }}</span>
         </div>
-      </article>
+      </button>
     </section>
 
     <!-- CHART PANEL -->
     <section class="panel">
       <div class="panel-head">
         <div>
-          <h3>Evolución de Rentabilidad</h3>
-          <p>Comparativa de Utilidad Neta y Margen Neto por trimestre</p>
+          <h3>Evolución de {{ selectedKpi.label }}</h3>
+          <p class="panel-sub">
+            Tendencia de {{ selectedKpi.label }} sobre el tiempo
+          </p>
         </div>
 
         <div class="legend">
           <div class="legend-item">
-            <span class="legend-dot dot-utilidad"></span>
-            <span>Utilidad Neta ($)</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-dot dot-margen"></span>
-            <span>Margen Neto (%)</span>
+            <span class="legend-dot" aria-hidden="true"></span>
+            <span>{{ selectedKpi.label }}</span>
           </div>
         </div>
       </div>
 
       <div class="chart">
-        <!-- SVG estático (igual que tu HTML) -->
+        <!-- Dejo el SVG tal cual (estático) como tu mockup -->
         <svg class="chart-svg" fill="none" preserveAspectRatio="none" viewBox="0 0 800 300">
-          <defs>
-            <linearGradient id="gradientUtilidad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stop-color="#299de0" stop-opacity="0.15" />
-              <stop offset="100%" stop-color="#299de0" stop-opacity="0" />
-            </linearGradient>
-          </defs>
-
-          <line x1="50" y1="50" x2="750" y2="50" stroke="#f1f5f9" stroke-width="1" />
-          <line x1="50" y1="110" x2="750" y2="110" stroke="#f1f5f9" stroke-width="1" />
-          <line x1="50" y1="170" x2="750" y2="170" stroke="#f1f5f9" stroke-width="1" />
-          <line x1="50" y1="230" x2="750" y2="230" stroke="#f1f5f9" stroke-width="1" />
+          <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="50" y2="50"></line>
+          <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="110" y2="110"></line>
+          <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="170" y2="170"></line>
+          <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230"></line>
 
           <path
-            d="M50 230 L 50 180 Q 150 160 225 140 T 400 130 T 575 100 T 750 60 L 750 230 Z"
-            fill="url(#gradientUtilidad)"
-          />
+            d="M50 230 L 50 190 Q 150 180 225 160 T 400 150 T 575 110 T 750 70 L 750 230 Z"
+            fill="url(#gradient-rc)"
+            opacity="0.1"
+          ></path>
+
           <path
-            d="M50 180 Q 150 160 225 140 T 400 130 T 575 100 T 750 60"
+            d="M50 190 Q 150 180 225 160 T 400 150 T 575 110 T 750 70"
             fill="none"
             stroke="#299de0"
             stroke-linecap="round"
             stroke-width="3"
-          />
-          <path
-            d="M50 200 L 225 190 L 400 170 L 575 185 L 750 160"
-            fill="none"
-            stroke="#1e293b"
-            stroke-dasharray="6 4"
-            stroke-linecap="round"
-            stroke-width="2"
-          />
+          ></path>
 
-          <circle cx="50" cy="180" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="225" cy="140" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="400" cy="130" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="575" cy="100" r="4" fill="white" stroke="#299de0" stroke-width="2" />
-          <circle cx="750" cy="60" r="4" fill="white" stroke="#299de0" stroke-width="2" />
+          <circle cx="50" cy="190" fill="white" r="5" stroke="#299de0" stroke-width="2.5"></circle>
+          <circle cx="225" cy="160" fill="white" r="5" stroke="#299de0" stroke-width="2.5"></circle>
+          <circle cx="400" cy="150" fill="white" r="5" stroke="#299de0" stroke-width="2.5"></circle>
+          <circle cx="575" cy="110" fill="white" r="5" stroke="#299de0" stroke-width="2.5"></circle>
+          <circle cx="750" cy="70" fill="white" r="5" stroke="#299de0" stroke-width="2.5"></circle>
 
-          <circle cx="50" cy="200" r="3" fill="#1e293b" />
-          <circle cx="225" cy="190" r="3" fill="#1e293b" />
-          <circle cx="400" cy="170" r="3" fill="#1e293b" />
-          <circle cx="575" cy="185" r="3" fill="#1e293b" />
-          <circle cx="750" cy="160" r="3" fill="#1e293b" />
+          <text fill="#0e161b" font-family="Inter, sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="50" y="175">1.65</text>
+          <text fill="#0e161b" font-family="Inter, sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="225" y="145">1.72</text>
+          <text fill="#0e161b" font-family="Inter, sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="400" y="135">1.78</text>
+          <text fill="#0e161b" font-family="Inter, sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="575" y="95">1.81</text>
+          <text fill="#0e161b" font-family="Inter, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" x="750" y="55">1.85</text>
 
-          <text x="50" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q3 '23</text>
-          <text x="225" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q4 '23</text>
-          <text x="400" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q1 '24</text>
-          <text x="575" y="260" text-anchor="middle" font-size="12" fill="#507c95">Q2 '24</text>
-          <text
-            x="750"
-            y="260"
-            text-anchor="middle"
-            font-size="12"
-            font-weight="bold"
-            fill="#0e161b"
-          >
-            Q3 '24
-          </text>
+          <text fill="#507c95" font-family="Inter, sans-serif" font-size="12" text-anchor="middle" x="50" y="260">Q3 '23</text>
+          <text fill="#507c95" font-family="Inter, sans-serif" font-size="12" text-anchor="middle" x="225" y="260">Q4 '23</text>
+          <text fill="#507c95" font-family="Inter, sans-serif" font-size="12" text-anchor="middle" x="400" y="260">Q1 '24</text>
+          <text fill="#507c95" font-family="Inter, sans-serif" font-size="12" text-anchor="middle" x="575" y="260">Q2 '24</text>
+          <text fill="#0e161b" font-family="Inter, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" x="750" y="260">Q3 '24</text>
+
+          <defs>
+            <linearGradient id="gradient-rc" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#299de0"></stop>
+              <stop offset="100%" stop-color="white"></stop>
+            </linearGradient>
+          </defs>
         </svg>
-
-        <div class="axis axis-left">
-          <span>$1M</span>
-          <span>$750k</span>
-          <span>$500k</span>
-          <span>$250k</span>
-        </div>
-
-        <div class="axis axis-right">
-          <span>20%</span>
-          <span>15%</span>
-          <span>10%</span>
-          <span>5%</span>
-        </div>
       </div>
     </section>
 
+    <!-- DONUTS -->
+    <section class="grid-2">
+      <article class="card">
+        <h3>Composición Activo Circulante</h3>
+        <p class="card-sub">Desglose del Activo Circulante</p>
+
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg class="donut-svg" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#e8eff3" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#299de0" stroke-dasharray="25 100" stroke-dashoffset="25" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#1e293b" stroke-dasharray="45 100" stroke-dashoffset="0" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#507c95" stroke-dasharray="20 100" stroke-dashoffset="-45" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#d1dee6" stroke-dasharray="10 100" stroke-dashoffset="-65" stroke-width="4"></circle>
+            </svg>
+
+            <div class="donut-center">
+              <span class="donut-kicker">Total</span>
+              <span class="donut-total">$2.7M</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend-grid">
+          <div class="legend-row">
+            <span class="dot" style="background:#1e293b" aria-hidden="true"></span>
+            <span>Cuentas por Cobrar (45%)</span>
+          </div>
+          <div class="legend-row">
+            <span class="dot" style="background:#299de0" aria-hidden="true"></span>
+            <span>Efectivo y Eq. (25%)</span>
+          </div>
+          <div class="legend-row">
+            <span class="dot" style="background:#507c95" aria-hidden="true"></span>
+            <span>Inventarios (20%)</span>
+          </div>
+          <div class="legend-row">
+            <span class="dot" style="background:#d1dee6" aria-hidden="true"></span>
+            <span>Otros Activos (10%)</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h3>Composición Pasivo Circulante</h3>
+        <p class="card-sub">Desglose del Pasivo Circulante</p>
+
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg class="donut-svg" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#e8eff3" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#e11d48" stroke-dasharray="35 100" stroke-dashoffset="0" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#fb923c" stroke-dasharray="40 100" stroke-dashoffset="-35" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#fcd34d" stroke-dasharray="15 100" stroke-dashoffset="-75" stroke-width="4"></circle>
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#fecdd3" stroke-dasharray="10 100" stroke-dashoffset="-90" stroke-width="4"></circle>
+            </svg>
+
+            <div class="donut-center">
+              <span class="donut-kicker">Total</span>
+              <span class="donut-total">$1.5M</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend-grid">
+          <div class="legend-row">
+            <span class="dot" style="background:#e11d48" aria-hidden="true"></span>
+            <span>Proveedores (35%)</span>
+          </div>
+          <div class="legend-row">
+            <span class="dot" style="background:#fb923c" aria-hidden="true"></span>
+            <span>Deuda a Corto Plazo (40%)</span>
+          </div>
+          <div class="legend-row">
+            <span class="dot" style="background:#fcd34d" aria-hidden="true"></span>
+            <span>Impuestos por Pagar (15%)</span>
+          </div>
+          <div class="legend-row">
+            <span class="dot" style="background:#fecdd3" aria-hidden="true"></span>
+            <span>Otros Pasivos (10%)</span>
+          </div>
+        </div>
+      </article>
+    </section>
+
     <!-- TABLE -->
-    <section class="table-panel">
-      <div class="table-head">
-        <h3>Comparativo por Periodo</h3>
-        <span class="base-pill">{{ basePeriodLabel }}</span>
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Comparativa por periodo</h3>
       </div>
 
       <div class="table-wrap">
@@ -240,52 +281,56 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
           <thead>
             <tr>
               <th>Periodo</th>
-              <th>Ingresos</th>
-              <th>Utilidad Neta</th>
-              <th>Margen Neto</th>
-              <th class="right">Var. Trimestral</th>
+              <th class="right">Activo Circulante</th>
+              <th class="right">Pasivo Circulante</th>
+              <th class="right">Razón Circulante</th>
+              <th class="right">Prueba Ácida</th>
+              <th class="right">Capital de Trabajo</th>
             </tr>
           </thead>
+
           <tbody>
-            <tr v-for="r in periodRows" :key="r.period">
-              <td class="strong">{{ r.period }}</td>
-              <td class="muted">{{ r.ingresos }}</td>
-              <td class="muted">{{ r.utilidad }}</td>
-              <td>
-                <span class="pill" :class="r.margenPill === 'blue' ? 'pill-blue' : 'pill-gray'">
-                  {{ r.margen }}
-                </span>
-              </td>
-              <td class="right" :class="r.varType === 'up' ? 'var-up' : 'var-down'">
-                {{ r.varTrimestral }}
-              </td>
+            <tr
+              v-for="r in tableRows"
+              :key="r.period"
+              :class="{ highlight: r.highlight }"
+            >
+              <td class="strong" :class="{ primary: r.highlight }">{{ r.period }}</td>
+              <td class="right" :class="{ strong: r.highlight }">{{ r.activo }}</td>
+              <td class="right" :class="{ strong: r.highlight }">{{ r.pasivo }}</td>
+              <td class="right" :class="{ strong: r.highlight }">{{ r.rc }}</td>
+              <td class="right" :class="{ strong: r.highlight }">{{ r.pa }}</td>
+              <td class="right" :class="{ strong: r.highlight }">{{ r.ct }}</td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- NOTES -->
-    <section class="notes">
-      <article class="note">
+    <!-- INTERPRETATION + RECS -->
+    <section class="grid-2">
+      <article class="note note-warn">
         <div class="note-bg" aria-hidden="true">
           <span class="material-symbols-outlined">warning</span>
         </div>
 
-        <div class="note-head">
-          <span class="tag tag-blue">
-            <span class="material-symbols-outlined">insights</span>
-          </span>
-          <h3>Interpretación y alertas</h3>
+        <div class="note-mini">
+          <span class="material-symbols-outlined">info</span>
+          <span>Interpretación del Sistema</span>
         </div>
 
-        <p class="note-text">{{ interpretation }}</p>
+        <h3>Interpretación y alertas</h3>
+        <p>
+          La empresa mantiene una razón circulante aceptable, pero una alta dependencia de cuentas por cobrar podría
+          generar problemas de liquidez inmediata. Se recomienda vigilar los plazos de cobranza para asegurar el flujo
+          de caja operativo.
+        </p>
       </article>
 
-      <article class="note">
+      <article class="note note-ok">
         <div class="note-head">
-          <span class="tag tag-green">
-            <span class="material-symbols-outlined">checklist</span>
+          <span class="tag-green">
+            <span class="material-symbols-outlined">rocket_launch</span>
           </span>
           <h3>Recomendaciones</h3>
         </div>
@@ -318,54 +363,53 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
 }
 
 /* Title */
-.head {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.head-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.head-title h1 {
+.title h1 {
   margin: 0;
   font-size: 26px;
   font-weight: 900;
   color: #0e161b;
 }
 
-.btn-info {
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-learn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid #d1dee6;
-  background: white;
-  color: #0e161b;
+  background: #ffffff;
   font-size: 12px;
-  font-weight: 800;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  font-weight: 900;
+  color: #0e161b;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
-.btn-info:hover {
-  border-color: #299de0;
-  color: #299de0;
+.btn-learn:hover {
+  background: #f8fafb;
 }
 
-.btn-info .material-symbols-outlined {
+.btn-learn .material-symbols-outlined {
   font-size: 18px;
 }
 
-.sub {
+.subtitle {
+  margin-top: 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   color: #507c95;
+  font-weight: 700;
   font-size: 13px;
+}
+
+.subtitle .small {
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -374,28 +418,37 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   color: #d1d5db;
 }
 
-.small {
-  font-size: 12px;
-}
-
 /* KPIs */
 .kpis {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 14px;
+  gap: 12px;
 }
 
 .kpi {
-  background: #fff;
+  width: 100%;
+  text-align: left;
+  background: #ffffff;
   border: 1px solid #e8eff3;
   border-radius: 14px;
-  padding: 18px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.15s ease;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+  cursor: pointer;
 }
 
 .kpi:hover {
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  border-color: #b4d2e6;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+}
+
+.kpi:active {
+  transform: translateY(1px);
+}
+
+.kpi.selected {
+  border: 2px solid #299de0;
+  background: #f0f8fd;
 }
 
 .kpi-top {
@@ -412,6 +465,11 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   font-weight: 800;
 }
 
+.kpi-label-selected {
+  color: #299de0;
+  font-weight: 900;
+}
+
 .kpi-dot {
   width: 10px;
   height: 10px;
@@ -421,12 +479,12 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
 
 .kpi-dot.ok {
   background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 8px rgba(34,197,94,0.4);
 }
 
 .kpi-dot.warn {
   background: #facc15;
-  box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+  box-shadow: 0 0 8px rgba(250,204,21,0.4);
 }
 
 .kpi-value {
@@ -443,17 +501,17 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   gap: 8px;
 }
 
-.delta-badge {
+.delta-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border-radius: 8px;
   padding: 4px 8px;
   font-size: 12px;
   font-weight: 900;
 }
 
-.delta-badge .material-symbols-outlined {
+.delta-pill .material-symbols-outlined {
   font-size: 14px;
 }
 
@@ -468,23 +526,25 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
 }
 
 .delta-note {
+  color: #507c95;
   font-size: 12px;
   font-weight: 700;
-  color: #507c95;
 }
 
-/* Panel (chart) */
+/* Panels */
 .panel {
-  background: #fff;
+  background: #ffffff;
   border: 1px solid #e8eff3;
   border-radius: 14px;
-  padding: 18px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
 }
 
 .panel-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid #e8eff3;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
@@ -497,8 +557,8 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   color: #0e161b;
 }
 
-.panel-head p {
-  margin: 6px 0 0;
+.panel-sub {
+  margin: 4px 0 0;
   font-size: 12px;
   font-weight: 700;
   color: #507c95;
@@ -507,109 +567,129 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
 .legend {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 14px;
 }
 
 .legend-item {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #0e161b;
   font-size: 12px;
   font-weight: 800;
+  color: #0e161b;
 }
 
 .legend-dot {
   width: 12px;
   height: 12px;
   border-radius: 999px;
-}
-
-.dot-utilidad {
   background: #299de0;
 }
 
-.dot-margen {
-  background: #1e293b;
-}
-
 .chart {
-  position: relative;
-  width: 100%;
-  height: 300px;
-  margin-top: 12px;
+  padding: 16px 18px 18px;
 }
 
 .chart-svg {
   width: 100%;
-  height: 100%;
+  height: 280px;
+  display: block;
 }
 
-.axis {
-  position: absolute;
-  top: 0;
-  bottom: 32px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  font-size: 12px;
-  font-weight: 700;
-  color: #507c95;
+/* Donut cards */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
 }
 
-.axis-left {
-  left: 0;
-  width: 48px;
-  text-align: right;
-  padding-right: 8px;
-}
-
-.axis-right {
-  right: 0;
-  width: 48px;
-  text-align: left;
-  padding-left: 8px;
-}
-
-/* Table */
-.table-panel {
-  background: #fff;
+.card {
+  background: #ffffff;
   border: 1px solid #e8eff3;
   border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-}
-
-.table-head {
-  padding: 14px 18px;
-  border-bottom: 1px solid #e8eff3;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.table-head h3 {
+.card h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 900;
   color: #0e161b;
 }
 
-.base-pill {
-  font-size: 10px;
-  font-weight: 900;
-  color: #2563eb;
-  background: #eff6ff;
-  border: 1px solid #dbeafe;
-  padding: 4px 8px;
-  border-radius: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.card-sub {
+  margin: -6px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #507c95;
 }
 
+.donut-wrap {
+  display: grid;
+  place-items: center;
+  padding: 10px 0;
+}
+
+.donut {
+  position: relative;
+  width: 160px;
+  height: 160px;
+}
+
+.donut-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.donut-kicker {
+  font-size: 11px;
+  font-weight: 900;
+  color: #507c95;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.donut-total {
+  font-size: 20px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  margin-top: 8px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #507c95;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+/* Table */
 .table-wrap {
   overflow-x: auto;
 }
@@ -617,7 +697,7 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
 .table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 860px;
+  min-width: 900px;
 }
 
 .table thead th {
@@ -628,132 +708,91 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   color: #507c95;
   background: #f8fafb;
   border-bottom: 1px solid #e8eff3;
-  padding: 12px 18px;
+  padding: 12px 16px;
   font-weight: 900;
 }
 
 .table tbody td {
-  padding: 14px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid #e8eff3;
   font-size: 13px;
+  color: #0e161b;
 }
 
 .table tbody tr:hover {
   background: #f9fafb;
 }
 
-.strong {
-  font-weight: 900;
-  color: #0e161b;
-}
-
-.muted {
-  color: #507c95;
-  font-weight: 700;
-}
-
-.right {
+.table .right {
   text-align: right;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
+.strong {
   font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 10px;
 }
 
-.pill-blue {
-  background: #eff6ff;
-  color: #1d4ed8;
+.primary {
+  color: #299de0;
 }
 
-.pill-gray {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-.var-up {
-  color: #16a34a;
-  font-weight: 800;
-}
-
-.var-down {
-  color: #ef4444;
-  font-weight: 800;
+.highlight {
+  background: rgba(41, 157, 224, 0.08);
 }
 
 /* Notes */
-.notes {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
-
 .note {
   position: relative;
-  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
-  border: 1px solid #dbeafe;
   border-radius: 14px;
   padding: 16px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
   overflow: hidden;
+}
+
+.note-warn {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
+  border: 1px solid #dbeafe;
+}
+
+.note-ok {
+  background: #ffffff;
+  border: 1px solid #e8eff3;
 }
 
 .note-bg {
   position: absolute;
   right: 10px;
   top: 6px;
-  opacity: 0.1;
+  opacity: 0.06;
 }
 
 .note-bg .material-symbols-outlined {
-  font-size: 120px;
+  font-size: 100px;
   color: #299de0;
 }
 
-.note-head {
-  display: flex;
+.note-mini {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  position: relative;
-  z-index: 1;
-}
-
-.tag {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-}
-
-.tag-blue {
-  background: #dbeafe;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: #299de0;
 }
 
-.tag-green {
-  background: #dcfce7;
-  color: #15803d;
-}
-
-.tag .material-symbols-outlined {
-  font-size: 20px;
+.note-mini .material-symbols-outlined {
+  font-size: 18px;
 }
 
 .note h3 {
-  margin: 0;
-  font-size: 16px;
+  margin: 10px 0 10px;
+  font-size: 18px;
   font-weight: 900;
   color: #0e161b;
 }
 
-.note-text {
+.note p {
   margin: 0;
   color: #0e161b;
   font-weight: 700;
@@ -763,12 +802,32 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   z-index: 1;
 }
 
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tag-green {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #dcfce7;
+  color: #15803d;
+  display: grid;
+  place-items: center;
+}
+
+.tag-green .material-symbols-outlined {
+  font-size: 20px;
+}
+
 .list {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .list li {
@@ -801,7 +860,7 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
 
 /* Responsive */
 @media (min-width: 640px) {
-  .sub {
+  .subtitle {
     flex-direction: row;
     align-items: baseline;
     gap: 10px;
@@ -809,16 +868,19 @@ const basePeriodLabel = computed(() => `Periodo Base: ${basePeriod.value}`);
   .dot {
     display: inline;
   }
+  .kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
 @media (min-width: 1024px) {
-  .notes {
+  .grid-2 {
     grid-template-columns: repeat(2, 1fr);
   }
 }

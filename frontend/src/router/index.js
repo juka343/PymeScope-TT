@@ -31,9 +31,7 @@ const router = createRouter({
           component: () => import("../views/TeoriaRentabilidadView.vue"), 
         },
 
-    // =========================
     // DASHBOARD MONOPERIODO
-    // =========================
     {
       path: "/proyecto/:id_proyecto/dashboard",
       component: DashboardLayout,
@@ -78,9 +76,7 @@ const router = createRouter({
       ],
     },
 
-    // =========================
     // DASHBOARD MULTIPERIODO
-    // =========================
     {
       path: "/proyecto/:id_proyecto/dashboard-multi",
       component: DashboardLayoutMulti,
@@ -100,27 +96,27 @@ const router = createRouter({
         {
           path: "liquidez",
           name: "liquidezMulti",
-          component: () => import("../views/LiquidezMultiperiodoView.vue"), // crea este
+          component: () => import("../views/LiquidezMultiperiodoView.vue"), 
         },
         // {
         //   path: "endeudamiento",
         //   name: "endeudamientoMulti",
-        //   component: () => import("../views/EndeudamientoMultiperiodoView.vue"), // crea este
+        //   component: () => import("../views/EndeudamientoMultiperiodoView.vue"), 
         // },
         // {
         //   path: "rotacion",
         //   name: "rotacionMulti",
-        //   component: () => import("../views/RotacionDeActivosMultiView.vue"), // crea este
+        //   component: () => import("../views/RotacionDeActivosMultiView.vue"), 
         // },
         // {
         //   path: "estructura",
         //   name: "estructuraMulti",
-        //   component: () => import("../views/EstructuraMultiView.vue"), // crea este
+        //   component: () => import("../views/EstructuraMultiView.vue"), 
         // },
         // {
         //   path: "proyecciones",
         //   name: "proyeccionesMulti",
-        //   component: () => import("../views/ProyeccionesMultiView.vue"), // crea este
+        //   component: () => import("../views/ProyeccionesMultiView.vue"), 
         // },
       ],
     },
