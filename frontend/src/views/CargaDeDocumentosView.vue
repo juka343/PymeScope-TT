@@ -110,6 +110,7 @@ async function loadExistingPeriods() {
       loaded.push({
         id: docSnap.id,
         label: data.label || "Periodo",
+        periodDate: data.periodDate || "",
         balanceFile: data.balanceFile || null,
         resultsFile: data.resultsFile || null,
 
@@ -121,16 +122,14 @@ async function loadExistingPeriods() {
             data.analisis_rotacion ||
             data.analisis_estructura
         ),
-
-        // se prende cuando el usuario sube/elimina archivos
         hasChanges: false,
       });
     });
 
     loaded.sort((a, b) => {
-      const numA = parseInt(String(a.label).replace("Periodo ", "")) || 0;
-      const numB = parseInt(String(b.label).replace("Periodo ", "")) || 0;
-      return numA - numB;
+      const dateA = a.periodDate || "";
+      const dateB = b.periodDate || "";
+      return dateA.localeCompare(dateB);
     });
 
     periods.value = loaded;
@@ -147,6 +146,7 @@ function addPeriod() {
   const newPeriod = {
     id: crypto.randomUUID(),
     label: `Periodo ${next}`,
+    periodDate: "",
     balanceFile: null,
     resultsFile: null,
     hasChanges: false,
@@ -163,6 +163,7 @@ async function savePeriodToFirestore(period) {
       periodRef,
       {
         label: period.label,
+        periodDate: period.periodDate,
         balanceFile: period.balanceFile,
         resultsFile: period.resultsFile,
         updatedAt: serverTimestamp(),
@@ -457,7 +458,20 @@ async function generateAnalysis() {
         <article v-for="p in periods" :key="p.id" class="period-card">
           <header class="period-card-head">
             <div class="head-left">
-              <h3>{{ p.label }}</h3>
+              <input 
+                type="text" 
+                v-model="p.label" 
+                @blur="savePeriodToFirestore(p)" 
+                placeholder="Nombre (Ej. Q1 2024)" 
+                class="editable-input label-input"
+              />
+              <input 
+                type="month" 
+                v-model="p.periodDate" 
+                @change="savePeriodToFirestore(p)" 
+                class="editable-input date-input"
+                title="Selecciona el mes y año de este periodo"
+              />
               <span class="mini-pill">{{ periodicity }}</span>
             </div>
 
@@ -1014,6 +1028,39 @@ async function generateAnalysis() {
 }
 .btn-generate span.material-symbols-outlined {
   font-size: 20px;
+}
+
+.editable-input {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #0e161b;
+  transition: all 0.2s;
+}
+
+.editable-input:hover {
+  background: #f1f5f9;
+}
+
+.editable-input:focus {
+  outline: none;
+  border-color: #299de0;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(41, 157, 224, 0.1);
+}
+
+.label-input {
+  font-weight: 900;
+  width: 140px;
+}
+
+.date-input {
+  color: #507c95;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 @media (min-width: 640px) {

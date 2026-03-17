@@ -2,29 +2,98 @@
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore"; // <-- Importamos Firestore
+import { db } from "@/firebase/config"; // <-- Importamos la DB
 
 const route = useRoute();
 const router = useRouter();
 const auth = getAuth();
 
 const user = ref(null);
-
-// Mock (luego lo conectas a Firestore por projectId)
-const project = ref({
-  name: "Análisis trimestral 2024",
-  rangeLabel: "Q1 - Q3 2024",
-  periodicityLabel: "Trimestral",
-  basePeriodLabel: "Q2 2024",
-});
-
 const projectId = computed(() => route.params.id_proyecto);
+
+// Estado inicial reactivo
+const project = ref({
+  name: "Cargando proyecto...",
+  rangeLabel: "...",
+  periodicityLabel: "...",
+  basePeriodLabel: "...",
+});
 
 onMounted(() => {
   onAuthStateChanged(auth, (u) => {
     user.value = u;
   });
+  
+  // Disparamos la búsqueda de datos en cuanto el componente carga
+  fetchProjectData();
 });
 
+// ===== LÓGICA DINÁMICA DE FIREBASE =====
+const fetchProjectData = async () => {
+  if (!projectId.value) return;
+
+  try {
+    // 1. Obtener datos del proyecto (Nombre y Periodicidad)
+    const projectRef = doc(db, "proyectos", projectId.value);
+    const projectSnap = await getDoc(projectRef);
+
+    let pName = "Proyecto sin título";
+    let pFreq = "Desconocida";
+
+    if (projectSnap.exists()) {
+      const pData = projectSnap.data();
+      pName = pData.nombre || pName;
+      pFreq = pData.periodicidad || pFreq;
+    }
+
+    // 2. Obtener la colección de periodos para calcular Rangos y Base
+    const periodosRef = collection(db, "proyectos", projectId.value, "periodos");
+    const periodsSnap = await getDocs(periodosRef);
+
+    let loadedPeriods = [];
+    periodsSnap.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (d.label) {
+        loadedPeriods.push({
+          label: d.label,
+          periodDate: d.periodDate || d.label // Usamos periodDate para ordenar
+        });
+      }
+    });
+
+    let pRange = "Sin periodos";
+    let pBase = "N/A";
+
+    if (loadedPeriods.length > 0) {
+      // Ordenamiento cronológico inteligente (igual que en las gráficas)
+      loadedPeriods.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+
+      const firstPeriod = loadedPeriods[0].label;
+      const lastPeriod = loadedPeriods[loadedPeriods.length - 1].label;
+
+      // El periodo base siempre es el último (el más reciente)
+      pBase = lastPeriod;
+      
+      // Si hay más de un periodo, armamos el rango (Ej. "Ene 2024 - Mar 2024")
+      pRange = loadedPeriods.length > 1 ? `${firstPeriod} - ${lastPeriod}` : firstPeriod;
+    }
+
+    // 3. Inyectar a la vista
+    project.value = {
+      name: pName,
+      rangeLabel: pRange,
+      periodicityLabel: pFreq,
+      basePeriodLabel: pBase,
+    };
+
+  } catch (error) {
+    console.error("Error cargando datos de la Topbar:", error);
+    project.value.name = "Error de conexión";
+  }
+};
+
+// Helpers de usuario
 const userDisplayName = computed(() => {
   if (!user.value) return "";
   return user.value.displayName || user.value.email || "";
