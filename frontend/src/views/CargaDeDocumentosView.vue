@@ -79,6 +79,25 @@ const periodsToProcess = computed(() =>
 
 const canGenerate = computed(() => periodsToProcess.value.length > 0);
 
+const hasMissingDates = computed(() => {
+  return isMultiPeriod.value && completePeriods.value.some(p => !p.periodDate);
+});
+
+// Autollenado: Convierte "2023-01" a "Enero 2023"
+function handleDateChange(p) {
+  if (p.periodDate) {
+    const [year, month] = p.periodDate.split('-');
+    const meses = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+    // Asigna el nombre automáticamente
+    p.label = `${meses[parseInt(month) - 1]} ${year}`;
+  }
+  // Guarda en Firebase
+  savePeriodToFirestore(p);
+}
+
 // Actualiza el modo del proyecto en Firestore (mono/multi)
 async function updateProjectAnalysisMode() {
   const projectRef = doc(db, "proyectos", projectId);
@@ -458,23 +477,31 @@ async function generateAnalysis() {
         <article v-for="p in periods" :key="p.id" class="period-card">
           <header class="period-card-head">
             <div class="head-left">
-              <input 
-                type="text" 
-                v-model="p.label" 
-                @blur="savePeriodToFirestore(p)" 
-                placeholder="Nombre (Ej. Q1 2024)" 
-                class="editable-input label-input"
-              />
-              <input 
-                type="month" 
-                v-model="p.periodDate" 
-                @change="savePeriodToFirestore(p)" 
-                class="editable-input date-input"
-                title="Selecciona el mes y año de este periodo"
-              />
-              <span class="mini-pill">{{ periodicity }}</span>
+              <div class="input-with-icon">
+                <input 
+                  type="text" 
+                  v-model="p.label" 
+                  @blur="savePeriodToFirestore(p)" 
+                  placeholder="Nombre (Ej. Enero 2024)" 
+                  class="editable-input label-input"
+                  title="Puedes editar este nombre"
+                />
+                <span class="material-symbols-outlined edit-icon">edit</span>
+              </div>
+              
+              <div class="date-wrapper">
+                <input 
+                  type="month" 
+                  v-model="p.periodDate" 
+                  @change="handleDateChange(p)" 
+                  class="editable-input date-input"
+                  title="Selecciona el mes y año"
+                />
+                <span v-if="isMultiPeriod && !p.periodDate" class="required-badge">
+                  * Obligatorio
+                </span>
+              </div>
             </div>
-
             <button class="btn-icon-danger" @click="removePeriod(p.id)" title="Eliminar periodo completo">
               <span class="material-symbols-outlined">delete</span>
             </button>
@@ -567,12 +594,15 @@ async function generateAnalysis() {
 
     <footer class="bottom">
       <div class="container bottom-inner">
-        <span class="autosave">Todos los cambios se guardan automáticamente</span>
+        <span v-if="hasMissingDates" class="warning-text">
+          Faltan fechas en algunos periodos para el análisis multiperiodo.
+        </span>
+        <span v-else class="autosave">Todos los cambios se guardan automáticamente</span>
 
         <button
           class="btn-generate"
           type="button"
-          :disabled="!canGenerate || isUploading || isProcessing"
+          :disabled="!canGenerate || isUploading || isProcessing || hasMissingDates"
           @click="generateAnalysis"
         >
           <span v-if="isUploading">Subiendo a Firebase...</span>
@@ -1090,6 +1120,52 @@ async function generateAnalysis() {
 @media (min-width: 1024px) {
   .header-inner {
     padding: 12px 40px;
+  }
+}
+
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.edit-icon {
+  position: absolute;
+  right: 8px;
+  font-size: 14px;
+  color: #94a3b8;
+  pointer-events: none; /* Para que el clic pase al input */
+}
+
+.label-input {
+  padding-right: 24px; /* Espacio para el lapicito */
+}
+
+.date-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.required-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ef4444;
+  background: #fee2e2;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.warning-text {
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 700;
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .warning-text {
+    display: inline;
   }
 }
 </style>

@@ -17,7 +17,7 @@ function hideTooltip() { hoveredPoint.value = null; }const tableData = ref([]);
 
 // Formateadores
 const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const pctFmt = new Intl.NumberFormat('es-MX', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const pctFmt = new Intl.NumberFormat('es-MX', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Carga de datos
 const fetchPeriods = async () => {
@@ -120,7 +120,7 @@ const generateDashboardData = () => {
     const delta = lastVal - prevVal;
     
     return {
-      kpiValue: `${lastVal.toFixed(1)}%`,
+      kpiValue: `${lastVal.toFixed(2)}%`,
       status: lastVal >= 10 ? "ok" : "warn",
       deltaType: delta >= 0 ? "up" : "down",
       deltaValue: `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`,

@@ -264,7 +264,7 @@ onMounted(() => {
           <span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>
           <h4>Estructura del Resultado</h4>
         </div>
-        <span class="pill" v-if="periodLabel">{{ periodLabel }}</span>
+        <!-- <span class="pill" v-if="periodLabel">{{ periodLabel }}</span> -->
       </div>
 
       <div class="table-wrap">
@@ -272,8 +272,8 @@ onMounted(() => {
           <thead>
             <tr>
               <th>Concepto</th>
-              <th class="right">Valor</th>
-              <th class="right">% Ventas</th>
+              <th class="right" style="text-align: center;">Valor</th>
+              <th class="right" style="text-align: center;">% Ventas</th>
             </tr>
           </thead>
           <tbody>
@@ -286,18 +286,14 @@ onMounted(() => {
               ]"
             >
               <td class="concept" :class="{ strong: r.tone === 'strong' }">{{ r.concept }}</td>
-              <td class="right" :class="{ strong: r.tone === 'strong' }">{{ r.value }}</td>
-              <td class="right" :class="{ strong: r.tone === 'strong' }">{{ r.pct }}</td>
+              <td class="right" style="text-align: center;" :class="{ strong: r.tone === 'strong' }">{{ r.value }}</td>
+              <td class="right" style="text-align: center;" :class="{ strong: r.tone === 'strong' }">{{ r.pct }}</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- <div class="table-foot">
-        <button class="link-btn" type="button" @click="viewFullIncomeStatement">
-          Ver estado de resultados completo
-        </button>
-      </div> -->
+  
     </section>
 
     <!-- Interpretación + Recomendaciones -->

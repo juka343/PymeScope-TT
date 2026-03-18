@@ -4,20 +4,18 @@ class AzureDocumentService:
     def __init__(self):
         self.azure_client = AzureDocIntelClient()
 
-    def process_financial_document(self, file_url: str):
+    async def process_financial_document_async(self, file_url: str):
         try:
-            # 1. Llamar a Azure
-            raw_result = self.azure_client.analyze_document_from_url(file_url)
+            # 1. Llamar a Azure esperando la respuesta asíncrona
+            raw_result = await self.azure_client.analyze_document_from_url_async(file_url)
 
-            # 2. Extraer información básica (Simplificado para esta etapa)
-            # Aquí luego meteremos la lógica "inteligente" para diferenciar activos/pasivos
+            # 2. Extraer información básica (Tu código original)
             extracted_content = {
                 "tables_count": len(raw_result.tables),
-                "text_content": raw_result.content[:500] + "...", # Solo una muestra
+                "text_content": raw_result.content[:500] + "...",
                 "tables_data": []
             }
 
-            # Ejemplo rápido de extracción de tablas
             for table in raw_result.tables:
                 table_info = []
                 for cell in table.cells:
