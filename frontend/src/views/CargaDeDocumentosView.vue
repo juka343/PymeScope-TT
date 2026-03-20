@@ -320,7 +320,14 @@ async function generateAnalysis() {
 
   try {
     if (aProcesar.length === 0) {
-      alert("No hay cambios por analizar.");
+      console.log("Todo está procesado. Redirigiendo al dashboard...");
+      
+      const mode = isMultiPeriod.value ? "multi" : "mono";
+      const base = mode === "multi"
+        ? `/proyecto/${projectId}/dashboard-multi`
+        : `/proyecto/${projectId}/dashboard`;
+
+      router.push(`${base}/rentabilidad`);
       return;
     }
 
