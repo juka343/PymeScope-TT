@@ -1,103 +1,189 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/firebase/config";
 
-/**
- * UI demo: puedes conectar estos valores a Firestore después.
- * Lo importante aquí: selectedMetric controla qué gráfica se muestra.
- */
+const route = useRoute();
+const projectId = route.params.id_proyecto;
 
-const metrics = [
-  {
-    key: "margen",
-    kpiTitle: "Margen de Rentabilidad",
-    kpiValue: "12.8%",
-    status: "ok",
-    deltaType: "up",
-    deltaValue: "+0.5%",
-    deltaText: "vs periodo base",
-
-    chartTitle: "Evolución de Margen de Rentabilidad",
-    chartSubtitle: "Tendencia histórica de Margen de Rentabilidad por trimestre",
-    legendLabel: "Margen de Rentabilidad (%)",
-    yAxisLabels: ["20%", "15%", "10%", "5%"],
-
-    // puntos del SVG (x fijo, y cambia por métrica)
-    points: [
-      { x: 50, y: 200, label: "Q3 '23" },
-      { x: 225, y: 190, label: "Q4 '23" },
-      { x: 400, y: 170, label: "Q1 '24" },
-      { x: 575, y: 185, label: "Q2 '24" },
-      { x: 750, y: 160, label: "Q3 '24", bold: true },
-    ],
-  },
-  {
-    key: "rat",
-    kpiTitle: "Rendimiento sobre Activos Totales (RAT)",
-    kpiValue: "15.4%",
-    status: "ok",
-    deltaType: "up",
-    deltaValue: "+1.2%",
-    deltaText: "vs periodo base",
-
-    chartTitle: "Evolución de RAT",
-    chartSubtitle: "Tendencia histórica de RAT por trimestre",
-    legendLabel: "RAT (%)",
-    yAxisLabels: ["20%", "15%", "10%", "5%"],
-
-    points: [
-      { x: 50, y: 210, label: "Q3 '23" },
-      { x: 225, y: 195, label: "Q4 '23" },
-      { x: 400, y: 180, label: "Q1 '24" },
-      { x: 575, y: 165, label: "Q2 '24" },
-      { x: 750, y: 150, label: "Q3 '24", bold: true },
-    ],
-  },
-  {
-    key: "roe",
-    kpiTitle: "Rendimiento sobre el Patrimonio",
-    kpiValue: "21.0%",
-    status: "warn",
-    deltaType: "down",
-    deltaValue: "-0.8%",
-    deltaText: "vs periodo base",
-
-    chartTitle: "Evolución de ROE",
-    chartSubtitle: "Tendencia histórica de ROE por trimestre",
-    legendLabel: "ROE (%)",
-    yAxisLabels: ["30%", "25%", "20%", "15%"],
-
-    points: [
-      { x: 50, y: 160, label: "Q3 '23" },
-      { x: 225, y: 150, label: "Q4 '23" },
-      { x: 400, y: 165, label: "Q1 '24" },
-      { x: 575, y: 155, label: "Q2 '24" },
-      { x: 750, y: 170, label: "Q3 '24", bold: true },
-    ],
-  },
-];
-
+const loading = ref(true);  
+const rawPeriods = ref([]);
+const metrics = ref([]);
 const selectedMetric = ref("margen");
+const hoveredPoint = ref(null);
+function showTooltip(p) { hoveredPoint.value = p; }
+function hideTooltip() { hoveredPoint.value = null; }const tableData = ref([]);
 
-const activeMetric = computed(
-  () => metrics.find((m) => m.key === selectedMetric.value) || metrics[0]
-);
+// Formateadores
+const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pctFmt = new Intl.NumberFormat('es-MX', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Carga de datos
+const fetchPeriods = async () => {
+  try {
+    if (!projectId) return;
+
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    let loaded = [];
+    snapshot.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (d.rentabilidad || d.analisis_rentabilidad) {
+        loaded.push({
+          id: docSnap.id,
+          label: d.label || "Periodo",
+          periodDate: d.periodDate || "", // Asumiendo que ya añadiste esto en Carga de Documentos
+          rentabilidad: d.rentabilidad || d.analisis_rentabilidad || { datos_crudos: {}, kpis: [] },
+        });
+      }
+    });
+
+    // Ordenamiento cronológico
+    loaded.sort((a, b) => {
+      const dateA = a.periodDate || a.label;
+      const dateB = b.periodDate || b.label;
+      return dateA.localeCompare(dateB);
+    });
+
+    rawPeriods.value = loaded;
+    
+    if (loaded.length > 0) {
+      generateDashboardData();
+    }
+  } catch (error) {
+    console.error("Error cargando multiperiodo:", error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Generador de métricas dinámicas
+const generateDashboardData = () => {
+  const periods = rawPeriods.value;
+  const labels = periods.map(p => p.label);
+
+  // 1. Helpers de extracción
+  const parsePct = (val) => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+  };
+
+  const findKpi = (kpis, keyword) => {
+    if (!kpis) return 0;
+    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? parsePct(item.value) : 0;
+  };
+
+  // 2. Extraer series de datos
+  const dataMargen = periods.map(p => findKpi(p.rentabilidad.kpis, "Margen"));
+  const dataRat = periods.map(p => findKpi(p.rentabilidad.kpis, "Activos"));
+  const dataRoe = periods.map(p => findKpi(p.rentabilidad.kpis, "Patrimonio"));
+
+  // 3. Helper para generar la gráfica
+  // 3. Helper para generar la gráfica (Mejorado con números redondos)
+  const buildChart = (values, title, subtitle, legendLabel) => {
+    const maxVal = Math.max(...values, 5); 
+    let minVal = Math.min(...values, 0); 
+    if (minVal > 0) minVal = 0; 
+
+    // Calculamos un "paso" redondo (5, 10, 20 o 50) dependiendo de qué tan grandes son los números
+    const rawRange = maxVal - minVal;
+    let step = 5;
+    if (rawRange > 15) step = 10;
+    if (rawRange > 40) step = 20;
+    if (rawRange > 100) step = 50;
+
+    const yMin = Math.floor(minVal / step) * step;
+    const yMax = Math.ceil(maxVal / step) * step;
+    const finalRange = yMax - yMin;
+
+    // Forzamos 4 etiquetas redondeadas
+    const yAxisLabels = [
+      `${yMax}%`,
+      `${Math.round(yMax - (finalRange / 3))}%`,
+      `${Math.round(yMax - (finalRange / 3) * 2)}%`,
+      `${yMin}%`
+    ];
+
+    const xStep = periods.length > 1 ? 560 / (periods.length - 1) : 0;    
+    const points = values.map((val, i) => {
+      const x = periods.length > 1 ? 120 + i * xStep : 400; 
+      const y = 230 - ((val - yMin) / finalRange) * 180;
+      return { x, y, label: labels[i], bold: i === values.length - 1, value: val };
+    });
+
+    const lastVal = values[values.length - 1];
+    const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
+    const delta = lastVal - prevVal;
+    
+    return {
+      kpiValue: `${lastVal.toFixed(2)}%`,
+      status: lastVal >= 10 ? "ok" : "warn",
+      deltaType: delta >= 0 ? "up" : "down",
+      deltaValue: `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`,
+      deltaText: periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      chartTitle: title,
+      chartSubtitle: subtitle,
+      legendLabel: legendLabel,
+      yAxisLabels,
+      points
+    };
+  };
+
+  // 4. Construir métricas
+  metrics.value = [
+    { key: "margen", kpiTitle: "Margen de Rentabilidad", ...buildChart(dataMargen, "Evolución de Margen de Rentabilidad", "Tendencia histórica por periodo", "Margen (%)") },
+    { key: "rat", kpiTitle: "Rendimiento sobre Activos Totales (RAT)", ...buildChart(dataRat, "Evolución de RAT", "Tendencia histórica del RAT por periodo", "RAT (%)") },
+    { key: "roe", kpiTitle: "Rendimiento sobre el Patrimonio", ...buildChart(dataRoe, "Evolución de ROE", "Tendencia histórica de ROE por periodo", "ROE (%)") }
+  ];
+
+  // 5. Construir Tabla (Orden Inverso: Más reciente primero)
+  const reversedPeriods = [...periods].reverse();
+  const reversedMargen = [...dataMargen].reverse();
+  
+  tableData.value = reversedPeriods.map((p, i) => {
+    const currentMargen = reversedMargen[i];
+    // Como está invertido, el "previo" en el tiempo es el siguiente en el arreglo (i+1)
+    const prevMargen = i < reversedPeriods.length - 1 ? reversedMargen[i + 1] : currentMargen;
+    const delta = currentMargen - prevMargen;
+
+    return {
+      label: p.label,
+      ingresos: p.rentabilidad.datos_crudos?.ventas_netas || 0,
+      utilidad: p.rentabilidad.datos_crudos?.utilidad_neta || 0,
+      margen: currentMargen,
+      delta: delta,
+      deltaStr: `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`,
+      deltaClass: delta >= 0 ? 'up' : 'down'
+    };
+  });
+};
+
+// Computadas
+const activeMetric = computed(() => {
+  if (metrics.value.length === 0) return null;
+  return metrics.value.find((m) => m.key === selectedMetric.value) || metrics.value[0];
+});
 
 function selectMetric(key) {
   selectedMetric.value = key;
 }
 
-// helpers SVG
+// Helpers SVG
 const baselineY = 230;
 
 const linePath = computed(() => {
+  if (!activeMetric.value) return "";
   const pts = activeMetric.value.points;
   if (!pts.length) return "";
-  return pts
-    .map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`))
-    .join(" ");
+  return pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ");
 });
 
 const areaPath = computed(() => {
+  if (!activeMetric.value) return "";
   const pts = activeMetric.value.points;
   if (!pts.length) return "";
   const first = pts[0];
@@ -105,22 +191,23 @@ const areaPath = computed(() => {
   const mid = pts.map((p) => `L${p.x} ${p.y}`).join(" ");
   return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 });
+
+onMounted(() => {
+  fetchPeriods();
+});
 </script>
 
 <template>
-  <main class="main">
+  <main class="main" v-if="!loading && metrics.length > 0">
     <div class="container">
-      <!-- Título -->
       <section class="title">
         <div class="title-row">
           <h1>Rentabilidad</h1>
-
           <router-link to="/teoriaRentabilidad" target="_blank" class="btn-info">
             <span class="material-symbols-outlined">info</span>
             <span>Saber más</span>
           </router-link>
         </div>
-
         <div class="subtitle">
           <p class="subtitle-main">Evalúa la capacidad de la empresa para generar utilidades</p>
           <span class="dot">•</span>
@@ -128,7 +215,6 @@ const areaPath = computed(() => {
         </div>
       </section>
 
-      <!-- KPIs (clic cambia gráfica) -->
       <section class="kpis">
         <button
           v-for="m in metrics"
@@ -142,12 +228,9 @@ const areaPath = computed(() => {
             <p class="kpi-title" :class="{ activeTitle: selectedMetric === m.key }">
               {{ m.kpiTitle }}
             </p>
-
             <span class="status-dot" :class="m.status" aria-hidden="true"></span>
           </div>
-
           <div class="kpi-value">{{ m.kpiValue }}</div>
-
           <div class="kpi-delta">
             <span class="chip" :class="m.deltaType === 'up' ? 'chip-up' : 'chip-down'">
               <span class="material-symbols-outlined">
@@ -155,20 +238,17 @@ const areaPath = computed(() => {
               </span>
               {{ m.deltaValue }}
             </span>
-
             <span class="kpi-delta-text">{{ m.deltaText }}</span>
           </div>
         </button>
       </section>
 
-      <!-- Gráfica (dinámica) -->
-      <section class="card">
+      <section class="card" v-if="activeMetric">
         <div class="card-head">
           <div>
             <h3>{{ activeMetric.chartTitle }}</h3>
             <p>{{ activeMetric.chartSubtitle }}</p>
           </div>
-
           <div class="legend">
             <div class="legend-item">
               <span class="legend-dot legend-primary"></span>
@@ -186,35 +266,66 @@ const areaPath = computed(() => {
               </linearGradient>
             </defs>
 
-            <!-- grid -->
             <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="50" y2="50"></line>
             <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="110" y2="110"></line>
             <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="170" y2="170"></line>
             <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230"></line>
 
-            <!-- area + line -->
             <path :d="areaPath" fill="url(#gradientMetric)"></path>
-            <path
-              :d="linePath"
-              fill="none"
-              stroke="#299de0"
-              stroke-linecap="round"
-              stroke-width="3"
-            ></path>
+            <path :d="linePath" fill="none" stroke="#299de0" stroke-linecap="round" stroke-width="3"></path>
 
-            <!-- points -->
             <circle
               v-for="(p, idx) in activeMetric.points"
               :key="idx"
               :cx="p.x"
               :cy="p.y"
               fill="white"
-              r="4"
+              :r="hoveredPoint === p ? 6 : 4" 
               stroke="#299de0"
               stroke-width="2"
+              style="transition: r 0.2s ease;"
             ></circle>
 
-            <!-- x labels -->
+            <circle
+              v-for="(p, idx) in activeMetric.points"
+              :key="`hit-${idx}`"
+              :cx="p.x"
+              :cy="p.y"
+              r="20"
+              fill="transparent"
+              style="cursor: pointer;"
+              @mouseover="showTooltip(p)"
+              @mouseleave="hideTooltip"
+            ></circle>
+
+            <g v-if="hoveredPoint" style="pointer-events: none;">
+              <rect
+                :x="hoveredPoint.x - 32"
+                :y="hoveredPoint.y - 42"
+                width="64"
+                height="26"
+                rx="6"
+                fill="#0e161b"
+                opacity="0.95"
+              ></rect>
+              <polygon
+                :points="`${hoveredPoint.x - 6},${hoveredPoint.y - 16} ${hoveredPoint.x + 6},${hoveredPoint.y - 16} ${hoveredPoint.x},${hoveredPoint.y - 10}`"
+                fill="#0e161b"
+                opacity="0.95"
+              ></polygon>
+              <text
+                :x="hoveredPoint.x"
+                :y="hoveredPoint.y - 24"
+                fill="#ffffff"
+                font-size="12"
+                font-weight="bold"
+                font-family="Inter, sans-serif"
+                text-anchor="middle"
+              >
+                {{ hoveredPoint.value.toFixed(1) }}%
+              </text>
+            </g>
+
             <text
               v-for="(p, idx) in activeMetric.points"
               :key="`t-${idx}`"
@@ -236,10 +347,9 @@ const areaPath = computed(() => {
         </div>
       </section>
 
-      <!-- Tabla (por ahora estática como tu HTML) -->
       <section class="table-card">
         <div class="table-head">
-          <h3>Comparativo por Periodo</h3>
+          <h3>Comparativo Histórico del Margen</h3>
         </div>
 
         <div class="table-wrap">
@@ -250,57 +360,49 @@ const areaPath = computed(() => {
                 <th>Ingresos</th>
                 <th>Utilidad Neta</th>
                 <th>Margen Neto</th>
-                <th class="right">Var. Trimestral</th>
+                <th class="center" style="text-align: center;">Variación (vs anterior)</th>
               </tr>
             </thead>
 
             <tbody>
-              <tr>
-                <td class="strong">Q3 2024</td>
-                <td class="muted">$4,250,000</td>
-                <td class="muted">$845,000</td>
-                <td><span class="badge badge-blue">19.8%</span></td>
-                <td class="right up">+5.2%</td>
-              </tr>
-
-              <tr>
-                <td class="strong">Q2 2024</td>
-                <td class="muted">$3,820,000</td>
-                <td class="muted">$802,000</td>
-                <td><span class="badge badge-gray">21.0%</span></td>
-                <td class="right up">+2.8%</td>
-              </tr>
-
-              <tr>
-                <td class="strong">Q1 2024</td>
-                <td class="muted">$3,500,000</td>
-                <td class="muted">$715,000</td>
-                <td><span class="badge badge-gray">20.4%</span></td>
-                <td class="right down">-1.2%</td>
+              <tr v-for="(row, idx) in tableData" :key="idx">
+                <td :class="idx === 0 ? 'strong' : ''">{{ row.label }}</td>
+                <td class="muted">{{ currencyFmt.format(row.ingresos) }}</td>
+                <td class="muted">{{ currencyFmt.format(row.utilidad) }}</td>
+                <td>
+                  <span class="badge" :class="idx === 0 ? 'badge-blue' : 'badge-gray'">
+                    {{ row.margen.toFixed(1) }}%
+                  </span>
+                </td>
+                <td class="center" style="text-align: center;" :class="row.deltaClass">
+                  <span v-if="idx < tableData.length - 1 || tableData.length === 1">
+                    {{ row.deltaStr }}
+                  </span>
+                  <span v-else class="muted" style="font-weight: normal">-</span>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
 
-      <!-- Interpretación + recomendaciones -->
       <section class="blocks">
         <article class="block block-info">
           <div class="block-bg-icon" aria-hidden="true">
             <span class="material-symbols-outlined">warning</span>
           </div>
-
           <div class="block-body">
             <div class="block-title">
               <div class="block-icon block-icon-blue">
                 <span class="material-symbols-outlined">insights</span>
               </div>
-              <h3>Interpretación y alertas</h3>
+              <h3>Interpretación Automática</h3>
             </div>
-
-            <p>
-              La empresa presenta una mejora sostenida en el margen operativo, aunque el margen neto se ve afectado
-              por costos financieros elevados.
+            <p v-if="metrics.length > 0 && metrics[0].deltaType === 'up'">
+              El margen de rentabilidad del periodo más reciente muestra una tendencia positiva frente al periodo inmediato anterior. La empresa está generando mayor utilidad por cada peso vendido.
+            </p>
+            <p v-else>
+              Alerta: El margen de rentabilidad ha sufrido una contracción respecto al periodo anterior. Es necesario revisar si el costo de ventas o gastos operativos se han incrementado desproporcionadamente.
             </p>
           </div>
         </article>
@@ -312,32 +414,19 @@ const areaPath = computed(() => {
             </div>
             <h3>Recomendaciones</h3>
           </div>
-
           <ul class="reco-list">
-            <li>
-              <span class="material-symbols-outlined">check_circle</span>
-              <span>Control de costos operativos</span>
-            </li>
-            <li>
-              <span class="material-symbols-outlined">check_circle</span>
-              <span>Revisión de estrategia de precios</span>
-            </li>
-            <li>
-              <span class="material-symbols-outlined">check_circle</span>
-              <span>Optimización de procesos internos</span>
-            </li>
+            <li><span class="material-symbols-outlined">check_circle</span><span>Monitorear de cerca los márgenes de operación y costos indirectos.</span></li>
+            <li><span class="material-symbols-outlined">check_circle</span><span>Revisar las estrategias de fijación de precios según inflación y proveedores.</span></li>
+            <li><span class="material-symbols-outlined">check_circle</span><span>Optimizar procesos que puedan estar erosionando el margen neto.</span></li>
           </ul>
         </article>
       </section>
-
-      <footer class="footer">
-        <p>
-          Todos los datos son confidenciales. <br />
-          Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
-        </p>
-      </footer>
     </div>
   </main>
+  
+  <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">
+      Cargando análisis multiperiodo...
+  </div>
 </template>
 
 <style scoped>

@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -48,27 +49,22 @@ class SolicitudAnalisisPeriodo(BaseModel):
 # --- ENDPOINTS ---
 @router.post("/documents/analyze-period")
 async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[str, Any]:
-    """
-    Recibe ambos documentos de un periodo, los procesa en Azure,
-    cruza los datos y calcula los KPIs financieros.
-    """
     _ensure_firebase_initialized()
     
     print(f"Iniciando análisis cruzado para el periodo: {payload.period_id}")
 
     try:
         # 1. Extraer datos crudos con Azure (Balance)
-        print("-> Extrayendo Balance General...")
-        balance_data = _azure_service.process_financial_document(payload.balance_url)
-
-        # 2. Extraer datos crudos con Azure (Resultados)
-        print("-> Extrayendo Estado de Resultados...")
-        resultados_data = _azure_service.process_financial_document(payload.resultados_url)
+        print("-> Extrayendo Balance General y estado de resultados...")
+        balance_data, resultados_data = await asyncio.gather(
+            _azure_service.process_financial_document_async(payload.balance_url),
+            _azure_service.process_financial_document_async(payload.resultados_url)
+        )
 
         # 3. Pasar la data por tu Motor Extractor para calcular rentabilidad
         print("-> Calculando indicadores financieros...")
         analisis_rentabilidad = _calculator.calcular_rentabilidad(balance_data, resultados_data)
-        analisis_liquidez = _calculator.calcular_liquidez(balance_data) # <-- NUEVO
+        analisis_liquidez = _calculator.calcular_liquidez(balance_data)
         analisis_endeudamiento = _calculator.calcular_endeudamiento(balance_data, resultados_data)
         analisis_rotacion = _calculator.calcular_rotacion(balance_data, resultados_data, periodicidad=payload.periodicidad)
         analisis_estructura = _calculator.calcular_estructura(balance_data)

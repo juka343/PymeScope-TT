@@ -79,6 +79,25 @@ const periodsToProcess = computed(() =>
 
 const canGenerate = computed(() => periodsToProcess.value.length > 0);
 
+const hasMissingDates = computed(() => {
+  return isMultiPeriod.value && completePeriods.value.some(p => !p.periodDate);
+});
+
+// Autollenado: Convierte "2023-01" a "Enero 2023"
+function handleDateChange(p) {
+  if (p.periodDate) {
+    const [year, month] = p.periodDate.split('-');
+    const meses = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+    // Asigna el nombre automáticamente
+    p.label = `${meses[parseInt(month) - 1]} ${year}`;
+  }
+  // Guarda en Firebase
+  savePeriodToFirestore(p);
+}
+
 // Actualiza el modo del proyecto en Firestore (mono/multi)
 async function updateProjectAnalysisMode() {
   const projectRef = doc(db, "proyectos", projectId);
@@ -110,6 +129,7 @@ async function loadExistingPeriods() {
       loaded.push({
         id: docSnap.id,
         label: data.label || "Periodo",
+        periodDate: data.periodDate || "",
         balanceFile: data.balanceFile || null,
         resultsFile: data.resultsFile || null,
 
@@ -121,16 +141,14 @@ async function loadExistingPeriods() {
             data.analisis_rotacion ||
             data.analisis_estructura
         ),
-
-        // se prende cuando el usuario sube/elimina archivos
         hasChanges: false,
       });
     });
 
     loaded.sort((a, b) => {
-      const numA = parseInt(String(a.label).replace("Periodo ", "")) || 0;
-      const numB = parseInt(String(b.label).replace("Periodo ", "")) || 0;
-      return numA - numB;
+      const dateA = a.periodDate || "";
+      const dateB = b.periodDate || "";
+      return dateA.localeCompare(dateB);
     });
 
     periods.value = loaded;
@@ -147,6 +165,7 @@ function addPeriod() {
   const newPeriod = {
     id: crypto.randomUUID(),
     label: `Periodo ${next}`,
+    periodDate: "",
     balanceFile: null,
     resultsFile: null,
     hasChanges: false,
@@ -163,6 +182,7 @@ async function savePeriodToFirestore(period) {
       periodRef,
       {
         label: period.label,
+        periodDate: period.periodDate,
         balanceFile: period.balanceFile,
         resultsFile: period.resultsFile,
         updatedAt: serverTimestamp(),
@@ -457,10 +477,31 @@ async function generateAnalysis() {
         <article v-for="p in periods" :key="p.id" class="period-card">
           <header class="period-card-head">
             <div class="head-left">
-              <h3>{{ p.label }}</h3>
-              <span class="mini-pill">{{ periodicity }}</span>
+              <div class="input-with-icon">
+                <input 
+                  type="text" 
+                  v-model="p.label" 
+                  @blur="savePeriodToFirestore(p)" 
+                  placeholder="Nombre (Ej. Enero 2024)" 
+                  class="editable-input label-input"
+                  title="Puedes editar este nombre"
+                />
+                <span class="material-symbols-outlined edit-icon">edit</span>
+              </div>
+              
+              <div class="date-wrapper">
+                <input 
+                  type="month" 
+                  v-model="p.periodDate" 
+                  @change="handleDateChange(p)" 
+                  class="editable-input date-input"
+                  title="Selecciona el mes y año"
+                />
+                <span v-if="isMultiPeriod && !p.periodDate" class="required-badge">
+                  * Obligatorio
+                </span>
+              </div>
             </div>
-
             <button class="btn-icon-danger" @click="removePeriod(p.id)" title="Eliminar periodo completo">
               <span class="material-symbols-outlined">delete</span>
             </button>
@@ -553,12 +594,15 @@ async function generateAnalysis() {
 
     <footer class="bottom">
       <div class="container bottom-inner">
-        <span class="autosave">Todos los cambios se guardan automáticamente</span>
+        <span v-if="hasMissingDates" class="warning-text">
+          Faltan fechas en algunos periodos para el análisis multiperiodo.
+        </span>
+        <span v-else class="autosave">Todos los cambios se guardan automáticamente</span>
 
         <button
           class="btn-generate"
           type="button"
-          :disabled="!canGenerate || isUploading || isProcessing"
+          :disabled="!canGenerate || isUploading || isProcessing || hasMissingDates"
           @click="generateAnalysis"
         >
           <span v-if="isUploading">Subiendo a Firebase...</span>
@@ -1016,6 +1060,39 @@ async function generateAnalysis() {
   font-size: 20px;
 }
 
+.editable-input {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #0e161b;
+  transition: all 0.2s;
+}
+
+.editable-input:hover {
+  background: #f1f5f9;
+}
+
+.editable-input:focus {
+  outline: none;
+  border-color: #299de0;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(41, 157, 224, 0.1);
+}
+
+.label-input {
+  font-weight: 900;
+  width: 140px;
+}
+
+.date-input {
+  color: #507c95;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 @media (min-width: 640px) {
   .back-text {
     display: inline;
@@ -1043,6 +1120,52 @@ async function generateAnalysis() {
 @media (min-width: 1024px) {
   .header-inner {
     padding: 12px 40px;
+  }
+}
+
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.edit-icon {
+  position: absolute;
+  right: 8px;
+  font-size: 14px;
+  color: #94a3b8;
+  pointer-events: none; /* Para que el clic pase al input */
+}
+
+.label-input {
+  padding-right: 24px; /* Espacio para el lapicito */
+}
+
+.date-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.required-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ef4444;
+  background: #fee2e2;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.warning-text {
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 700;
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .warning-text {
+    display: inline;
   }
 }
 </style>
