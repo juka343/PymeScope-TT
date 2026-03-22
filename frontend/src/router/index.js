@@ -98,16 +98,16 @@ const router = createRouter({
           name: "liquidezMulti",
           component: () => import("../views/LiquidezMultiperiodoView.vue"), 
         },
-        // {
-        //   path: "endeudamiento",
-        //   name: "endeudamientoMulti",
-        //   component: () => import("../views/EndeudamientoMultiperiodoView.vue"), 
-        // },
-        // {
-        //   path: "rotacion",
-        //   name: "rotacionMulti",
-        //   component: () => import("../views/RotacionDeActivosMultiView.vue"), 
-        // },
+        {
+          path: "endeudamiento",
+          name: "endeudamientoMulti",
+          component: () => import("../views/EndeudamientoMultiperiodoView.vue"), 
+        },
+        {
+          path: "rotacion",
+          name: "rotacionMulti",
+          component: () => import("../views/RotacionDeActivosMultiView.vue"), 
+        },
         // {
         //   path: "estructura",
         //   name: "estructuraMulti",

@@ -1,209 +1,142 @@
 <script setup>
-import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "@/firebase/config";
+import { computed, ref } from "vue";
 
-const route = useRoute();
-const projectId = route.params.id_proyecto;
-
-const loading = ref(true);
-const rawPeriods = ref([]);
-const metrics = ref([]);
-const activeKpi = ref("margen");
-const tableRows = ref([]);
+const activeKpi = ref("apalancamiento");
 const hoveredPoint = ref(null);
 
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
 
-const parseVal = (val) => {
-  if (!val) return 0;
-  if (typeof val === "number") return val;
-  return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
-};
+const periods = ["Q3 '23", "Q1 '24", "Q3 '24"];
 
-const fetchPeriods = async () => {
-  try {
-    if (!projectId) return;
+function buildChart(values, title, subtitle, legendLabel, type = "ratio") {
+  const maxFallback = type === "cobertura" ? 2 : 0.2;
+  const maxVal = Math.max(...values, maxFallback);
+  let minVal = Math.min(...values, 0);
 
-    const periodosRef = collection(db, "proyectos", projectId, "periodos");
-    const snapshot = await getDocs(periodosRef);
+  if (minVal > 0 && type !== "cobertura") minVal = 0;
 
-    let loaded = [];
-    snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.rentabilidad || d.analisis_rentabilidad) {
-        loaded.push({
-          id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          rentabilidad:
-            d.rentabilidad ||
-            d.analisis_rentabilidad || { datos_crudos: {}, kpis: [] },
-        });
-      }
-    });
+  const rawRange = maxVal - minVal;
 
-    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
-    rawPeriods.value = loaded;
-
-    if (loaded.length > 0) {
-      generateDashboardData();
-    }
-  } catch (error) {
-    console.error("Error cargando multiperiodo rentabilidad:", error);
-  } finally {
-    loading.value = false;
+  let step;
+  if (type === "cobertura") {
+    step = 0.5;
+    if (rawRange > 3) step = 1;
+    if (rawRange > 8) step = 2;
+  } else {
+    step = 0.1;
+    if (rawRange > 0.6) step = 0.2;
+    if (rawRange > 1.5) step = 0.5;
   }
-};
 
-const generateDashboardData = () => {
-  const periods = rawPeriods.value;
-  const labels = periods.map((p) => p.label);
+  const yMin = Math.floor(minVal / step) * step;
+  const yMax = Math.ceil(maxVal / step) * step;
+  const finalRange = Math.max(yMax - yMin, step);
 
-  const findKpi = (kpis, keyword) => {
-    if (!kpis) return 0;
-    const item = kpis.find((k) =>
-      k.label.toLowerCase().includes(keyword.toLowerCase())
-    );
-    return item ? parseVal(item.value) : 0;
+  const fmtLabel = (val) => {
+    if (type === "cobertura") return `${val.toFixed(1)}x`;
+    return val.toFixed(2);
   };
 
-  const dataMargen = periods.map((p) => findKpi(p.rentabilidad.kpis, "margen"));
-  const dataRat = periods.map((p) => findKpi(p.rentabilidad.kpis, "activos"));
-  const dataRoe = periods.map((p) => findKpi(p.rentabilidad.kpis, "patrimonio"));
-
-  const buildChart = (values, title, subtitle, legendLabel, type) => {
-    const maxVal = Math.max(...values, type === "margen" ? 10 : 5);
-    let minVal = Math.min(...values, 0);
-    if (minVal > 0) minVal = 0;
-
-    const rawRange = maxVal - minVal;
-
-    let step = 5;
-    if (rawRange > 15) step = 10;
-    if (rawRange > 40) step = 20;
-    if (rawRange > 100) step = 50;
-
-    const yMin = Math.floor(minVal / step) * step;
-    const yMax = Math.ceil(maxVal / step) * step;
-    const finalRange = Math.max(yMax - yMin, 1);
-
-    const fmtLabel = (val) => `${val.toFixed(0)}%`;
-
-    const yAxisLabels = [
-      fmtLabel(yMax),
-      fmtLabel(yMax - finalRange / 3),
-      fmtLabel(yMax - (finalRange / 3) * 2),
-      fmtLabel(yMin),
-    ];
-
-    const xStep = periods.length > 1 ? 560 / (periods.length - 1) : 0;
-
-    const points = values.map((val, i) => {
-      const x = periods.length > 1 ? 120 + i * xStep : 400;
-      const y = 230 - ((val - yMin) / finalRange) * 180;
-      return {
-        x,
-        y,
-        label: labels[i],
-        bold: i === values.length - 1,
-        value: val,
-      };
-    });
-
-    const lastVal = values[values.length - 1];
-    const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
-    const delta = lastVal - prevVal;
-
-    let status = "warn";
-    if (type === "margen") status = lastVal >= 10 ? "ok" : "warn";
-    if (type === "rat") status = lastVal >= 5 ? "ok" : "warn";
-    if (type === "roe") status = lastVal >= 10 ? "ok" : "warn";
-
-    return {
-      kpiValue: `${lastVal.toFixed(2)}%`,
-      status,
-      deltaType: delta >= 0 ? "up" : "down",
-      deltaValue: `${delta > 0 ? "+" : ""}${delta.toFixed(2)}%`,
-      deltaNote:
-        periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
-      chartTitle: title,
-      chartSubtitle: subtitle,
-      legendLabel,
-      yAxisLabels,
-      points,
-    };
-  };
-
-  metrics.value = [
-    {
-      key: "margen",
-      label: "Margen de Rentabilidad",
-      ...buildChart(
-        dataMargen,
-        "Evolución Margen de Rentabilidad",
-        "Tendencia histórica por periodo",
-        "Margen Neto",
-        "margen"
-      ),
-    },
-    {
-      key: "rat",
-      label: "Rendimiento sobre Activos Totales (RAT)",
-      ...buildChart(
-        dataRat,
-        "Evolución RAT",
-        "Capacidad de los activos para generar utilidad",
-        "RAT",
-        "rat"
-      ),
-    },
-    {
-      key: "roe",
-      label: "Rendimiento sobre el Patrimonio (ROE)",
-      ...buildChart(
-        dataRoe,
-        "Evolución ROE",
-        "Rentabilidad generada sobre el capital propio",
-        "ROE",
-        "roe"
-      ),
-    },
+  const yAxisLabels = [
+    fmtLabel(yMax),
+    fmtLabel(yMax - finalRange / 3),
+    fmtLabel(yMax - (finalRange / 3) * 2),
+    fmtLabel(yMin),
   ];
 
-  const reversedPeriods = [...periods].reverse();
-  const reversedMargen = [...dataMargen].reverse();
-  const reversedRat = [...dataRat].reverse();
-  const reversedRoe = [...dataRoe].reverse();
+  const xStep = values.length > 1 ? 560 / (values.length - 1) : 0;
 
-  tableRows.value = reversedPeriods.map((p, i) => ({
-    period: p.label,
-    ingresos: currencyFmt.format(p.rentabilidad.datos_crudos?.ventas_netas || 0),
-    utilidad: currencyFmt.format(p.rentabilidad.datos_crudos?.utilidad_neta || 0),
-    margen: `${reversedMargen[i].toFixed(2)}%`,
-    rat: `${reversedRat[i].toFixed(2)}%`,
-    roe: `${reversedRoe[i].toFixed(2)}%`,
-    highlight: i === 0,
-  }));
-};
+  const points = values.map((val, i) => {
+    const x = values.length > 1 ? 120 + i * xStep : 400;
+    const y = 230 - ((val - yMin) / finalRange) * 180;
+    return {
+      x,
+      y,
+      label: periods[i],
+      bold: i === values.length - 1,
+      value: val,
+      type,
+    };
+  });
+
+  const lastVal = values[values.length - 1];
+  const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
+  const delta = lastVal - prevVal;
+
+  let status = "warn";
+  if (type === "apalancamiento") status = lastVal <= 0.6 ? "ok" : "warn";
+  else if (type === "cobertura") status = lastVal >= 3 ? "ok" : "warn";
+  else if (type === "estabilidad") status = lastVal >= 0.67 ? "ok" : "warn";
+
+  return {
+    kpiValue: type === "cobertura" ? `${lastVal.toFixed(2)}x` : lastVal.toFixed(2),
+    status,
+    deltaType: delta >= 0 ? "up" : "down",
+    deltaValue:
+      type === "cobertura"
+        ? `${delta > 0 ? "+" : ""}${delta.toFixed(2)}x`
+        : `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`,
+    deltaNote: values.length > 1 ? `vs ${periods[periods.length - 2]}` : "Sin periodo previo",
+    chartTitle: title,
+    chartSubtitle: subtitle,
+    legendLabel,
+    yAxisLabels,
+    points,
+    type,
+  };
+}
+
+const metrics = ref([
+  {
+    key: "apalancamiento",
+    label: "Apalancamiento (deuda / activo)",
+    ...buildChart(
+      [0.58, 0.55, 0.54],
+      "Evolución Apalancamiento",
+      "Nivel de deuda respecto al activo total",
+      "Apalancamiento",
+      "apalancamiento"
+    ),
+  },
+  {
+    key: "cobertura",
+    label: "Cobertura de intereses",
+    ...buildChart(
+      [4.9, 4.4, 4.2],
+      "Evolución Cobertura de Intereses",
+      "Capacidad para cubrir gastos financieros",
+      "Cobertura",
+      "cobertura"
+    ),
+  },
+  {
+    key: "estabilidad",
+    label: "Estabilidad financiera",
+    ...buildChart(
+      [0.75, 0.80, 0.85],
+      "Evolución Estabilidad Financiera",
+      "Equilibrio entre recursos propios y deuda",
+      "Estabilidad",
+      "estabilidad"
+    ),
+  },
+]);
 
 const selectedKpi = computed(() => {
-  if (metrics.value.length === 0) return null;
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(k) {
-  activeKpi.value = k;
+function setActive(key) {
+  activeKpi.value = key;
 }
 
-function showTooltip(p) {
-  hoveredPoint.value = p;
+function showTooltip(point) {
+  hoveredPoint.value = point;
 }
 
 function hideTooltip() {
@@ -229,66 +162,106 @@ const areaPath = computed(() => {
   return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 });
 
+const pasivosTotales = computed(() => ({
+  total: "$4.8M",
+  segments: [
+    { label: "Pasivo Circulante", pct: "40.0", color: "#e11d48", dasharray: "40 100", dashoffset: 0 },
+    { label: "Deuda a Largo Plazo", pct: "35.0", color: "#fb923c", dasharray: "35 100", dashoffset: -40 },
+    { label: "Otros Pasivos", pct: "25.0", color: "#fcd34d", dasharray: "25 100", dashoffset: -75 },
+  ],
+}));
+
+const financiamiento = computed(() => ({
+  total: "$8.9M",
+  segments: [
+    { label: "Financiamiento Externo / Pasivo", pct: "54.0", color: "#299de0", dasharray: "54 100", dashoffset: 0 },
+    { label: "Capital Propio / Patrimonio", pct: "46.0", color: "#1e293b", dasharray: "46 100", dashoffset: -54 },
+  ],
+}));
+
+const tableRows = ref([
+  {
+    period: "Q3 2024",
+    pasivo: currencyFmt.format(4760000),
+    activo: currencyFmt.format(8900000),
+    apalancamiento: "0.54",
+    cobertura: "4.2x",
+    variacion: "-0.8%",
+    highlight: true,
+    variationClass: "up",
+  },
+  {
+    period: "Q2 2024",
+    pasivo: currencyFmt.format(4800000),
+    activo: currencyFmt.format(8890000),
+    apalancamiento: "0.54",
+    cobertura: "4.3x",
+    variacion: "-0.4%",
+    highlight: false,
+    variationClass: "up",
+  },
+  {
+    period: "Q1 2024",
+    pasivo: currencyFmt.format(4820000),
+    activo: currencyFmt.format(8840000),
+    apalancamiento: "0.55",
+    cobertura: "4.4x",
+    variacion: "+0.8%",
+    highlight: false,
+    variationClass: "down",
+  },
+]);
+
 const analysisText = computed(() => {
   if (!selectedKpi.value) return "";
 
-  if (selectedKpi.value.key === "margen") {
-    return selectedKpi.value.status === "ok"
-      ? "La empresa presenta un margen de rentabilidad favorable en su último periodo. Esto indica una buena capacidad para convertir ventas en utilidad neta."
-      : "El margen de rentabilidad del último periodo es bajo respecto a niveles deseables. Conviene revisar costos, gastos operativos y políticas de precios.";
+  if (selectedKpi.value.key === "apalancamiento") {
+    return "La empresa mantiene una estructura de endeudamiento saludable. El nivel de apalancamiento se mantiene controlado, aunque debe seguir monitoreándose para evitar una dependencia excesiva del financiamiento externo.";
   }
 
-  if (selectedKpi.value.key === "rat") {
-    return selectedKpi.value.status === "ok"
-      ? "El rendimiento sobre activos muestra que la empresa está utilizando sus recursos de forma eficiente para generar utilidad."
-      : "El rendimiento sobre activos es reducido. Esto puede indicar activos sobredimensionados o bajo aprovechamiento operativo.";
+  if (selectedKpi.value.key === "cobertura") {
+    return "La cobertura de intereses sigue siendo aceptable, pero muestra una ligera contracción. Conviene vigilar que la utilidad operativa siga siendo suficiente para absorber el costo financiero.";
   }
 
-  return selectedKpi.value.status === "ok"
-    ? "El rendimiento sobre el patrimonio es saludable y refleja una buena rentabilidad para los socios o propietarios."
-    : "El rendimiento sobre el patrimonio es bajo. Es recomendable revisar la utilidad neta y la estructura de capital para mejorar el retorno al propietario.";
+  return "La estabilidad financiera ha mejorado ligeramente en el último periodo. Esto sugiere una estructura más equilibrada entre capital propio y deuda.";
 });
 
 const recommendationList = computed(() => {
   if (!selectedKpi.value) return [];
 
-  if (selectedKpi.value.key === "margen") {
+  if (selectedKpi.value.key === "apalancamiento") {
     return [
-      "Monitorear de cerca los márgenes de operación y costos indirectos.",
-      "Revisar las estrategias de fijación de precios según inflación y proveedores.",
-      "Optimizar procesos que puedan estar erosionando el margen neto.",
+      "Mantener el ratio de apalancamiento por debajo de 0.60.",
+      "Evitar aumentar la deuda sin respaldo en crecimiento operativo real.",
+      "Evaluar fuentes de financiamiento con menor costo financiero.",
     ];
   }
 
-  if (selectedKpi.value.key === "rat") {
+  if (selectedKpi.value.key === "cobertura") {
     return [
-      "Evaluar si los activos actuales están generando el rendimiento esperado.",
-      "Reducir activos ociosos que no aporten valor operativo.",
-      "Mejorar la productividad del activo total mediante control de costos y ventas.",
+      "Revisar el costo financiero de los pasivos vigentes.",
+      "Fortalecer la utilidad operativa para sostener la cobertura.",
+      "Renegociar obligaciones costosas si presionan demasiado el flujo.",
     ];
   }
 
   return [
-    "Fortalecer la utilidad neta sin comprometer el patrimonio innecesariamente.",
-    "Cuidar la estructura de capital para no diluir el rendimiento al propietario.",
-    "Comparar periódicamente el ROE contra metas internas o benchmarks del sector.",
+    "Reforzar el capital propio mediante reinversión de utilidades.",
+    "Evitar financiar activos estratégicos con deuda demasiado agresiva.",
+    "Mantener una mezcla sana entre recursos ajenos y patrimonio.",
   ];
 });
 
 function learnMore() {
-  // router.push(`/proyecto/${projectId}/dashboard-multi/learning/rentabilidad`);
+  // Placeholder
 }
-
-onMounted(() => {
-  fetchPeriods();
-});
 </script>
 
 <template>
-  <div class="wrap" v-if="!loading && metrics.length > 0">
+  <div class="wrap">
     <div class="title">
       <div class="title-row">
-        <h1>Rentabilidad</h1>
+        <h1>Endeudamiento</h1>
         <button class="btn-learn" type="button" @click="learnMore">
           <span class="material-symbols-outlined">info</span>
           <span>Saber más</span>
@@ -296,9 +269,9 @@ onMounted(() => {
       </div>
 
       <div class="subtitle">
-        <p>Evalúa la capacidad de la empresa para generar utilidades</p>
+        <p>Analiza la solvencia y el riesgo financiero a largo plazo</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Estado de Resultados</p>
+        <p class="small">PIndicadores calculados a partir del Balance General</p>
       </div>
     </div>
 
@@ -338,7 +311,6 @@ onMounted(() => {
           <h3>{{ selectedKpi.chartTitle }}</h3>
           <p class="panel-sub">{{ selectedKpi.chartSubtitle }}</p>
         </div>
-
         <div class="legend">
           <div class="legend-item">
             <span class="legend-dot" aria-hidden="true"></span>
@@ -350,7 +322,7 @@ onMounted(() => {
       <div class="chart">
         <svg class="chart-svg" fill="none" preserveAspectRatio="none" viewBox="0 0 800 300">
           <defs>
-            <linearGradient id="gradient-rent" x1="0" x2="0" y1="0" y2="1">
+            <linearGradient id="gradient-deuda" x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stop-color="#299de0" stop-opacity="0.15"></stop>
               <stop offset="100%" stop-color="#299de0" stop-opacity="0"></stop>
             </linearGradient>
@@ -361,7 +333,7 @@ onMounted(() => {
           <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="170" y2="170"></line>
           <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230"></line>
 
-          <path :d="areaPath" fill="url(#gradient-rent)"></path>
+          <path :d="areaPath" fill="url(#gradient-deuda)"></path>
           <path :d="linePath" fill="none" stroke="#299de0" stroke-linecap="round" stroke-width="3"></path>
 
           <circle
@@ -390,9 +362,9 @@ onMounted(() => {
 
           <g v-if="hoveredPoint" style="pointer-events: none;">
             <rect
-              :x="hoveredPoint.x - 38"
+              :x="hoveredPoint.x - 40"
               :y="hoveredPoint.y - 42"
-              width="76"
+              width="80"
               height="26"
               rx="6"
               fill="#0e161b"
@@ -412,7 +384,11 @@ onMounted(() => {
               font-family="Inter, sans-serif"
               text-anchor="middle"
             >
-              {{ hoveredPoint.value.toFixed(2) }}%
+              {{
+                hoveredPoint.type === "cobertura"
+                  ? `${hoveredPoint.value.toFixed(2)}x`
+                  : hoveredPoint.value.toFixed(2)
+              }}
             </text>
           </g>
 
@@ -449,36 +425,109 @@ onMounted(() => {
       </div>
     </section>
 
+    <section class="grid-2">
+      <article class="card">
+        <h3>Composición del Pasivo</h3>
+        <p class="card-sub">Desglose de obligaciones financieras</p>
+
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg class="donut-svg" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#e8eff3" stroke-width="4"></circle>
+              <circle
+                v-for="(seg, idx) in pasivosTotales.segments"
+                :key="idx"
+                cx="18"
+                cy="18"
+                fill="none"
+                r="16"
+                :stroke="seg.color"
+                :stroke-dasharray="seg.dasharray"
+                :stroke-dashoffset="seg.dashoffset"
+                stroke-width="4"
+              ></circle>
+            </svg>
+            <div class="donut-center">
+              <span class="donut-kicker">Total</span>
+              <span class="donut-total">{{ pasivosTotales.total }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend-grid">
+          <div class="legend-row" v-for="(seg, idx) in pasivosTotales.segments" :key="`leg-p-${idx}`">
+            <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
+            <span class="truncate">{{ seg.label }} ({{ seg.pct }}%)</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h3>Estructura de Financiamiento</h3>
+        <p class="card-sub">Relación entre deuda propia y ajena</p>
+
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg class="donut-svg" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" fill="none" r="16" stroke="#e8eff3" stroke-width="4"></circle>
+              <circle
+                v-for="(seg, idx) in financiamiento.segments"
+                :key="idx"
+                cx="18"
+                cy="18"
+                fill="none"
+                r="16"
+                :stroke="seg.color"
+                :stroke-dasharray="seg.dasharray"
+                :stroke-dashoffset="seg.dashoffset"
+                stroke-width="4"
+              ></circle>
+            </svg>
+            <div class="donut-center">
+              <span class="donut-kicker">Activo</span>
+              <span class="donut-total">{{ financiamiento.total }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend-grid">
+          <div class="legend-row" v-for="(seg, idx) in financiamiento.segments" :key="`leg-f-${idx}`">
+            <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
+            <span class="truncate">{{ seg.label }} ({{ seg.pct }}%)</span>
+          </div>
+        </div>
+      </article>
+    </section>
+
     <section class="panel">
       <div class="panel-head">
         <h3>Comparativa por periodo</h3>
       </div>
-
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
               <th>Periodo</th>
-              <th class="right">Ingresos</th>
-              <th class="right">Utilidad Neta</th>
-              <th class="center" style="text-align: center;">Margen</th>
-              <th class="center" style="text-align: center;">RAT</th>
-              <th class="center" style="text-align: center;">ROE</th>
+              <th class="right">Pasivo Total</th>
+              <th class="right">Activo Total</th>
+              <th class="center" style="text-align: center;">Apalancamiento</th>
+              <th class="center" style="text-align: center;">Cobertura Intereses</th>
+              <th class="right">Var. trimestral</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="r in tableRows" :key="r.period" :class="{ highlight: r.highlight }">
               <td class="strong" :class="{ primary: r.highlight }">{{ r.period }}</td>
-              <td class="right" :class="{ strong: r.highlight }">{{ r.ingresos }}</td>
-              <td class="right" :class="{ strong: r.highlight }">{{ r.utilidad }}</td>
+              <td class="right" :class="{ strong: r.highlight }">{{ r.pasivo }}</td>
+              <td class="right" :class="{ strong: r.highlight }">{{ r.activo }}</td>
               <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
-                {{ r.margen }}
+                {{ r.apalancamiento }}
               </td>
               <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
-                {{ r.rat }}
+                {{ r.cobertura }}
               </td>
-              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
-                {{ r.roe }}
+              <td class="right" :class="[r.variationClass, { strong: r.highlight }]">
+                {{ r.variacion }}
               </td>
             </tr>
           </tbody>
@@ -491,12 +540,10 @@ onMounted(() => {
         <div class="note-bg" aria-hidden="true">
           <span class="material-symbols-outlined">warning</span>
         </div>
-
         <div class="note-mini">
           <span class="material-symbols-outlined">info</span>
           <span>Interpretación Automática</span>
         </div>
-
         <h3>Análisis de tendencia</h3>
         <p>{{ analysisText }}</p>
       </article>
@@ -508,7 +555,6 @@ onMounted(() => {
           </span>
           <h3>Recomendaciones</h3>
         </div>
-
         <ul class="list">
           <li v-for="(item, idx) in recommendationList" :key="idx">
             <span class="material-symbols-outlined">check_circle</span>
@@ -521,17 +567,17 @@ onMounted(() => {
     <footer class="foot">
       <p>
         Todos los datos son confidenciales.<br />
-        Este reporte es para fines informativos.
+        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
       </p>
     </footer>
-  </div>
-
-  <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">
-    Cargando análisis multiperiodo de rentabilidad...
   </div>
 </template>
 
 <style scoped>
+.truncate {
+  line-height: 1.3;
+}
+
 .wrap {
   width: min(1200px, 100%);
   margin: 0 auto;
@@ -565,7 +611,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 900;
   color: #0e161b;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .btn-learn:hover {
@@ -610,14 +656,14 @@ onMounted(() => {
   border: 1px solid #e8eff3;
   border-radius: 14px;
   padding: 16px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
   cursor: pointer;
 }
 
 .kpi:hover {
   border-color: #b4d2e6;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.06);
 }
 
 .kpi:active {
@@ -657,12 +703,12 @@ onMounted(() => {
 
 .kpi-dot.ok {
   background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 8px rgba(34,197,94,0.4);
 }
 
 .kpi-dot.warn {
   background: #facc15;
-  box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+  box-shadow: 0 0 8px rgba(250,204,21,0.4);
 }
 
 .kpi-value {
@@ -715,7 +761,7 @@ onMounted(() => {
   border: 1px solid #e8eff3;
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
 }
 
 .panel-head {
@@ -775,6 +821,99 @@ onMounted(() => {
   display: block;
 }
 
+/* Donut cards */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e8eff3;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.card-sub {
+  margin: -6px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #507c95;
+}
+
+.donut-wrap {
+  display: grid;
+  place-items: center;
+  padding: 10px 0;
+}
+
+.donut {
+  position: relative;
+  width: 160px;
+  height: 160px;
+}
+
+.donut-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.donut-kicker {
+  font-size: 11px;
+  font-weight: 900;
+  color: #507c95;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.donut-total {
+  font-size: 20px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px 12px;
+  margin-top: 8px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #507c95;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
 /* Table */
 .table-wrap {
   overflow-x: auto;
@@ -825,18 +964,20 @@ onMounted(() => {
   background: rgba(41, 157, 224, 0.08);
 }
 
-/* Notes */
-.grid-2 {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
+.up {
+  color: #16a34a;
 }
 
+.down {
+  color: #ef4444;
+}
+
+/* Notes */
 .note {
   position: relative;
   border-radius: 14px;
   padding: 16px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
   overflow: hidden;
 }
 
@@ -957,11 +1098,9 @@ onMounted(() => {
     align-items: baseline;
     gap: 10px;
   }
-
   .dot {
     display: inline;
   }
-
   .kpis {
     grid-template-columns: repeat(2, 1fr);
   }
