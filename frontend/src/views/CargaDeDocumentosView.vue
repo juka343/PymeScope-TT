@@ -80,19 +80,61 @@ const periodsToProcess = computed(() =>
 const canGenerate = computed(() => periodsToProcess.value.length > 0);
 
 const hasMissingDates = computed(() => {
-  return isMultiPeriod.value && completePeriods.value.some(p => !p.periodDate);
+  return isMultiPeriod.value && completePeriods.value.some(p => !p.periodDate || p.periodDate.length < 6);
 });
+
+const currentYear = new Date().getFullYear();
+const availableYears = ref(Array.from({ length: 81 }, (_, i) => currentYear + 20 - i)); 
+const availableMonths = [
+  { value: "01", label: "Enero" }, { value: "02", label: "Febrero" },
+  { value: "03", label: "Marzo" }, { value: "04", label: "Abril" },
+  { value: "05", label: "Mayo" }, { value: "06", label: "Junio" },
+  { value: "07", label: "Julio" }, { value: "08", label: "Agosto" },
+  { value: "09", label: "Septiembre" }, { value: "10", label: "Octubre" },
+  { value: "11", label: "Noviembre" }, { value: "12", label: "Diciembre" }
+];
+
+const openDropdown = ref(null);
+
+function toggleDropdown(id) {
+  openDropdown.value = openDropdown.value === id ? null : id;
+}
+
+function getMonthLabel(periodDate) {
+  const parts = periodDate ? periodDate.split('-') : [];
+  const m = parts[1] || "";
+  const found = availableMonths.find(x => x.value === m);
+  return found ? found.label : "Mes";
+}
+
+function getYearLabel(periodDate) {
+  const parts = periodDate ? periodDate.split('-') : [];
+  return parts[0] || "Año";
+}
+
+function updatePeriodDate(p, type, value) {
+  const parts = p.periodDate ? p.periodDate.split("-") : [];
+  let year = parts[0] || "";
+  let month = parts[1] || "";
+  
+  if (type === "year") year = value;
+  if (type === "month") month = value;
+  
+  p.periodDate = `${year}-${month}`;
+  handleDateChange(p);
+}
 
 // Autollenado: Convierte "2023-01" a "Enero 2023"
 function handleDateChange(p) {
-  if (p.periodDate) {
+  if (p.periodDate && p.periodDate.length >= 6) {
     const [year, month] = p.periodDate.split('-');
-    const meses = [
-      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
-      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-    ];
-    // Asigna el nombre automáticamente
-    p.label = `${meses[parseInt(month) - 1]} ${year}`;
+    if (year && month) {
+      const meses = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+      ];
+      p.label = `${meses[parseInt(month) - 1]} ${year}`;
+    }
   }
   // Guarda en Firebase
   savePeriodToFirestore(p);
@@ -497,14 +539,42 @@ async function generateAnalysis() {
               </div>
               
               <div class="date-wrapper">
-                <input 
-                  type="month" 
-                  v-model="p.periodDate" 
-                  @change="handleDateChange(p)" 
-                  class="editable-input date-input"
-                  title="Selecciona el mes y año"
-                />
-                <span v-if="isMultiPeriod && !p.periodDate" class="required-badge">
+                <div class="date-selects">
+                  <div class="custom-select" tabindex="0" @blur="openDropdown = null">
+                    <div class="selected-value" @click="toggleDropdown(`${p.id}-month`)">
+                      <span>{{ getMonthLabel(p.periodDate) }}</span>
+                      <span class="material-symbols-outlined">expand_more</span>
+                    </div>
+                    <ul v-show="openDropdown === `${p.id}-month`" class="options-list" @mousedown.prevent>
+                      <li 
+                        v-for="m in availableMonths" 
+                        :key="m.value" 
+                        @click="updatePeriodDate(p, 'month', m.value); openDropdown = null"
+                        :class="{ active: p.periodDate && p.periodDate.split('-')[1] === m.value }"
+                      >
+                        {{ m.label }}
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div class="custom-select" tabindex="0" @blur="openDropdown = null">
+                    <div class="selected-value" @click="toggleDropdown(`${p.id}-year`)">
+                      <span>{{ getYearLabel(p.periodDate) }}</span>
+                      <span class="material-symbols-outlined">expand_more</span>
+                    </div>
+                    <ul v-show="openDropdown === `${p.id}-year`" class="options-list" @mousedown.prevent>
+                      <li 
+                        v-for="y in availableYears" 
+                        :key="y" 
+                        @click="updatePeriodDate(p, 'year', y); openDropdown = null"
+                        :class="{ active: p.periodDate && p.periodDate.split('-')[0] == y }"
+                      >
+                        {{ y }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <span v-if="isMultiPeriod && (!p.periodDate || p.periodDate.length < 6)" class="required-badge">
                   * Obligatorio
                 </span>
               </div>
@@ -1152,6 +1222,96 @@ async function generateAnalysis() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.date-selects {
+  display: flex;
+  gap: 8px;
+}
+
+.custom-select {
+  position: relative;
+  outline: none;
+}
+
+.selected-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0e161b;
+  cursor: pointer;
+  min-width: 80px;
+  transition: all 0.2s;
+}
+
+.selected-value:hover {
+  background: #f1f5f9;
+}
+
+.custom-select:focus .selected-value {
+  border-color: #299de0;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(41, 157, 224, 0.1);
+}
+
+.selected-value span.material-symbols-outlined {
+  font-size: 16px;
+  color: #94a3b8;
+}
+
+.options-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 100%;
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+.options-list li {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.options-list li:hover {
+  background: #f1f5f9;
+}
+
+.options-list li.active {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 700;
+}
+
+.options-list::-webkit-scrollbar {
+  width: 6px;
+}
+.options-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.options-list::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 10px;
 }
 
 .required-badge {
