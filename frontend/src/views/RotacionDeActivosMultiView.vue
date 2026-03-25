@@ -1,8 +1,17 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/firebase/config";
 
+const route = useRoute();
+const projectId = route.params.id_proyecto;
+
+const loading = ref(true);
+const rawPeriods = ref([]);
+const metrics = ref([]);
 const activeKpi = ref("activosTotales");
-const hoveredPoint = ref(null);
+const tableRows = ref([]);
 
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -11,181 +20,183 @@ const currencyFmt = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 0,
 });
 
-const periods = ["Q3 '23", "Q4 '23", "Q1 '24", "Q2 '24", "Q3 '24"];
+const parseVal = (val) => {
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+};
 
-function buildChart(values, title, subtitle, legendLabel, type = "times") {
-  const maxFallback = type === "days" ? 30 : 1;
-  const maxVal = Math.max(...values, maxFallback);
-  let minVal = Math.min(...values, 0);
+const fetchPeriods = async () => {
+  try {
+    if (!projectId) return;
 
-  if (minVal > 0 && type !== "days") minVal = 0;
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
 
-  const rawRange = maxVal - minVal;
+    let loaded = [];
+    snapshot.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (d.analisis_rotacion) {
+        loaded.push({
+          id: docSnap.id,
+          label: d.label || "Periodo",
+          periodDate: d.periodDate || d.label,
+          rotacion: d.analisis_rotacion || { datos_crudos: {}, kpis: [] },
+          liquidez: d.analisis_liquidez || { datos_crudos: {} },
+          estructura: d.analisis_estructura || { datos_crudos: {} },
+        });
+      }
+    });
 
-  let step;
-  if (type === "days") {
-    step = 5;
-    if (rawRange > 30) step = 10;
-  } else {
-    step = 0.2;
-    if (rawRange > 2) step = 0.5;
-    if (rawRange > 5) step = 1;
+    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    rawPeriods.value = loaded;
+    
+    if (loaded.length > 0) {
+      generateDashboardData();
+    }
+  } catch (error) {
+    console.error("Error cargando multiperiodo rotación:", error);
+  } finally {
+    loading.value = false;
   }
+};
 
-  const yMin = Math.floor(minVal / step) * step;
-  const yMax = Math.ceil(maxVal / step) * step;
-  const finalRange = Math.max(yMax - yMin, step);
+const generateDashboardData = () => {
+  const periods = rawPeriods.value;
+  const labels = periods.map(p => p.label);
 
-  const fmtLabel = (val) => {
-    if (type === "days") return `${Math.round(val)} d`;
-    return `${val.toFixed(1)}x`;
+  const findKpi = (kpis, keyword) => {
+    if (!kpis) return 0;
+    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? parseVal(item.value) : 0;
   };
 
-  const yAxisLabels = [
-    fmtLabel(yMax),
-    fmtLabel(yMax - finalRange / 3),
-    fmtLabel(yMax - (finalRange / 3) * 2),
-    fmtLabel(yMin),
-  ];
+  const dataCobrar = periods.map(p => findKpi(p.rotacion.kpis, "cartera")); // En tu backend se llama "Rotación de la Cartera"
+  const dataRecaudo = periods.map(p => findKpi(p.rotacion.kpis, "recaudo"));
+  const dataInventarios = periods.map(p => findKpi(p.rotacion.kpis, "inventarios"));
+  const dataFijos = periods.map(p => findKpi(p.rotacion.kpis, "fijos"));
+  const dataActivosTotales = periods.map(p => findKpi(p.rotacion.kpis, "totales"));
 
-  const xStep = values.length > 1 ? 700 / (values.length - 1) : 0;
+  function buildChart(values, title, subtitle, legendLabel, type = "times") {
+    const maxFallback = type === "days" ? 30 : 1;
+    const maxVal = Math.max(...values, maxFallback);
+    let minVal = Math.min(...values, 0);
 
-  const points = values.map((val, i) => {
-    const x = values.length > 1 ? 50 + i * xStep : 400;
-    const y = 230 - ((val - yMin) / finalRange) * 160;
+    if (minVal > 0 && type !== "days") minVal = 0;
+
+    const rawRange = maxVal - minVal;
+
+    let step;
+    if (type === "days") {
+      step = 5;
+      if (rawRange > 30) step = 10;
+    } else {
+      step = 0.2;
+      if (rawRange > 2) step = 0.5;
+      if (rawRange > 5) step = 1;
+      if (rawRange > 15) step = 5; // Para rotaciones muy altas
+    }
+
+    const yMin = Math.floor(minVal / step) * step;
+    const yMax = Math.ceil(maxVal / step) * step;
+    const finalRange = Math.max(yMax - yMin, step);
+
+    const fmtLabel = (val) => {
+      if (type === "days") return `${Math.round(val)} d`;
+      return `${val.toFixed(1)}x`;
+    };
+
+    const yAxisLabels = [
+      fmtLabel(yMax),
+      fmtLabel(yMax - finalRange / 3),
+      fmtLabel(yMax - (finalRange / 3) * 2),
+      fmtLabel(yMin),
+    ];
+
+    const xStep = values.length > 1 ? 600 / (values.length - 1) : 0;
+
+    const points = values.map((val, i) => {
+      const x = values.length > 1 ? 100 + i * xStep : 400;
+      const y = 230 - ((val - yMin) / finalRange) * 160;
+      return { x, y, label: labels[i], bold: i === values.length - 1, value: val, type };
+    });
+
+    const lastVal = values[values.length - 1];
+    const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
+    const delta = lastVal - prevVal;
+
+    // Lógica de colores (Recaudo es mejor si baja, los demás son mejores si suben)
+    let isPositive = delta >= 0;
+    if (type === "days") isPositive = delta <= 0; 
+    
+    // Status visual
+    let status = "warn";
+    if (legendLabel === "Rotación CxC") status = lastVal > 0 ? "ok" : "warn";
+    else if (type === "days") status = (lastVal <= 60 && lastVal > 0) ? "ok" : "warn";
+    else status = lastVal >= 1 ? "ok" : "warn";
+
     return {
-      x,
-      y,
-      label: periods[i],
-      bold: i === values.length - 1,
-      value: val,
+      kpiValue: type === "days" ? `${Math.round(lastVal)} días` : `${lastVal.toFixed(1)}x`,
+      status,
+      deltaStyle: isPositive ? "positive" : "negative",
+      deltaIcon: delta >= 0 ? "trending_up" : "trending_down",
+      deltaValue: type === "days" ? `${delta > 0 ? "+" : ""}${Math.round(delta)} días` : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}`,
+      deltaNote: values.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      chartTitle: title,
+      chartSubtitle: subtitle,
+      legendLabel,
+      yAxisLabels,
+      points,
       type,
     };
+  }
+
+  metrics.value = [
+    { key: "cobrar", label: "Rotación de Cuentas por Cobrar", ...buildChart(dataCobrar, "Evolución de Rotación de CxC", "Velocidad con la que la empresa recupera su cartera", "Rotación CxC", "times") },
+    { key: "recaudo", label: "Periodo Promedio de Recaudo", ...buildChart(dataRecaudo, "Evolución del Periodo Promedio de Recaudo", "Tiempo promedio que tarda la empresa en cobrar", "Periodo de Cobro", "days") },
+    { key: "inventarios", label: "Rotación de Inventarios", ...buildChart(dataInventarios, "Evolución de Rotación de Inventarios", "Frecuencia con la que el inventario se convierte en ventas", "Rotación Inventarios", "times") },
+    { key: "fijos", label: "Rotación de Activos Fijos", ...buildChart(dataFijos, "Evolución de Rotación de Activos Fijos", "Nivel de aprovechamiento de la infraestructura productiva", "Activos Fijos", "times") },
+    { key: "activosTotales", label: "Rotación de Activos Totales", ...buildChart(dataActivosTotales, "Evolución de Rotación de Activos Totales", "Tendencia de eficiencia operativa en los últimos trimestres", "Rotación Activos", "times") },
+  ];
+
+  // Construir Tabla (Orden Inverso)
+  const reversedPeriods = [...periods].reverse();
+  const reversedTotales = [...dataActivosTotales].reverse();
+  const reversedInventarios = [...dataInventarios].reverse();
+  const reversedRecaudo = [...dataRecaudo].reverse();
+  
+  tableRows.value = reversedPeriods.map((p, i) => {
+    const crudos = p.rotacion.datos_crudos || {};
+    return {
+      period: p.label,
+      ventas: currencyFmt.format(crudos.ventas_netas || 0),
+      activo: currencyFmt.format(crudos.activo_total || 0),
+      rotacionActivos: `${reversedTotales[i].toFixed(2)}x`,
+      rotacionInventarios: `${reversedInventarios[i].toFixed(1)}x`,
+      periodoCobro: `${Math.round(reversedRecaudo[i])} días`,
+      highlight: i === 0,
+    };
   });
-
-  return {
-    chartTitle: title,
-    chartSubtitle: subtitle,
-    legendLabel,
-    yAxisLabels,
-    points,
-    type,
-  };
-}
-
-const metrics = ref([
-  {
-    key: "cobrar",
-    label: "Rotación de Cuentas por Cobrar",
-    kpiValue: "6.2x",
-    status: "warn",
-    deltaStyle: "negative",
-    deltaIcon: "trending_down",
-    deltaValue: "-0.5",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [7.1, 6.9, 6.8, 6.5, 6.2],
-      "Evolución de Rotación de Cuentas por Cobrar",
-      "Velocidad con la que la empresa recupera su cartera",
-      "Rotación CxC",
-      "times"
-    ),
-  },
-  {
-    key: "recaudo",
-    label: "Periodo Promedio de Recaudo",
-    kpiValue: "58 días",
-    status: "warn",
-    deltaStyle: "negative",
-    deltaIcon: "trending_up",
-    deltaValue: "+4 días",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [49, 50, 51, 54, 58],
-      "Evolución del Periodo Promedio de Recaudo",
-      "Tiempo promedio que tarda la empresa en cobrar",
-      "Periodo de Cobro",
-      "days"
-    ),
-  },
-  {
-    key: "inventarios",
-    label: "Rotación de Inventarios",
-    kpiValue: "4.5x",
-    status: "ok",
-    deltaStyle: "positive",
-    deltaIcon: "trending_up",
-    deltaValue: "+0.3",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [3.8, 3.9, 4.0, 4.2, 4.5],
-      "Evolución de Rotación de Inventarios",
-      "Frecuencia con la que el inventario se convierte en ventas",
-      "Rotación Inventarios",
-      "times"
-    ),
-  },
-  {
-    key: "fijos",
-    label: "Rotación de Activos Fijos",
-    kpiValue: "2.4x",
-    status: "ok",
-    deltaStyle: "positive",
-    deltaIcon: "trending_up",
-    deltaValue: "+0.1",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [2.1, 2.2, 2.2, 2.3, 2.4],
-      "Evolución de Rotación de Activos Fijos",
-      "Nivel de aprovechamiento de la infraestructura productiva",
-      "Activos Fijos",
-      "times"
-    ),
-  },
-  {
-    key: "activosTotales",
-    label: "Rotación de Activos Totales",
-    kpiValue: "1.8x",
-    status: "ok",
-    deltaStyle: "positive",
-    deltaIcon: "trending_up",
-    deltaValue: "+0.2",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [1.1, 1.3, 1.5, 1.6, 1.8],
-      "Evolución de Rotación de Activos Totales",
-      "Tendencia de eficiencia operativa en los últimos trimestres",
-      "Rotación Activos",
-      "times"
-    ),
-  },
-]);
+};
 
 const selectedKpi = computed(() => {
+  if (metrics.value.length === 0) return null;
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(key) {
-  activeKpi.value = key;
-}
+function setActive(key) { activeKpi.value = key; }
 
-function showTooltip(point) {
-  hoveredPoint.value = point;
-}
-
-function hideTooltip() {
-  hoveredPoint.value = null;
-}
+const hoveredPoint = ref(null);
+function showTooltip(point) { hoveredPoint.value = point; }
+function hideTooltip() { hoveredPoint.value = null; }
 
 const baselineY = 230;
-
 const linePath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
   if (!pts.length) return "";
   return pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ");
 });
-
 const areaPath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
@@ -196,121 +207,159 @@ const areaPath = computed(() => {
   return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 });
 
-const activoCirculante = computed(() => ({
-  total: "$3.2M",
-  segments: [
-    { label: "CxC", pct: "35", color: "#1e293b", dasharray: "35 100", dashoffset: 0 },
-    { label: "Inventarios", pct: "30", color: "#299de0", dasharray: "30 100", dashoffset: -35 },
-    { label: "Efectivo", pct: "25", color: "#507c95", dasharray: "25 100", dashoffset: -65 },
-    { label: "Otros", pct: "10", color: "#d1dee6", dasharray: "10 100", dashoffset: -90 },
-  ],
-}));
+// --- LÓGICA DE DONUTS (Último periodo) ---
+const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
 
-const activosTotales = computed(() => ({
-  total: "$8.9M",
-  segments: [
-    { label: "Activo Circulante", pct: "40", color: "#e11d48", dasharray: "40 100", dashoffset: 0 },
-    { label: "Activo No Circulante", pct: "60", color: "#fb923c", dasharray: "60 100", dashoffset: -40 },
-  ],
-}));
+const activoCirculante = computed(() => {
+  if (!lastPeriodData.value) return { total: "$0", segments: [] };
+  
+  const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
+  const liqCrudos = lastPeriodData.value.liquidez?.datos_crudos || {};
 
-const tableRows = ref([
-  {
-    period: "Q1 '24",
-    ventas: currencyFmt.format(13260000),
-    activo: currencyFmt.format(8840000),
-    rotacionActivos: "1.50x",
-    rotacionInventarios: "4.0x",
-    periodoCobro: "51 días",
-    highlight: false,
-  },
-  {
-    period: "Q2 '24",
-    ventas: currencyFmt.format(14224000),
-    activo: currencyFmt.format(8890000),
-    rotacionActivos: "1.60x",
-    rotacionInventarios: "4.2x",
-    periodoCobro: "54 días",
-    highlight: false,
-  },
-  {
-    period: "Q3 '24",
-    ventas: currencyFmt.format(16020000),
-    activo: currencyFmt.format(8900000),
-    rotacionActivos: "1.80x",
-    rotacionInventarios: "4.5x",
-    periodoCobro: "58 días",
-    highlight: true,
-  },
-]);
+  const aCirculanteTotal = liqCrudos.activo_circulante || 0;
+  const cxc = rotCrudos.cuentas_por_cobrar || 0;
+  const inventario = rotCrudos.inventario || 0;
+  
+  let otrosActivos = aCirculanteTotal - (cxc + inventario);
+  if (otrosActivos < 0) otrosActivos = 0; 
+  
+  const items = [
+    { label: "Cuentas por Cobrar", value: cxc, color: "#1e293b" },
+    { label: "Inventarios", value: inventario, color: "#299de0" },
+    { label: "Efectivo y Otros", value: otrosActivos, color: "#507c95" }
+  ].filter(i => i.value > 0);
 
+  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1; 
+  
+  let currentOffset = 0;
+  const segments = items.map(item => {
+    const pct = (item.value / totalCálculo) * 100;
+    const dasharray = `${pct} 100`;
+    const dashoffset = -currentOffset;
+    currentOffset += pct;
+    return { ...item, pct: pct.toFixed(1), dasharray, dashoffset };
+  });
+
+  return {
+    total: aCirculanteTotal >= 1000000 ? `$${(aCirculanteTotal/1000000).toFixed(1)}M` : currencyFmt.format(aCirculanteTotal),
+    segments
+  };
+});
+
+const activosTotales = computed(() => {
+  if (!lastPeriodData.value) return { total: "$0", segments: [] };
+  
+  const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
+  const liqCrudos = lastPeriodData.value.liquidez?.datos_crudos || {};
+
+  const activoTotal = rotCrudos.activo_total || 0;
+  const activoCirculanteVal = liqCrudos.activo_circulante || 0;
+  
+  let activoNoCirculante = activoTotal - activoCirculanteVal;
+  if (activoNoCirculante < 0) activoNoCirculante = 0;
+
+  const items = [
+    { label: "Activo Circulante", value: activoCirculanteVal, color: "#e11d48" },
+    { label: "Activo No Circulante", value: activoNoCirculante, color: "#fb923c" }
+  ].filter(i => i.value > 0);
+
+  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+  
+  let currentOffset = 0;
+  const segments = items.map(item => {
+    const pct = (item.value / totalCálculo) * 100;
+    const dasharray = `${pct} 100`;
+    const dashoffset = -currentOffset;
+    currentOffset += pct;
+    return { ...item, pct: pct.toFixed(1), dasharray, dashoffset };
+  });
+
+  return {
+    total: activoTotal >= 1000000 ? `$${(activoTotal/1000000).toFixed(1)}M` : currencyFmt.format(activoTotal),
+    segments
+  };
+});
+
+// --- IA LOCAL DE INTERPRETACIÓN ---
 const analysisText = computed(() => {
   if (!selectedKpi.value) return "";
+  const val = parseVal(selectedKpi.value.kpiValue);
+  const deltaStr = selectedKpi.value.deltaValue;
+  const isWorsening = deltaStr.includes("+") && selectedKpi.value.key === "recaudo" || deltaStr.includes("-") && selectedKpi.value.key !== "recaudo";
 
   if (selectedKpi.value.key === "cobrar") {
-    return "La rotación de cuentas por cobrar muestra una desaceleración. Esto sugiere que la empresa está tardando más en convertir sus ventas a crédito en efectivo, lo que puede tensionar el flujo operativo.";
+    return isWorsening 
+        ? "La rotación de cuentas por cobrar muestra una desaceleración. La empresa está tardando más en convertir sus ventas a crédito en efectivo, tensionando el flujo operativo."
+        : "La recuperación de cartera es eficiente. La empresa convierte rápidamente sus ventas a crédito en liquidez real.";
   }
 
   if (selectedKpi.value.key === "recaudo") {
-    return "El aumento en el periodo promedio de recaudo es una señal de alerta. La empresa está tardando más días en recuperar su cartera, lo que puede afectar liquidez y eficiencia comercial.";
+    return val > 60 
+        ? `Alerta: El periodo promedio de recaudo es de ${val} días. La empresa está tardando demasiado en recuperar su dinero, lo que afecta la liquidez inmediata.`
+        : `Saludable: La empresa cobra en promedio cada ${val} días, lo cual es un periodo de recaudo eficiente.`;
   }
 
   if (selectedKpi.value.key === "inventarios") {
-    return "La rotación de inventarios presenta una mejora sostenida. Esto indica una administración más eficiente del inventario y menor riesgo de acumulación improductiva.";
+    return isWorsening
+        ? "La rotación de inventarios ha disminuido. Riesgo de sobre stock, obsolescencia o ventas más lentas de lo proyectado."
+        : "Buena gestión de inventarios. La mercancía entra y sale con rapidez, evitando capital estancado en el almacén.";
   }
 
   if (selectedKpi.value.key === "fijos") {
-    return "La rotación de activos fijos muestra una evolución favorable. Los recursos de largo plazo están siendo aprovechados con mayor eficiencia para generar ventas.";
+    return val < 1.0 
+        ? "Baja eficiencia en activos fijos. La infraestructura actual (maquinaria, edificios) no está generando las ventas esperadas."
+        : "Excelente aprovechamiento de la infraestructura productiva. Los activos a largo plazo están generando un alto volumen de ventas.";
   }
 
-  return "Se observa una mejora significativa en la eficiencia del uso de los activos totales. No obstante, la caída en la rotación de cuentas por cobrar y el aumento en el periodo promedio de cobro requieren atención inmediata.";
+  return val >= 1.0 
+    ? "Alta eficiencia operativa global. La empresa genera más en ventas de lo que tiene invertido en activos totales."
+    : "Baja rotación de activos totales. Se requiere mayor volumen de ventas para justificar la inversión total en la empresa.";
 });
 
 const recommendationList = computed(() => {
   if (!selectedKpi.value) return [];
+  const val = parseVal(selectedKpi.value.kpiValue);
 
-  if (selectedKpi.value.key === "cobrar") {
-    return [
-      "Revisar las políticas de crédito otorgadas a clientes.",
-      "Fortalecer el seguimiento y control de cobranza.",
-      "Reducir concentraciones excesivas de cartera en clientes lentos.",
-    ];
-  }
-
-  if (selectedKpi.value.key === "recaudo") {
-    return [
-      "Ajustar plazos de cobro para reducir días promedio.",
-      "Automatizar recordatorios y gestión de vencimientos.",
-      "Evaluar incentivos por pronto pago.",
+  if (selectedKpi.value.key === "cobrar" || selectedKpi.value.key === "recaudo") {
+    return val > 60 || selectedKpi.value.key === "cobrar" ? [
+      "Revisar y endurecer las políticas de crédito otorgadas a clientes.",
+      "Implementar recordatorios de pago automáticos antes del vencimiento.",
+      "Ofrecer descuentos por pronto pago para acelerar la entrada de efectivo.",
+    ] : [
+      "Mantener las actuales políticas de crédito que están dando buenos resultados.",
+      "Considerar ampliar líneas de crédito a clientes VIP para fomentar más ventas."
     ];
   }
 
   if (selectedKpi.value.key === "inventarios") {
     return [
-      "Continuar con la optimización de inventarios que ha mostrado tendencia positiva.",
-      "Evitar sobrecompras en líneas de baja rotación.",
-      "Alinear inventario con proyecciones de demanda más precisas.",
+      "Cruzar datos de inventario con ventas para identificar productos estrella y rezagados.",
+      "Negociar entregas fraccionadas (Just-in-Time) con proveedores para no saturar almacenes.",
+      "Liquidar stock obsoleto mediante promociones para liberar capital."
     ];
   }
 
   if (selectedKpi.value.key === "fijos") {
-    return [
-      "Mantener altos niveles de utilización de capacidad instalada.",
-      "Evaluar activos fijos ociosos o poco rentables.",
-      "Priorizar inversiones en activos que eleven productividad real.",
+    return val < 1.0 ? [
+      "Evaluar la venta de maquinaria o vehículos ociosos.",
+      "Frenar la adquisición de nuevos activos fijos hasta aumentar las ventas.",
+    ] : [
+      "Planificar mantenimientos preventivos para no detener la alta producción.",
+      "Evaluar si la alta rotación amerita expandir la capacidad instalada."
     ];
   }
 
   return [
-    "Revisar las políticas de crédito y cobranza para reducir el periodo promedio de cobro.",
-    "Continuar con la optimización de inventarios que ha mostrado una tendencia positiva.",
-    "Analizar si el aumento en ventas justifica el crecimiento en la cartera de clientes.",
+    "Monitorear qué activos (circulantes o fijos) están frenando la rotación global.",
+    "Enfocar los esfuerzos comerciales en desplazar inventario más rápido.",
   ];
 });
 
-function learnMore() {
-  // placeholder
-}
+function learnMore() { /* placeholder */ }
+
+onMounted(() => {
+  fetchPeriods();
+});
 </script>
 
 <template>
@@ -420,9 +469,9 @@ function learnMore() {
 
           <g v-if="hoveredPoint" style="pointer-events: none;">
             <rect
-              :x="hoveredPoint.x - 42"
+              :x="hoveredPoint.x - 30"
               :y="hoveredPoint.y - 42"
-              width="84"
+              width="60"
               height="26"
               rx="6"
               fill="#0e161b"

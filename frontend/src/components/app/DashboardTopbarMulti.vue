@@ -166,10 +166,10 @@ async function handleLogout() {
         <span class="btn-text">Volver a proyectos</span>
       </RouterLink>
 
-      <button class="btn" type="button">
+      <RouterLink class="btn" :to="`/proyecto/${projectId}/cargar`" style="text-decoration: none;">
         <span class="material-symbols-outlined">edit</span>
         <span>Editar proyecto</span>
-      </button>
+      </RouterLink>
 
       <button class="avatar-btn" type="button" @click="handleLogout" title="Cerrar sesión">
         <div class="avatar">{{ userInitials }}</div>
