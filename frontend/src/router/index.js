@@ -108,11 +108,11 @@ const router = createRouter({
           name: "rotacionMulti",
           component: () => import("../views/RotacionDeActivosMultiView.vue"), 
         },
-        // {
-        //   path: "estructura",
-        //   name: "estructuraMulti",
-        //   component: () => import("../views/EstructuraMultiView.vue"), 
-        // },
+        {
+          path: "estructura",
+          name: "estructuraMulti",
+          component: () => import("../views/EstructuraMultiView.vue"), 
+        },
         // {
         //   path: "proyecciones",
         //   name: "proyeccionesMulti",

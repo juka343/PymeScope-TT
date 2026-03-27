@@ -313,7 +313,7 @@ onMounted(() => {
         <h1>Liquidez</h1>
         <button class="btn-learn" type="button" @click="learnMore">
           <span class="material-symbols-outlined">info</span>
-          <span>Saber más</span>
+          <span>Ir a centro de aprendizaje</span>
         </button>
       </div>
       <div class="subtitle">
