@@ -177,20 +177,17 @@ const generateDashboardData = () => {
     },
   ];
 
-  const reversedPeriods = [...periods].reverse();
-  const reversedMargen = [...dataMargen].reverse();
-  const reversedRat = [...dataRat].reverse();
-  const reversedRoe = [...dataRoe].reverse();
-
-  tableRows.value = reversedPeriods.map((p, i) => ({
+  const tableRowsArray = periods.map((p, i) => ({
     period: p.label,
     ingresos: currencyFmt.format(p.rentabilidad.datos_crudos?.ventas_netas || 0),
     utilidad: currencyFmt.format(p.rentabilidad.datos_crudos?.utilidad_neta || 0),
-    margen: `${reversedMargen[i].toFixed(2)}%`,
-    rat: `${reversedRat[i].toFixed(2)}%`,
-    roe: `${reversedRoe[i].toFixed(2)}%`,
-    highlight: i === 0,
+    margen: `${dataMargen[i].toFixed(2)}%`,
+    rat: `${dataRat[i].toFixed(2)}%`,
+    roe: `${dataRoe[i].toFixed(2)}%`,
+    highlight: i === periods.length - 1,
   }));
+
+  tableRows.value = tableRowsArray;
 };
 
 const selectedKpi = computed(() => {
@@ -278,6 +275,8 @@ const recommendationList = computed(() => {
 function learnMore() {
   // router.push(`/proyecto/${projectId}/dashboard-multi/learning/rentabilidad`);
 }
+
+const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
 
 /* ===== Donas dummy agregadas ===== */
 const rentabilidadBreakdown = computed(() => ({
@@ -501,7 +500,7 @@ onMounted(() => {
     <section class="grid-2">
       <article class="card">
         <h3>Ingresos vs Costos vs Utilidad</h3>
-        <p class="card-sub">Composición del resultado del periodo base</p>
+        <p class="card-sub">Composición del resultado del periodo base ({{ lastPeriodData?.label }})</p>
 
         <div class="donut-wrap">
           <div class="donut">
@@ -542,7 +541,7 @@ onMounted(() => {
 
       <article class="card">
         <h3>Margen bruto vs margen neto</h3>
-        <p class="card-sub">Relación entre utilidad bruta y utilidad final</p>
+        <p class="card-sub">Relación entre utilidad bruta y utilidad final ({{ lastPeriodData?.label }})</p>
 
         <div class="donut-wrap">
           <div class="donut">

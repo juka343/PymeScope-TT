@@ -150,21 +150,16 @@ const generateDashboardData = () => {
     { key: "capital", label: "Capital de Trabajo", ...buildChart(dataCapital, "Evolución Capital de Trabajo", "Recursos netos para la operación diaria", "Capital", true) }
   ];
 
-  // Construir Tabla (Orden Inverso)
-  const reversedPeriods = [...periods].reverse();
-  const reversedRazon = [...dataRazon].reverse();
-  const reversedAcida = [...dataAcida].reverse();
-  const reversedCapital = [...dataCapital].reverse();
-  
-  tableRows.value = reversedPeriods.map((p, i) => {
+  // Construir Tabla (Orden Ascendente)
+  tableRows.value = periods.map((p, i) => {
     return {
       period: p.label,
       activo: currencyFmt.format(p.liquidez.datos_crudos?.activo_circulante || 0),
       pasivo: currencyFmt.format(p.liquidez.datos_crudos?.pasivo_circulante || 0),
-      rc: reversedRazon[i].toFixed(2),
-      pa: reversedAcida[i].toFixed(2),
-      ct: currencyFmt.format(reversedCapital[i]),
-      highlight: i === 0 // Resalta el más reciente
+      rc: dataRazon[i].toFixed(2),
+      pa: dataAcida[i].toFixed(2),
+      ct: currencyFmt.format(dataCapital[i]),
+      highlight: i === periods.length - 1 // Resalta el más reciente
     };
   });
 };
