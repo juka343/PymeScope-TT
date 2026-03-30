@@ -159,22 +159,17 @@ const generateDashboardData = () => {
     { key: "activosTotales", label: "Rotación de Activos Totales", ...buildChart(dataActivosTotales, "Evolución de Rotación de Activos Totales", "Tendencia de eficiencia operativa en los últimos trimestres", "Rotación Activos", "times") },
   ];
 
-  // Construir Tabla (Orden Inverso)
-  const reversedPeriods = [...periods].reverse();
-  const reversedTotales = [...dataActivosTotales].reverse();
-  const reversedInventarios = [...dataInventarios].reverse();
-  const reversedRecaudo = [...dataRecaudo].reverse();
-  
-  tableRows.value = reversedPeriods.map((p, i) => {
+  // Construir Tabla (Orden Ascendente)
+  tableRows.value = periods.map((p, i) => {
     const crudos = p.rotacion.datos_crudos || {};
     return {
       period: p.label,
       ventas: currencyFmt.format(crudos.ventas_netas || 0),
       activo: currencyFmt.format(crudos.activo_total || 0),
-      rotacionActivos: `${reversedTotales[i].toFixed(2)}x`,
-      rotacionInventarios: `${reversedInventarios[i].toFixed(1)}x`,
-      periodoCobro: `${Math.round(reversedRecaudo[i])} días`,
-      highlight: i === 0,
+      rotacionActivos: `${dataActivosTotales[i].toFixed(2)}x`,
+      rotacionInventarios: `${dataInventarios[i].toFixed(1)}x`,
+      periodoCobro: `${Math.round(dataRecaudo[i])} días`,
+      highlight: i === periods.length - 1,
     };
   });
 };
@@ -535,7 +530,7 @@ onMounted(() => {
     <section class="grid-2">
       <article class="card">
         <h3>Composición de Activo Circulante</h3>
-        <p class="card-sub">Desglose de activos de corto plazo</p>
+        <p class="card-sub">Desglose de activos de corto plazo ({{ lastPeriodData?.label }})</p>
 
         <div class="donut-wrap">
           <div class="donut">
@@ -571,7 +566,7 @@ onMounted(() => {
 
       <article class="card">
         <h3>Distribución de Activos Totales</h3>
-        <p class="card-sub">Relación entre Activos Circulantes y No Circulantes</p>
+        <p class="card-sub">Relación entre Activos Circulantes y No Circulantes ({{ lastPeriodData?.label }})</p>
 
         <div class="donut-wrap">
           <div class="donut">

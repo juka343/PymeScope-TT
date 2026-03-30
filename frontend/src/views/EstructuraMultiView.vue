@@ -1,8 +1,17 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/firebase/config";
 
+const route = useRoute();
+const projectId = route.params.id_proyecto;
+
+const loading = ref(true);
+const rawPeriods = ref([]);
+const metrics = ref([]);
 const activeKpi = ref("solvencia");
-const hoveredPoint = ref(null);
+const tableRows = ref([]);
 
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -11,141 +20,174 @@ const currencyFmt = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 0,
 });
 
-const periods = ["Q3 '23", "Q4 '23", "Q1 '24", "Q2 '24", "Q3 '24"];
+const parseVal = (val) => {
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (val === "Sin Deuda LP") return 0; // Manejo del caso especial desde Python
+  return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+};
 
-function buildChart(values, title, subtitle, legendLabel) {
-  const maxVal = Math.max(...values, 1);
-  let minVal = Math.min(...values, 0);
+const fetchPeriods = async () => {
+  try {
+    if (!projectId) return;
 
-  if (minVal > 0) minVal = 0;
+    const periodosRef = collection(db, "proyectos", projectId, "periodos");
+    const snapshot = await getDocs(periodosRef);
 
-  const rawRange = maxVal - minVal;
-  let step = 0.2;
-  if (rawRange > 1.2) step = 0.5;
-  if (rawRange > 3) step = 1;
+    let loaded = [];
+    snapshot.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (d.analisis_estructura) {
+        loaded.push({
+          id: docSnap.id,
+          label: d.label || "Periodo",
+          periodDate: d.periodDate || d.label,
+          estructura: d.analisis_estructura || { datos_crudos: {}, kpis: [] },
+        });
+      }
+    });
 
-  const yMin = Math.floor(minVal / step) * step;
-  const yMax = Math.ceil(maxVal / step) * step;
-  const finalRange = Math.max(yMax - yMin, step);
+    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    rawPeriods.value = loaded;
+    
+    if (loaded.length > 0) {
+      generateDashboardData();
+    }
+  } catch (error) {
+    console.error("Error cargando multiperiodo estructura:", error);
+  } finally {
+    loading.value = false;
+  }
+};
 
-  const yAxisLabels = [
-    yMax.toFixed(2),
-    (yMax - finalRange / 3).toFixed(2),
-    (yMax - (finalRange / 3) * 2).toFixed(2),
-    yMin.toFixed(2),
+const generateDashboardData = () => {
+  const periods = rawPeriods.value;
+  const labels = periods.map(p => p.label);
+
+  const findKpi = (kpis, keyword) => {
+    if (!kpis) return 0;
+    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? parseVal(item.value) : 0;
+  };
+
+  const dataSolvencia = periods.map(p => findKpi(p.estructura.kpis, "solvencia"));
+  const dataSeguridad = periods.map(p => findKpi(p.estructura.kpis, "seguridad"));
+  const dataInmovSocial = periods.map(p => findKpi(p.estructura.kpis, "social"));
+  const dataInmovContable = periods.map(p => findKpi(p.estructura.kpis, "contable"));
+
+  function buildChart(values, title, subtitle, legendLabel) {
+    const maxVal = Math.max(...values, 1);
+    let minVal = Math.min(...values, 0);
+
+    if (minVal > 0) minVal = 0;
+
+    const rawRange = maxVal - minVal;
+    let step = 0.2;
+    if (rawRange > 1.2) step = 0.5;
+    if (rawRange > 3) step = 1;
+
+    const yMin = Math.floor(minVal / step) * step;
+    const yMax = Math.ceil(maxVal / step) * step;
+    const finalRange = Math.max(yMax - yMin, step);
+
+    const yAxisLabels = [
+      yMax.toFixed(2),
+      (yMax - finalRange / 3).toFixed(2),
+      (yMax - (finalRange / 3) * 2).toFixed(2),
+      yMin.toFixed(2),
+    ];
+
+    // Ajuste visual: Gráfica empieza en 100 para dar respiro al eje Y
+    const xStep = values.length > 1 ? 600 / (values.length - 1) : 0;
+
+    const points = values.map((val, i) => {
+      const x = values.length > 1 ? 100 + i * xStep : 400;
+      const y = 230 - ((val - yMin) / finalRange) * 160;
+      return { x, y, label: labels[i], bold: i === values.length - 1, value: val };
+    });
+
+    const lastVal = values[values.length - 1];
+    const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
+    const delta = lastVal - prevVal;
+    
+    // Lógica Inversa: En Inmovilización, bajar es bueno (positivo). En Solvencia, subir es bueno.
+    let isPositive = delta >= 0;
+    if (legendLabel.includes("Inmov")) isPositive = delta <= 0;
+
+    // Status (Foquitos)
+    let status = "warn";
+    if (legendLabel === "Solvencia" || legendLabel === "Seguridad LP") {
+      status = lastVal >= 1.0 ? "ok" : "danger";
+    } else {
+      // Inmovilización
+      status = lastVal <= 1.0 ? "ok" : (lastVal <= 1.5 ? "warn" : "danger");
+    }
+
+    let deltaType = "flat";
+    if (delta > 0) deltaType = isPositive ? "up" : "down"; // Si sube y es positivo, verde. Si sube y es malo, rojo.
+    if (delta < 0) deltaType = isPositive ? "down" : "up"; // Hack CSS: usamos up/down para inyectar color
+
+    // Asegurar color correcto mapeando a estilos CSS
+    let deltaClass = "delta-flat";
+    if (delta !== 0) {
+        deltaClass = isPositive ? "delta-up" : "delta-down";
+    }
+
+    return {
+      kpiValue: lastVal.toFixed(2),
+      status,
+      deltaClass,
+      deltaIcon: delta >= 0 ? "trending_up" : "trending_down",
+      deltaValue: `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`,
+      deltaNote: values.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      chartTitle: title,
+      chartSubtitle: subtitle,
+      legendLabel,
+      yAxisLabels,
+      points,
+    };
+  }
+
+  metrics.value = [
+    { key: "solvencia", label: "Solvencia", ...buildChart(dataSolvencia, "Evolución de Solvencia", "Análisis histórico del índice de solvencia", "Solvencia") },
+    { key: "seguridad", label: "Seguridad a largo plazo", ...buildChart(dataSeguridad, "Evolución de Seguridad a Largo Plazo", "Respaldo financiero para obligaciones de largo plazo", "Seguridad LP") },
+    { key: "inmovSocial", label: "Inmov. cap. social", ...buildChart(dataInmovSocial, "Evolución de Inmovilización del Capital Social", "Proporción del capital social comprometida en activos fijos", "Inmov. Cap. Social") },
+    { key: "inmovContable", label: "Inmov. cap. contable", ...buildChart(dataInmovContable, "Evolución de Inmovilización del Capital Contable", "Proporción del capital contable comprometida en activos fijos", "Inmov. Cap. Contable") },
   ];
 
-  const xStep = values.length > 1 ? 700 / (values.length - 1) : 0;
-
-  const points = values.map((val, i) => {
-    const x = values.length > 1 ? 50 + i * xStep : 400;
-    const y = 230 - ((val - yMin) / finalRange) * 160;
+  // Construir Tabla (Orden Ascendente)
+  tableRows.value = periods.map((p, i) => {
+    const crudos = p.estructura.datos_crudos || {};
     return {
-      x,
-      y,
-      label: periods[i],
-      bold: i === values.length - 1,
-      value: val,
+      period: p.label,
+      activoTotal: currencyFmt.format(crudos.activo_total || 0),
+      pasivoTotal: currencyFmt.format(crudos.pasivo_total || 0),
+      solvencia: dataSolvencia[i].toFixed(2),
+      seguridad: dataSeguridad[i] === 0 ? "N/A" : dataSeguridad[i].toFixed(2),
+      inmovContable: dataInmovContable[i].toFixed(2),
+      highlight: i === periods.length - 1,
     };
   });
-
-  return {
-    chartTitle: title,
-    chartSubtitle: subtitle,
-    legendLabel,
-    yAxisLabels,
-    points,
-  };
-}
-
-const metrics = ref([
-  {
-    key: "solvencia",
-    label: "Solvencia",
-    kpiValue: "2.15",
-    status: "ok",
-    deltaType: "up",
-    deltaValue: "+5%",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [1.72, 1.86, 1.96, 2.04, 2.15],
-      "Evolución de Solvencia",
-      "Análisis histórico del índice de solvencia",
-      "Solvencia"
-    ),
-  },
-  {
-    key: "seguridad",
-    label: "Seguridad a largo plazo",
-    kpiValue: "1.84",
-    status: "ok",
-    deltaType: "up",
-    deltaValue: "+2%",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [1.60, 1.68, 1.75, 1.80, 1.84],
-      "Evolución de Seguridad a Largo Plazo",
-      "Respaldo financiero para obligaciones de largo plazo",
-      "Seguridad LP"
-    ),
-  },
-  {
-    key: "inmovSocial",
-    label: "Inmov. cap. social",
-    kpiValue: "0.92",
-    status: "warn",
-    deltaType: "flat",
-    deltaValue: "0%",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [0.88, 0.90, 0.91, 0.92, 0.92],
-      "Evolución de Inmovilización del Capital Social",
-      "Proporción del capital social comprometida en activos fijos",
-      "Inmov. Cap. Social"
-    ),
-  },
-  {
-    key: "inmovContable",
-    label: "Inmov. cap. contable",
-    kpiValue: "1.15",
-    status: "danger",
-    deltaType: "down",
-    deltaValue: "+8%",
-    deltaNote: "vs periodo base",
-    ...buildChart(
-      [0.94, 0.98, 1.05, 1.10, 1.15],
-      "Evolución de Inmovilización del Capital Contable",
-      "Proporción del capital contable comprometida en activos fijos",
-      "Inmov. Cap. Contable"
-    ),
-  },
-]);
+};
 
 const selectedKpi = computed(() => {
+  if (metrics.value.length === 0) return null;
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(key) {
-  activeKpi.value = key;
-}
+function setActive(key) { activeKpi.value = key; }
 
-function showTooltip(point) {
-  hoveredPoint.value = point;
-}
-
-function hideTooltip() {
-  hoveredPoint.value = null;
-}
+const hoveredPoint = ref(null);
+function showTooltip(point) { hoveredPoint.value = point; }
+function hideTooltip() { hoveredPoint.value = null; }
 
 const baselineY = 230;
-
 const linePath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
   if (!pts.length) return "";
   return pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ");
 });
-
 const areaPath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
@@ -156,117 +198,135 @@ const areaPath = computed(() => {
   return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 });
 
-const capitalContable = computed(() => ({
-  total: "$4.7M",
-  segments: [
-    { label: "Capital Social", pct: "65", color: "#1e293b", dasharray: "65 100", dashoffset: 0 },
-    { label: "Capital Ganado", pct: "35", color: "#299de0", dasharray: "35 100", dashoffset: -65 },
-  ],
-}));
+// --- LÓGICA DE DONUTS (Último periodo) ---
+const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
 
-const distribucionActivo = computed(() => ({
-  total: "$8.9M",
-  segments: [
-    { label: "Activo Fijo Neto", pct: "60", color: "#fb923c", dasharray: "60 100", dashoffset: 0 },
-    { label: "Activo Circulante", pct: "40", color: "#fcd34d", dasharray: "40 100", dashoffset: -60 },
-  ],
-}));
+const capitalContable = computed(() => {
+  if (!lastPeriodData.value) return { total: "$0", segments: [] };
+  
+  const crudos = lastPeriodData.value.estructura?.datos_crudos || {};
+  const capTotal = crudos.capital_contable || 0;
+  const capSocial = crudos.capital_social || 0;
+  
+  let capGanado = capTotal - capSocial;
+  if (capGanado < 0) capGanado = 0; 
 
-const tableRows = ref([
-  {
-    period: "Q1 '24",
-    activoTotal: currencyFmt.format(8840000),
-    pasivoTotal: currencyFmt.format(4500000),
-    solvencia: "1.96",
-    seguridad: "1.75",
-    inmovContable: "1.05",
-    highlight: false,
-  },
-  {
-    period: "Q2 '24",
-    activoTotal: currencyFmt.format(8890000),
-    pasivoTotal: currencyFmt.format(4350000),
-    solvencia: "2.04",
-    seguridad: "1.80",
-    inmovContable: "1.10",
-    highlight: false,
-  },
-  {
-    period: "Q3 '24",
-    activoTotal: currencyFmt.format(8900000),
-    pasivoTotal: currencyFmt.format(4140000),
-    solvencia: "2.15",
-    seguridad: "1.84",
-    inmovContable: "1.15",
-    highlight: true,
-  },
-]);
+  const items = [
+    { label: "Capital Social", value: capSocial, color: "#1e293b" },
+    { label: "Capital Ganado", value: capGanado, color: "#299de0" }
+  ].filter(i => i.value > 0);
 
+  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+  
+  let currentOffset = 0;
+  const segments = items.map(item => {
+    const pct = (item.value / totalCálculo) * 100;
+    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+  });
+
+  return {
+    total: capTotal >= 1000000 ? `$${(capTotal/1000000).toFixed(1)}M` : currencyFmt.format(capTotal),
+    segments
+  };
+});
+
+const distribucionActivo = computed(() => {
+  if (!lastPeriodData.value) return { total: "$0", segments: [] };
+  
+  const crudos = lastPeriodData.value.estructura?.datos_crudos || {};
+  const activoTotal = crudos.activo_total || 0;
+  const activoFijo = crudos.activo_fijo || 0;
+  
+  let activoCirculante = activoTotal - activoFijo;
+  if (activoCirculante < 0) activoCirculante = 0;
+
+  const items = [
+    { label: "Activo Fijo Neto", value: activoFijo, color: "#fb923c" },
+    { label: "Activo Circulante", value: activoCirculante, color: "#fcd34d" }
+  ].filter(i => i.value > 0);
+
+  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+  
+  let currentOffset = 0;
+  const segments = items.map(item => {
+    const pct = (item.value / totalCálculo) * 100;
+    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+  });
+
+  return {
+    total: activoTotal >= 1000000 ? `$${(activoTotal/1000000).toFixed(1)}M` : currencyFmt.format(activoTotal),
+    segments
+  };
+});
+
+// --- IA LOCAL DE INTERPRETACIÓN ---
 const analysisText = computed(() => {
   if (!selectedKpi.value) return "";
+  const val = parseVal(selectedKpi.value.kpiValue);
+  const deltaStr = selectedKpi.value.deltaValue;
+  const isWorsening = (deltaStr.includes("-") && selectedKpi.value.key.includes("solvencia")) || (deltaStr.includes("+") && selectedKpi.value.key.includes("inmov"));
 
   if (selectedKpi.value.key === "solvencia") {
-    return "La solvencia presenta una mejora sostenida y se ubica en niveles saludables. La empresa muestra capacidad suficiente para respaldar sus obligaciones totales con su estructura de activos.";
+    return val >= 1.5 
+      ? "La solvencia se ubica en niveles muy saludables. La empresa muestra gran capacidad para respaldar todas sus obligaciones."
+      : "Alerta: La solvencia está por debajo de niveles óptimos. Los activos de la empresa apenas alcanzan a cubrir sus deudas totales.";
   }
 
   if (selectedKpi.value.key === "seguridad") {
-    return "La seguridad a largo plazo mantiene una trayectoria favorable. Esto sugiere una base patrimonial razonablemente sólida para sostener compromisos de mayor plazo.";
+    if (val === 0) return "La empresa no registra deuda a largo plazo, por lo que su seguridad estructural es máxima (100% respaldada).";
+    return isWorsening 
+      ? "La seguridad a largo plazo ha disminuido. Se recomienda frenar la adquisición de deuda no circulante."
+      : "La base patrimonial es sólida y respalda perfectamente los compromisos a más de un año.";
   }
 
-  if (selectedKpi.value.key === "inmovSocial") {
-    return "La inmovilización del capital social se mantiene estable. Aunque no es una señal crítica, conviene vigilar que el capital aportado no quede excesivamente atrapado en activos con poca liquidez.";
+  if (selectedKpi.value.key === "inmovSocial" || selectedKpi.value.key === "inmovContable") {
+    return val > 1.0
+      ? `El capital ${selectedKpi.value.key === 'inmovSocial' ? 'social' : 'contable'} está inmovilizado (ratio > 1). Parte de los activos fijos se están financiando con pasivos porque el capital propio no es suficiente.`
+      : `Estructura sana. El capital ${selectedKpi.value.key === 'inmovSocial' ? 'social' : 'contable'} cubre por completo las inversiones en activos fijos sin depender de terceros.`;
   }
 
-  return "La estructura financiera muestra una tendencia hacia la consolidación, con ratios de solvencia y seguridad a largo plazo en niveles saludables. Sin embargo, el índice de inmovilización del capital contable ha superado el umbral recomendable, lo que sugiere que una proporción elevada de los recursos propios está comprometida en activos fijos.";
+  return "La estructura financiera muestra una tendencia estable.";
 });
 
 const recommendationList = computed(() => {
   if (!selectedKpi.value) return [];
+  const val = parseVal(selectedKpi.value.kpiValue);
 
-  if (selectedKpi.value.key === "solvencia") {
-    return [
-      "Mantener la disciplina financiera que ha fortalecido la capacidad de respaldo de activos.",
-      "Evitar incrementos abruptos en pasivos sin crecimiento proporcional del activo útil.",
-      "Monitorear periódicamente la solvencia frente a metas internas del proyecto.",
+  if (selectedKpi.value.key === "solvencia" || selectedKpi.value.key === "seguridad") {
+    return val >= 1.0 ? [
+      "Mantener la disciplina financiera que ha fortalecido la capacidad de respaldo.",
+      "Considerar utilizar este respaldo para negociar mejores tasas crediticias.",
+    ] : [
+      "Frenar inmediatamente el endeudamiento.",
+      "Liquidar activos improductivos para pagar pasivos y equilibrar la balanza.",
     ];
   }
 
-  if (selectedKpi.value.key === "seguridad") {
-    return [
-      "Mantener la política de fortalecimiento patrimonial.",
-      "Conservar una mezcla sana entre financiamiento propio y ajeno a largo plazo.",
-      "Evaluar el costo de capital antes de asumir nuevas obligaciones de largo plazo.",
-    ];
-  }
-
-  if (selectedKpi.value.key === "inmovSocial") {
-    return [
-      "Revisar si el capital social está financiando activos poco líquidos o poco rentables.",
-      "Buscar una mejor proporción entre recursos fijos y recursos operativos.",
-      "Evitar inmovilizar aportaciones de socios en activos sin impacto productivo claro.",
-    ];
-  }
-
-  return [
-    "Evaluar la desinversión de activos fijos no productivos para mejorar la liquidez del capital contable.",
-    "Mantener la política de retención de utilidades para fortalecer la base de capital propio.",
-    "Explorar opciones de financiamiento a largo plazo con tasas preferenciales para optimizar el costo de capital.",
+  return val > 1.0 ? [
+    "Evaluar la venta de activos fijos no esenciales (Sale & Leaseback).",
+    "Fomentar la retención de utilidades para engrosar el capital ganado.",
+    "Evitar adquirir nueva maquinaria mediante deuda a corto plazo.",
+  ] : [
+    "Mantener la sana política de inversión en activos fijos.",
+    "Buscar que futuras expansiones se sigan fondeando con capital propio.",
   ];
 });
 
-function learnMore() {
-  // placeholder
-}
+function learnMore() {}
+
+onMounted(() => {
+  fetchPeriods();
+});
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="wrap" v-if="!loading && metrics.length > 0">
     <div class="title">
       <div class="title-row">
         <h1>Estructura Financiera</h1>
         <button class="btn-learn" type="button" @click="learnMore">
           <span class="material-symbols-outlined">info</span>
-          <span>Ir a centro de aprendizaje</span>
+          <span>Saber más</span>
         </button>
       </div>
 
@@ -292,11 +352,7 @@ function learnMore() {
           </p>
           <span
             class="kpi-dot"
-            :class="{
-              ok: k.status === 'ok',
-              warn: k.status === 'warn',
-              danger: k.status === 'danger'
-            }"
+            :class="{ ok: k.status === 'ok', warn: k.status === 'warn', danger: k.status === 'danger' }"
             aria-hidden="true"
           ></span>
         </div>
@@ -304,22 +360,9 @@ function learnMore() {
         <div class="kpi-value">{{ k.kpiValue }}</div>
 
         <div class="kpi-delta">
-          <span
-            class="delta-pill"
-            :class="{
-              'delta-up': k.deltaType === 'up',
-              'delta-down': k.deltaType === 'down',
-              'delta-flat': k.deltaType === 'flat'
-            }"
-          >
+          <span class="delta-pill" :class="k.deltaClass">
             <span class="material-symbols-outlined">
-              {{
-                k.deltaType === "up"
-                  ? "trending_up"
-                  : k.deltaType === "down"
-                  ? "trending_down"
-                  : "remove"
-              }}
+              {{ k.deltaValue == '0.00' ? 'remove' : k.deltaIcon }}
             </span>
             {{ k.deltaValue }}
           </span>
@@ -386,9 +429,9 @@ function learnMore() {
 
           <g v-if="hoveredPoint" style="pointer-events: none;">
             <rect
-              :x="hoveredPoint.x - 34"
+              :x="hoveredPoint.x - 30"
               :y="hoveredPoint.y - 42"
-              width="68"
+              width="60"
               height="26"
               rx="6"
               fill="#0e161b"
@@ -449,7 +492,7 @@ function learnMore() {
       <article class="card">
         <h3>Composición del Capital Contable</h3>
         <p class="card-sub">
-          Desglose del capital aportado por socios y las utilidades acumuladas por la empresa.
+          Desglose del capital aportado por socios y utilidades acumuladas ({{ lastPeriodData?.label }}).
         </p>
 
         <div class="donut-wrap">
@@ -459,14 +502,12 @@ function learnMore() {
               <circle
                 v-for="(seg, idx) in capitalContable.segments"
                 :key="idx"
-                cx="18"
-                cy="18"
-                fill="none"
-                r="16"
+                cx="18" cy="18" fill="none" r="16"
                 :stroke="seg.color"
                 :stroke-dasharray="seg.dasharray"
                 :stroke-dashoffset="seg.dashoffset"
                 stroke-width="4"
+                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
               ></circle>
             </svg>
             <div class="donut-center">
@@ -487,7 +528,7 @@ function learnMore() {
       <article class="card">
         <h3>Distribución del Activo Total</h3>
         <p class="card-sub">
-          Proporción entre activos fijos y activos circulantes para medir la inmovilización de recursos.
+          Proporción entre activos fijos y circulantes para medir la inmovilización ({{ lastPeriodData?.label }}).
         </p>
 
         <div class="donut-wrap">
@@ -497,14 +538,12 @@ function learnMore() {
               <circle
                 v-for="(seg, idx) in distribucionActivo.segments"
                 :key="idx"
-                cx="18"
-                cy="18"
-                fill="none"
-                r="16"
+                cx="18" cy="18" fill="none" r="16"
                 :stroke="seg.color"
                 :stroke-dasharray="seg.dasharray"
                 :stroke-dashoffset="seg.dashoffset"
                 stroke-width="4"
+                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
               ></circle>
             </svg>
             <div class="donut-center">
@@ -535,8 +574,8 @@ function learnMore() {
               <th>Periodo</th>
               <th class="right">Activo Total</th>
               <th class="right">Pasivo Total</th>
-              <th class="right">Solvencia</th>
-              <th class="right">Seguridad LP</th>
+              <th class="center" style="text-align: center;">Solvencia</th>
+              <th class="center" style="text-align: center;">Seguridad LP</th>
               <th class="right">Inmov. Cap. Contable</th>
             </tr>
           </thead>
@@ -545,11 +584,11 @@ function learnMore() {
               <td class="strong" :class="{ primary: r.highlight }">{{ r.period }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.activoTotal }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.pasivoTotal }}</td>
-              <td class="right" :class="{ strong: r.highlight }">
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
                 <span v-if="r.highlight" class="table-badge">{{ r.solvencia }}</span>
                 <span v-else>{{ r.solvencia }}</span>
               </td>
-              <td class="right" :class="{ strong: r.highlight }">{{ r.seguridad }}</td>
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.seguridad }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.inmovContable }}</td>
             </tr>
           </tbody>
@@ -565,10 +604,10 @@ function learnMore() {
 
         <div class="note-mini">
           <span class="material-symbols-outlined">info</span>
-          <span>Interpretación del Sistema</span>
+          <span>Interpretación Automática</span>
         </div>
 
-        <h3>Interpretación y alertas</h3>
+        <h3>Análisis de tendencia</h3>
         <p>{{ analysisText }}</p>
       </article>
 
@@ -590,11 +629,11 @@ function learnMore() {
     </section>
 
     <footer class="foot">
-      <p>
-        Todos los datos son confidenciales.<br />
-        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
-      </p>
+      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
     </footer>
+  </div>
+  <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">
+      Cargando análisis multiperiodo de estructura financiera...
   </div>
 </template>
 
@@ -888,7 +927,6 @@ function learnMore() {
   font-size: 12px;
   font-weight: 700;
   color: #507c95;
-  line-height: 1.5;
 }
 
 .donut-wrap {
@@ -914,7 +952,6 @@ function learnMore() {
   display: grid;
   place-items: center;
   text-align: center;
-  padding: 0 14px;
 }
 
 .donut-kicker {

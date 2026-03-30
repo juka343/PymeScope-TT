@@ -150,23 +150,19 @@ const generateDashboardData = () => {
     { key: "estabilidad", label: "Estabilidad financiera", ...buildChart(dataEstabilidad, "Evolución Estabilidad Financiera", "Equilibrio entre recursos ajenos y propios", "Estabilidad", "estabilidad") },
   ];
 
-  // Construir Tabla (Orden Inverso)
-  const reversedPeriods = [...periods].reverse();
-  const reversedApalancamiento = [...dataApalancamiento].reverse();
-  const reversedCobertura = [...dataCobertura].reverse();
-  
-  tableRows.value = reversedPeriods.map((p, i) => {
+  // Construir Tabla (Orden Ascendente)
+  tableRows.value = periods.map((p, i) => {
     const crudos = p.endeudamiento.datos_crudos || {};
-    const varTrimestral = i < reversedPeriods.length - 1 ? (reversedApalancamiento[i] - reversedApalancamiento[i+1]).toFixed(2) : "0.00";
+    const varTrimestral = i > 0 ? (dataApalancamiento[i] - dataApalancamiento[i-1]).toFixed(2) : "0.00";
     
     return {
       period: p.label,
       pasivo: currencyFmt.format(crudos.pasivo_total || 0),
       activo: currencyFmt.format(crudos.activo_total || 0),
-      apalancamiento: reversedApalancamiento[i].toFixed(2),
-      cobertura: `${reversedCobertura[i].toFixed(2)}x`,
+      apalancamiento: dataApalancamiento[i].toFixed(2),
+      cobertura: `${dataCobertura[i].toFixed(2)}x`,
       variacion: varTrimestral > 0 ? `+${varTrimestral}` : varTrimestral,
-      highlight: i === 0,
+      highlight: i === periods.length - 1,
       variationClass: varTrimestral > 0 ? "up" : (varTrimestral < 0 ? "down" : ""),
     };
   });

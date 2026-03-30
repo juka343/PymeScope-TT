@@ -38,13 +38,14 @@ const fetchPeriods = async () => {
     snapshot.forEach((docSnap) => {
       const d = docSnap.data();
       if (d.rentabilidad || d.analisis_rentabilidad) {
+        // Extraemos todo el contexto financiero para armar las donas cruzadas
         loaded.push({
           id: docSnap.id,
           label: d.label || "Periodo",
           periodDate: d.periodDate || d.label,
-          rentabilidad:
-            d.rentabilidad ||
-            d.analisis_rentabilidad || { datos_crudos: {}, kpis: [] },
+          rentabilidad: d.analisis_rentabilidad || d.rentabilidad || { datos_crudos: {}, kpis: [] },
+          rotacion: d.analisis_rotacion || { datos_crudos: {} },
+          endeudamiento: d.analisis_endeudamiento || { datos_crudos: {} }
         });
       }
     });
@@ -103,18 +104,13 @@ const generateDashboardData = () => {
       fmtLabel(yMin),
     ];
 
-    const xStep = periods.length > 1 ? 560 / (periods.length - 1) : 0;
+    // Ajuste visual para separar del eje Y
+    const xStep = periods.length > 1 ? 600 / (periods.length - 1) : 0;
 
     const points = values.map((val, i) => {
-      const x = periods.length > 1 ? 120 + i * xStep : 400;
+      const x = periods.length > 1 ? 100 + i * xStep : 400;
       const y = 230 - ((val - yMin) / finalRange) * 180;
-      return {
-        x,
-        y,
-        label: labels[i],
-        bold: i === values.length - 1,
-        value: val,
-      };
+      return { x, y, label: labels[i], bold: i === values.length - 1, value: val };
     });
 
     const lastVal = values[values.length - 1];
@@ -131,8 +127,7 @@ const generateDashboardData = () => {
       status,
       deltaType: delta >= 0 ? "up" : "down",
       deltaValue: `${delta > 0 ? "+" : ""}${delta.toFixed(2)}%`,
-      deltaNote:
-        periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      deltaNote: periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
       chartTitle: title,
       chartSubtitle: subtitle,
       legendLabel,
@@ -142,41 +137,12 @@ const generateDashboardData = () => {
   };
 
   metrics.value = [
-    {
-      key: "margen",
-      label: "Margen de Rentabilidad",
-      ...buildChart(
-        dataMargen,
-        "Evolución Margen de Rentabilidad",
-        "Tendencia histórica por periodo",
-        "Margen Neto",
-        "margen"
-      ),
-    },
-    {
-      key: "rat",
-      label: "Rendimiento sobre Activos Totales (RAT)",
-      ...buildChart(
-        dataRat,
-        "Evolución RAT",
-        "Capacidad de los activos para generar utilidad",
-        "RAT",
-        "rat"
-      ),
-    },
-    {
-      key: "roe",
-      label: "Rendimiento sobre el Patrimonio (ROE)",
-      ...buildChart(
-        dataRoe,
-        "Evolución ROE",
-        "Rentabilidad generada sobre el capital propio",
-        "ROE",
-        "roe"
-      ),
-    },
+    { key: "margen", label: "Margen de Rentabilidad", ...buildChart(dataMargen, "Evolución Margen de Rentabilidad", "Tendencia histórica por periodo", "Margen Neto", "margen") },
+    { key: "rat", label: "Rendimiento sobre Activos Totales (RAT)", ...buildChart(dataRat, "Evolución RAT", "Capacidad de los activos para generar utilidad", "RAT", "rat") },
+    { key: "roe", label: "Rendimiento sobre el Patrimonio (ROE)", ...buildChart(dataRoe, "Evolución ROE", "Rentabilidad generada sobre el capital propio", "ROE", "roe") },
   ];
 
+  // Invertir tabla para ver primero el mes más reciente
   const reversedPeriods = [...periods].reverse();
   const reversedMargen = [...dataMargen].reverse();
   const reversedRat = [...dataRat].reverse();
@@ -198,17 +164,9 @@ const selectedKpi = computed(() => {
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(k) {
-  activeKpi.value = k;
-}
-
-function showTooltip(p) {
-  hoveredPoint.value = p;
-}
-
-function hideTooltip() {
-  hoveredPoint.value = null;
-}
+function setActive(k) { activeKpi.value = k; }
+function showTooltip(p) { hoveredPoint.value = p; }
+function hideTooltip() { hoveredPoint.value = null; }
 
 const baselineY = 230;
 
@@ -275,57 +233,96 @@ const recommendationList = computed(() => {
   ];
 });
 
-function learnMore() {
-  // router.push(`/proyecto/${projectId}/dashboard-multi/learning/rentabilidad`);
-}
+function learnMore() {}
 
-/* ===== Donas dummy agregadas ===== */
-const rentabilidadBreakdown = computed(() => ({
-  total: "$16.0M",
-  segments: [
-    {
-      label: "Ingresos",
-      pct: "50",
-      color: "#1e293b",
-      dasharray: "50 100",
-      dashoffset: 0,
-    },
-    {
-      label: "Costos",
-      pct: "35",
-      color: "#299de0",
-      dasharray: "35 100",
-      dashoffset: -50,
-    },
-    {
-      label: "Utilidad",
-      pct: "15",
-      color: "#507c95",
-      dasharray: "15 100",
-      dashoffset: -85,
-    },
-  ],
-}));
+// --- LÓGICA DE DONAS (Dinámica) ---
+const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
 
-const margenesBreakdown = computed(() => ({
-  total: "32%",
-  segments: [
-    {
-      label: "Margen Bruto",
-      pct: "62",
-      color: "#fb923c",
-      dasharray: "62 100",
-      dashoffset: 0,
-    },
-    {
-      label: "Margen Neto",
-      pct: "38",
-      color: "#fcd34d",
-      dasharray: "38 100",
-      dashoffset: -62,
-    },
-  ],
-}));
+const rentabilidadBreakdown = computed(() => {
+  if (!lastPeriodData.value) return { total: "$0", segments: [] };
+
+  const rentCrudos = lastPeriodData.value.rentabilidad?.datos_crudos || {};
+  const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
+
+  const ventas = rentCrudos.ventas_netas || 1; // Evitar divisiones por cero
+  const utilidad = rentCrudos.utilidad_neta || 0;
+  let costoVentas = rotCrudos.costo_ventas || 0;
+
+  // Calculamos los gastos por diferencia
+  let gastos = ventas - costoVentas - utilidad;
+
+  // Respaldo de seguridad en caso de que el módulo de rotación no se haya extraído
+  if (gastos < 0) {
+    gastos = ventas - utilidad;
+    costoVentas = 0;
+  }
+
+  const items = [
+    { label: "Costo de Ventas", value: costoVentas, color: "#1e293b" },
+    { label: "Gastos y Otros", value: gastos, color: "#299de0" },
+    { label: "Utilidad Neta", value: utilidad, color: "#507c95" }
+  ].filter(i => i.value > 0);
+
+  const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+
+  let currentOffset = 0;
+  const segments = items.map(item => {
+    const pct = (item.value / totalCalculo) * 100;
+    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+  });
+
+  return {
+    total: ventas >= 1000000 ? `$${(ventas/1000000).toFixed(1)}M` : currencyFmt.format(ventas),
+    segments
+  };
+});
+
+const margenesBreakdown = computed(() => {
+  if (!lastPeriodData.value) return { total: "0%", segments: [] };
+
+  const rentCrudos = lastPeriodData.value.rentabilidad?.datos_crudos || {};
+  const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
+  const endCrudos = lastPeriodData.value.endeudamiento?.datos_crudos || {};
+
+  const ventas = rentCrudos.ventas_netas || 1;
+  const utilidad = rentCrudos.utilidad_neta || 0;
+  
+  // Rescate inteligente para buscar los costos si no están directos
+  let costoVentas = rotCrudos.costo_ventas || 0;
+  if (costoVentas === 0 && ventas > 0 && endCrudos.utilidad_operacion) {
+      costoVentas = ventas - endCrudos.utilidad_operacion;
+  } else if (costoVentas === 0) {
+      costoVentas = (ventas - utilidad) * 0.5; // Rescate visual
+  }
+
+  let utilidadBruta = ventas - costoVentas;
+  if (utilidadBruta < utilidad) utilidadBruta = utilidad * 1.5;
+
+  const margenBruto = (utilidadBruta / ventas) * 100;
+  const margenNeto = (utilidad / ventas) * 100;
+
+  // Calculamos la "merma" (lo que se va en gastos e impuestos entre el m. bruto y el m. neto)
+  let merma = margenBruto - margenNeto;
+  if (merma < 0) merma = 0;
+
+  const items = [
+    { label: "Gastos Operativos (Absorbidos)", value: merma, color: "#fb923c" },
+    { label: "Margen Neto Final", value: margenNeto, color: "#fcd34d" }
+  ].filter(i => i.value > 0);
+
+  const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+
+  let currentOffset = 0;
+  const segments = items.map(item => {
+    const pct = (item.value / totalCalculo) * 100;
+    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+  });
+
+  return {
+    total: `${margenBruto.toFixed(1)}%`,
+    segments
+  };
+});
 
 onMounted(() => {
   fetchPeriods();
@@ -418,9 +415,9 @@ onMounted(() => {
             :cx="p.x"
             :cy="p.y"
             fill="white"
-            :r="hoveredPoint === p ? 6 : 4"
+            :r="hoveredPoint === p ? 6 : 5"
             stroke="#299de0"
-            stroke-width="2"
+            stroke-width="2.5"
             style="transition: r 0.2s ease;"
           ></circle>
 
@@ -438,9 +435,9 @@ onMounted(() => {
 
           <g v-if="hoveredPoint" style="pointer-events: none;">
             <rect
-              :x="hoveredPoint.x - 38"
+              :x="hoveredPoint.x - 30"
               :y="hoveredPoint.y - 42"
-              width="76"
+              width="60"
               height="26"
               rx="6"
               fill="#0e161b"
@@ -460,7 +457,7 @@ onMounted(() => {
               font-family="Inter, sans-serif"
               text-anchor="middle"
             >
-              {{ hoveredPoint.value.toFixed(2) }}%
+              {{ hoveredPoint.value.toFixed(1) }}%
             </text>
           </g>
 
@@ -497,11 +494,10 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- ===== Donas agregadas debajo de la gráfica ===== -->
     <section class="grid-2">
       <article class="card">
         <h3>Ingresos vs Costos vs Utilidad</h3>
-        <p class="card-sub">Composición del resultado del periodo base</p>
+        <p class="card-sub">Composición del resultado ({{ lastPeriodData?.label }})</p>
 
         <div class="donut-wrap">
           <div class="donut">
@@ -510,14 +506,12 @@ onMounted(() => {
               <circle
                 v-for="(seg, idx) in rentabilidadBreakdown.segments"
                 :key="idx"
-                cx="18"
-                cy="18"
-                fill="none"
-                r="16"
+                cx="18" cy="18" fill="none" r="16"
                 :stroke="seg.color"
                 :stroke-dasharray="seg.dasharray"
                 :stroke-dashoffset="seg.dashoffset"
                 stroke-width="4"
+                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
               ></circle>
             </svg>
 
@@ -541,8 +535,8 @@ onMounted(() => {
       </article>
 
       <article class="card">
-        <h3>Margen bruto vs margen neto</h3>
-        <p class="card-sub">Relación entre utilidad bruta y utilidad final</p>
+        <h3>Estructura del Margen Bruto</h3>
+        <p class="card-sub">Relación entre la utilidad bruta y la utilidad final ({{ lastPeriodData?.label }})</p>
 
         <div class="donut-wrap">
           <div class="donut">
@@ -551,19 +545,17 @@ onMounted(() => {
               <circle
                 v-for="(seg, idx) in margenesBreakdown.segments"
                 :key="idx"
-                cx="18"
-                cy="18"
-                fill="none"
-                r="16"
+                cx="18" cy="18" fill="none" r="16"
                 :stroke="seg.color"
                 :stroke-dasharray="seg.dasharray"
                 :stroke-dashoffset="seg.dashoffset"
                 stroke-width="4"
+                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
               ></circle>
             </svg>
 
             <div class="donut-center">
-              <span class="donut-kicker">Márgenes</span>
+              <span class="donut-kicker">M. Bruto</span>
               <span class="donut-total">{{ margenesBreakdown.total }}</span>
             </div>
           </div>
@@ -605,14 +597,11 @@ onMounted(() => {
               <td class="right" :class="{ strong: r.highlight }">{{ r.ingresos }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.utilidad }}</td>
               <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
-                {{ r.margen }}
+                <span v-if="r.highlight" class="table-badge">{{ r.margen }}</span>
+                <span v-else>{{ r.margen }}</span>
               </td>
-              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
-                {{ r.rat }}
-              </td>
-              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
-                {{ r.roe }}
-              </td>
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.rat }}</td>
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.roe }}</td>
             </tr>
           </tbody>
         </table>
@@ -652,10 +641,7 @@ onMounted(() => {
     </section>
 
     <footer class="foot">
-      <p>
-        Todos los datos son confidenciales.<br />
-        Este reporte es para fines informativos.
-      </p>
+      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
     </footer>
   </div>
 
@@ -1048,6 +1034,18 @@ onMounted(() => {
 
 .highlight {
   background: rgba(41, 157, 224, 0.08);
+}
+
+.table-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 /* Notes */
