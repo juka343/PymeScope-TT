@@ -18,7 +18,6 @@ const base = computed(() => {
 });
 
 const isActive = (section) => {
-  // más robusto que endsWith (evita falsos positivos raros)
   return route.path.split("/").pop() === section;
 };
 </script>

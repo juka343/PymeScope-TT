@@ -1,25 +1,22 @@
 <script setup>
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 
-const cards = ref([
-  {
-    id: "er",
-    icon: "query_stats",
-    title: "Estado de Resultados Proforma",
-    desc: "Proyecta ingresos, costos y gastos a partir de supuestos definidos cuenta por cuenta.",
-    button: "Configurar proyección",
-  },
-  {
-    id: "bg",
-    icon: "balance",
-    title: "Balance General Proforma",
-    desc: "Proyecta la estructura financiera futura considerando activos, pasivos y capital.",
-    button: "Configurar proyección",
-  },
-]);
+const router = useRouter();
+const estadoResultadosDisponible = ref(true);
+const balanceDisponible = ref(false);
 
-function handleConfigure(id) {
-  console.log("Configurar proyección:", id);
+function configurarEstadoResultados() {
+  // Placeholder
+}
+
+function configurarBalance() {
+  if (!balanceDisponible.value) return;
+  // Placeholder
+}
+
+function goToFormularioEstadoResultados() {
+  router.push({ name: "FormularioEstadoDeResultados" });
 }
 </script>
 
@@ -28,29 +25,87 @@ function handleConfigure(id) {
     <div class="title">
       <h1>Proyecciones financieras</h1>
       <div class="subtitle">
-        <p>Genera proyecciones proforma a partir del último periodo disponible</p>
+        <p>
+          Genera proyecciones proforma a partir del último periodo disponible
+          <span class="separator">•</span>
+          Genera primero el Estado de Resultados Proforma y después el Balance General Proforma.
+        </p>
       </div>
     </div>
 
-    <section class="grid">
-      <article v-for="c in cards" :key="c.id" class="card">
-        <div class="card-top">
-          <div class="icon-box" aria-hidden="true">
-            <span class="material-symbols-outlined">{{ c.icon }}</span>
+    <section class="projection-flow">
+      <article class="projection-card">
+        <div class="card-icon-row">
+          <div class="card-icon">
+            <span class="material-symbols-outlined">query_stats</span>
           </div>
         </div>
 
-        <h3 class="card-title">{{ c.title }}</h3>
-        <p class="card-desc">{{ c.desc }}</p>
+        <h3>Estado de Resultados Proforma</h3>
+        <p class="card-text">
+          Proyecta ingresos, costos y gastos a partir de supuestos definidos cuenta por cuenta.
+        </p>
 
-        <div class="card-foot">
-          <div class="pill">
+        <div class="card-footer">
+          <div class="period-badge">
             <span class="material-symbols-outlined">calendar_today</span>
             <span>Periodo base: último periodo disponible</span>
           </div>
 
-          <button class="btn-primary" type="button" @click="handleConfigure(c.id)">
-            <span>{{ c.button }}</span>
+          <button
+            class="btn-primary"
+            type="button"
+            :disabled="!estadoResultadosDisponible"
+            @click="goToFormularioEstadoResultados"
+          >
+            <span>Configurar proyección</span>
+            <span class="material-symbols-outlined">arrow_forward</span>
+          </button>
+        </div>
+      </article>
+
+      <div class="connector connector-desktop" aria-hidden="true">
+        <div class="connector-circle">
+          <span class="material-symbols-outlined">arrow_forward</span>
+        </div>
+        <div class="connector-line"></div>
+      </div>
+
+      <div class="connector connector-mobile" aria-hidden="true">
+        <div class="connector-circle">
+          <span class="material-symbols-outlined">arrow_downward</span>
+        </div>
+      </div>
+
+      <article class="projection-card projection-card-disabled">
+        <div class="card-icon-row">
+          <div class="card-icon">
+            <span class="material-symbols-outlined">balance</span>
+          </div>
+        </div>
+
+        <h3>Balance General Proforma</h3>
+        <p class="card-text">
+          Proyecta la estructura financiera futura considerando activos, pasivos y capital.
+        </p>
+
+        <div class="card-footer">
+          <div class="period-badge">
+            <span class="material-symbols-outlined">calendar_today</span>
+            <span>Periodo base: último periodo disponible</span>
+          </div>
+
+          <p class="availability-note">
+            Disponible después de generar el Estado de Resultados Proforma
+          </p>
+
+          <button
+            class="btn-primary btn-disabled"
+            type="button"
+            :disabled="!balanceDisponible"
+            @click="configurarBalance"
+          >
+            <span>Configurar proyección</span>
             <span class="material-symbols-outlined">arrow_forward</span>
           </button>
         </div>
@@ -59,7 +114,7 @@ function handleConfigure(id) {
 
     <footer class="foot">
       <p>
-        Todos los datos son confidenciales. <br />
+        Todos los datos son confidenciales.<br />
         Las proyecciones son estimaciones basadas en los supuestos ingresados y no garantizan resultados futuros.
       </p>
     </footer>
@@ -70,145 +125,175 @@ function handleConfigure(id) {
 .wrap {
   width: min(1200px, 100%);
   margin: 0 auto;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  color: #0e161b;
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
 /* Title */
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .title h1 {
   margin: 0;
   font-size: 26px;
   font-weight: 900;
+  color: #0e161b;
 }
 
 .subtitle {
-  margin-top: 6px;
   color: #507c95;
-  font-weight: 700;
   font-size: 13px;
+  font-weight: 700;
+  line-height: 1.6;
 }
 
-/* Grid */
-.grid {
+.subtitle p {
+  margin: 0;
+}
+
+.separator {
+  color: #d1d5db;
+  margin: 0 6px;
+}
+
+/* Flow */
+.projection-flow {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
-  margin-top: 6px;
+  gap: 14px;
+  margin-top: 4px;
 }
 
-.card {
-  background: #ffffff;
-  border: 1px solid #e8eff3;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.15s ease, transform 0.05s ease;
+/* Cards */
+.projection-card {
   display: flex;
   flex-direction: column;
-  min-height: 260px;
+  min-height: 100%;
+  background: #ffffff;
+  border: 1px solid #e8eff3;
+  border-radius: 14px;
+  padding: 28px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.18s ease, transform 0.08s ease;
 }
 
-.card:hover {
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+.projection-card:hover {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
 }
 
-.card-top {
+.projection-card-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+}
+
+.card-icon-row {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 14px;
+  justify-content: space-between;
+  margin-bottom: 24px;
 }
 
-.icon-box {
+.card-icon {
   width: 56px;
   height: 56px;
   border-radius: 14px;
   background: #eff6ff;
-  border: 1px solid #dbeafe;
   color: #299de0;
+  border: 1px solid #dbeafe;
   display: grid;
   place-items: center;
 }
 
-.icon-box span {
+.card-icon .material-symbols-outlined {
   font-size: 32px;
 }
 
-.card-title {
-  margin: 0 0 8px;
-  font-size: 18px;
+.projection-card h3 {
+  margin: 0 0 12px;
+  font-size: 22px;
   font-weight: 900;
+  color: #0e161b;
   transition: color 0.15s ease;
 }
 
-.card:hover .card-title {
+.projection-card:hover h3 {
   color: #299de0;
 }
 
-.card-desc {
-  margin: 0;
+.card-text {
+  margin: 0 0 24px;
+  flex-grow: 1;
   color: #507c95;
-  font-size: 13px;
-  line-height: 1.6;
-  font-weight: 700;
-  flex: 1;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
-/* Footer inside card */
-.card-foot {
-  margin-top: 18px;
-  padding-top: 18px;
+.card-footer {
+  margin-top: auto;
+  padding-top: 24px;
   border-top: 1px solid #e8eff3;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
-.pill {
+.period-badge {
+  width: fit-content;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #f8fafb;
+  border: 1px solid #f1f5f9;
   color: #507c95;
   font-size: 12px;
-  font-weight: 800;
-  background: #f8fafc;
-  border: 1px solid #f1f5f9;
-  border-radius: 10px;
-  padding: 8px 10px;
-  width: fit-content;
+  font-weight: 700;
 }
 
-.pill .material-symbols-outlined {
+.period-badge .material-symbols-outlined {
   font-size: 16px;
-  opacity: 0.85;
-  color: #507c95;
 }
 
-/* Button */
+.availability-note {
+  margin: 0;
+  color: #299de0;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.5;
+}
+
+/* Buttons */
 .btn-primary {
   width: 100%;
-  height: 44px;
-  border-radius: 12px;
+  border: none;
+  border-radius: 10px;
   background: #299de0;
-  color: white;
-  font-weight: 900;
+  color: #ffffff;
   font-size: 14px;
+  font-weight: 700;
+  padding: 12px 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  box-shadow: 0 10px 22px rgba(41, 157, 224, 0.2);
-  transition: filter 0.15s ease, transform 0.05s ease;
+  gap: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: background 0.15s ease, transform 0.05s ease;
+  cursor: pointer;
 }
 
-.btn-primary:hover {
-  filter: brightness(0.95);
+.btn-primary:hover:not(:disabled) {
+  background: #1a8ac7;
 }
 
-.btn-primary:active {
+.btn-primary:active:not(:disabled) {
   transform: translateY(1px);
 }
 
@@ -216,20 +301,102 @@ function handleConfigure(id) {
   font-size: 18px;
 }
 
+.btn-primary:disabled,
+.btn-disabled {
+  background: #d1d5db;
+  color: #6b7280;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* Connectors */
+.connector {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.connector-desktop {
+  display: none;
+}
+
+.connector-mobile {
+  padding: 2px 0;
+}
+
+.connector-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid rgba(41, 157, 224, 0.2);
+  color: #299de0;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.connector-circle .material-symbols-outlined {
+  font-size: 28px;
+}
+
+.connector-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    to bottom,
+    rgba(41, 157, 224, 0),
+    rgba(41, 157, 224, 0.12),
+    rgba(41, 157, 224, 0)
+  );
+  z-index: -1;
+}
+
 /* Footer */
 .foot {
-  margin: 8px 0 22px;
+  margin: auto 0 22px;
   text-align: center;
   color: #9ca3af;
   font-weight: 700;
   font-size: 12px;
+  padding-top: 8px;
+}
+
+.foot p {
+  margin: 0;
+  line-height: 1.6;
 }
 
 /* Responsive */
 @media (min-width: 768px) {
-  .grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
+  .projection-flow {
+    grid-template-columns: 1fr auto 1fr;
+    align-items: stretch;
+    gap: 24px;
+  }
+
+  .connector-desktop {
+    display: flex;
+    margin: 0 -12px;
+  }
+
+  .connector-mobile {
+    display: none;
+  }
+
+  .connector-circle {
+    width: 48px;
+    height: 48px;
+  }
+
+  .connector-circle .material-symbols-outlined {
+    font-size: 32px;
   }
 }
 </style>

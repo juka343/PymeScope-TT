@@ -82,7 +82,7 @@ onMounted(async () => {
       <div class="subtitle">
         <p>Diagnóstico de la composición del capital</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Análisis basado en un único periodo financiero</p>
+        <p class="small">Indicadores calculados a partir del Balance General</p>
       </div>
     </div>
 

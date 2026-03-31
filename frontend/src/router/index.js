@@ -73,6 +73,21 @@ const router = createRouter({
           name: "proyecciones",
           component: () => import("../views/ProyeccionesView.vue"),
         },
+        {
+          path: "FormularioEstadoDeResultados",
+          name: "FormularioEstadoDeResultados",
+          component: () => import("../views/FormularioEstadoDeResultadosView.vue"),
+        },
+        {
+          path: "ProyeccionProformaEdo",
+          name: "ProyeccionProformaEdo",
+          component: () => import("../views/ProyeccionProformaEdoView.vue"),
+        },
+        {
+          path: "FormularioBalanceGeneral",
+          name: "FormularioBalanceGeneral",
+          component: () => import("../views/FormularioBalanceGeneralView.vue"),
+        },
       ],
     },
 

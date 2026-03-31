@@ -81,7 +81,7 @@ onMounted(async () => {
       <div class="subtitle">
         <p>Diagnóstico de eficiencia operativa</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Análisis basado en un único periodo financiero</p>
+        <p class="small">Indicadores calculados a partir del Balance General y Estado de Resultados</p>
       </div>
     </div>
 
