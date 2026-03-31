@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // FUNCIONES DE AYUDA
+    // ==========================================
+    
+    // Verifica si el usuario está autenticado (Firebase Auth)
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Verifica si el documento pertenece al usuario autenticado
+    // (Para cuando implementen el campo 'userId' en los documentos)
+    function isDocumentOwner(docData) {
+      return isSignedIn() && 
+             docData.userId != null && 
+             docData.userId == request.auth.uid;
+    }
+
+    // ==========================================
+    // COLECCIÓN: analisis_financieros
+    // ==========================================
+    match /analisis_financieros/{uuid} {
+      
+      // LECTURA (READ)
+      // Por ahora: Solo usuarios autenticados pueden leer
+      // Futuro: Descomentar isDocumentOwner cuando agreguen campo 'userId'
+      allow read: if isSignedIn();
+      // allow read: if isDocumentOwner(resource.data);
+      
+      // CREACIÓN (CREATE)
+      // Por ahora: Solo usuarios autenticados pueden crear
+      // Futuro: El backend (Admin SDK) siempre puede crear (bypass automático)
+      allow create: if isSignedIn();
+      
+      // ACTUALIZACIÓN (UPDATE)
+      // Por ahora: Solo usuarios autenticados
+      // Futuro: Solo si el documento le pertenece
+      allow update: if isSignedIn();
+      // allow update: if isDocumentOwner(resource.data);
+      
+      // ELIMINACIÓN (DELETE)
+      // Por ahora: Solo usuarios autenticados
+      // Futuro: Solo el dueño puede eliminar
+      allow delete: if isSignedIn();
+      // allow delete: if isDocumentOwner(resource.data);
+    }
+
+    // ==========================================
+    // REGLAS DE DESARROLLO (TEMPORALES)
+    // ==========================================
+    // IMPORTANTE: Eliminar estas reglas en producción
+    // Actualmente permite acceso completo para desarrollo/testing
+    
+    // match /analisis_financieros/{uuid} {
+    //   allow read, write: if true; // ⚠️ SOLO PARA DESARROLLO
+    // }
+  }
+}
