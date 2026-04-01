@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "@/firebase/config";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore"; // <-- Importado
+import { auth, db } from "@/firebase/config"; // <-- Asegúrate de importar db
 
 const router = useRouter();
 const route = useRoute();
@@ -11,12 +12,15 @@ const route = useRoute();
 const user = ref(null);
 let unsub = null;
 
+const projectId = computed(() => route.params.id_proyecto);
+
 onMounted(() => {
   unsub = onAuthStateChanged(auth, (u) => {
     user.value = u;
-    // si quieres expulsar del dashboard sin sesión:
     if (!u) router.replace("/");
   });
+
+  fetchProjectData(); // <-- Lanzamos la búsqueda al montar
 });
 
 onBeforeUnmount(() => {
@@ -29,27 +33,62 @@ const userDisplayName = computed(() => {
 });
 
 const userEmail = computed(() => (user.value?.email ? user.value.email : ""));
-
 const userPhotoURL = computed(() => user.value?.photoURL || "");
 
 const userInitials = computed(() => {
   const name = userDisplayName.value?.trim();
   if (!name) return "U";
-
-  // Si es email, agarra la primera letra
   if (name.includes("@")) return name[0].toUpperCase();
-
   const parts = name.split(" ").filter(Boolean);
   const initials = parts.slice(0, 2).map((p) => p[0]).join("");
   return (initials || name[0]).toUpperCase();
 });
 
-// ====== Proyecto dummy (igual que tenías) ======
+// ====== Proyecto Dinámico ======
 const project = ref({
-  name: "Análisis Q3 2024",
-  periodLabel: "Q3 2024",
-  mode: "Periodo Único",
+  name: "Cargando...",
+  periodLabel: "...",
+  mode: "...",
 });
+
+const fetchProjectData = async () => {
+  if (!projectId.value) return;
+
+  try {
+    // 1. Obtener nombre del proyecto y modo
+    const projectRef = doc(db, "proyectos", projectId.value);
+    const projectSnap = await getDoc(projectRef);
+
+    let pName = "Proyecto sin título";
+    let pMode = "Monoperiodo";
+
+    if (projectSnap.exists()) {
+      pName = projectSnap.data().nombre || pName;
+      const mode = projectSnap.data().analysis_mode;
+      if (mode === 'multi') pMode = "Multiperiodo";
+    }
+
+    // 2. Obtener el periodo (como es monoperiodo, tomamos el primero)
+    const periodosRef = collection(db, "proyectos", projectId.value, "periodos");
+    const periodsSnap = await getDocs(periodosRef);
+
+    let pLabel = "Sin periodo";
+    if (!periodsSnap.empty) {
+      // Obtenemos el nombre del mes/año que se guardó
+      pLabel = periodsSnap.docs[0].data().label || "Periodo 1"; 
+    }
+
+    // 3. Inyectar datos a la vista
+    project.value = {
+      name: pName,
+      periodLabel: pLabel,
+      mode: pMode,
+    };
+  } catch (error) {
+    console.error("Error cargando topbar:", error);
+    project.value.name = "Error de conexión";
+  }
+};
 
 async function handleLogout() {
   try {

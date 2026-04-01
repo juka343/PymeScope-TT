@@ -80,11 +80,23 @@ const periodsToProcess = computed(() =>
 const canGenerate = computed(() => periodsToProcess.value.length > 0);
 
 const hasMissingDates = computed(() => {
-  return isMultiPeriod.value && completePeriods.value.some(p => !p.periodDate || p.periodDate.length < 6);
+  return isMultiPeriod.value && completePeriods.value.some(p => {
+    if (periodicity.value === 'anual') {
+      return !p.periodDate || p.periodDate.length < 4;
+    } else {
+      return !p.periodDate || p.periodDate.length < 6;
+    }
+  });
 });
 
 const currentYear = new Date().getFullYear();
-const availableYears = ref(Array.from({ length: 81 }, (_, i) => currentYear + 20 - i)); 
+const availableYears = computed(() => {
+  const years = [];
+  for (let y = currentYear; y >= 2002; y--) {
+    years.push(y);
+  }
+  return years;
+});
 const availableMonths = [
   { value: "01", label: "Enero" }, { value: "02", label: "Febrero" },
   { value: "03", label: "Marzo" }, { value: "04", label: "Abril" },
@@ -101,39 +113,57 @@ function toggleDropdown(id) {
 }
 
 function getMonthLabel(periodDate) {
-  const parts = periodDate ? periodDate.split('-') : [];
+  if (!periodDate) return "Mes";
+  const parts = String(periodDate).split('-');
   const m = parts[1] || "";
   const found = availableMonths.find(x => x.value === m);
   return found ? found.label : "Mes";
 }
 
 function getYearLabel(periodDate) {
-  const parts = periodDate ? periodDate.split('-') : [];
+  if (!periodDate) return "Año";
+  const parts = String(periodDate).split('-');
   return parts[0] || "Año";
 }
 
 function updatePeriodDate(p, type, value) {
-  const parts = p.periodDate ? p.periodDate.split("-") : [];
+  const safeDate = p.periodDate ? String(p.periodDate) : "";
+  const parts = safeDate.split("-");
+
   let year = parts[0] || "";
   let month = parts[1] || "";
   
-  if (type === "year") year = value;
-  if (type === "month") month = value;
+  if (type === "year") year = String(value);
+  if (type === "month") month = String(value);
   
-  p.periodDate = `${year}-${month}`;
+  // Si es anual, solo guardamos el año puro
+  if (periodicity.value === 'anual') {
+    p.periodDate = year;
+  } else {
+    p.periodDate = `${year}-${month}`;
+  }
+  
   handleDateChange(p);
 }
 
-// Autollenado: Convierte "2023-01" a "Enero 2023"
+// Autollenado inteligente
 function handleDateChange(p) {
-  if (p.periodDate && p.periodDate.length >= 6) {
-    const [year, month] = p.periodDate.split('-');
-    if (year && month) {
-      const meses = [
-        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
-        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-      ];
-      p.label = `${meses[parseInt(month) - 1]} ${year}`;
+  const safeDate = p.periodDate ? String(p.periodDate) : "";
+
+  if (periodicity.value === 'anual') {
+    if (safeDate.length === 4) {
+      p.label = `Ejercicio ${safeDate}`;
+    }
+  } else {
+    if (safeDate.length >= 6) {
+      const [year, month] = safeDate.split('-');
+      if (year && month) {
+        const meses = [
+          "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+        ];
+        p.label = `${meses[parseInt(month) - 1]} ${year}`;
+      }
     }
   }
   // Guarda en Firebase
@@ -540,7 +570,7 @@ async function generateAnalysis() {
               
               <div class="date-wrapper">
                 <div class="date-selects">
-                  <div class="custom-select" tabindex="0" @blur="openDropdown = null">
+                  <div v-if="periodicity !== 'anual'" class="custom-select" tabindex="0" @blur="openDropdown = null">
                     <div class="selected-value" @click="toggleDropdown(`${p.id}-month`)">
                       <span>{{ getMonthLabel(p.periodDate) }}</span>
                       <span class="material-symbols-outlined">expand_more</span>
@@ -550,7 +580,7 @@ async function generateAnalysis() {
                         v-for="m in availableMonths" 
                         :key="m.value" 
                         @click="updatePeriodDate(p, 'month', m.value); openDropdown = null"
-                        :class="{ active: p.periodDate && p.periodDate.split('-')[1] === m.value }"
+                        :class="{ active: p.periodDate && String(p.periodDate).split('-')[1] === m.value }"
                       >
                         {{ m.label }}
                       </li>
@@ -567,7 +597,7 @@ async function generateAnalysis() {
                         v-for="y in availableYears" 
                         :key="y" 
                         @click="updatePeriodDate(p, 'year', y); openDropdown = null"
-                        :class="{ active: p.periodDate && p.periodDate.split('-')[0] == y }"
+                        :class="{ active: p.periodDate && String(p.periodDate).split('-')[0] == y }"
                       >
                         {{ y }}
                       </li>

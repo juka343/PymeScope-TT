@@ -145,8 +145,8 @@ const generateDashboardData = () => {
   };
 
   metrics.value = [
-    { key: "razon", label: "Razón Circulante", ...buildChart(dataRazon, "Evolución Razón Circulante", "Capacidad para cubrir deudas a corto plazo", "Veces") },
-    { key: "acida", label: "Prueba Ácida", ...buildChart(dataAcida, "Evolución Prueba Ácida", "Liquidez inmediata sin depender de inventarios", "Veces") },
+    { key: "razon", label: "Razón Circulante", ...buildChart(dataRazon, "Evolución Razón Circulante", "Capacidad para cubrir deudas a corto plazo", "Circulante") },
+    { key: "acida", label: "Prueba Ácida", ...buildChart(dataAcida, "Evolución Prueba Ácida", "Liquidez inmediata sin depender de inventarios", "Ácida") },
     { key: "capital", label: "Capital de Trabajo", ...buildChart(dataCapital, "Evolución Capital de Trabajo", "Recursos netos para la operación diaria", "Capital", true) }
   ];
 

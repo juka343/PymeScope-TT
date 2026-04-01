@@ -8,6 +8,12 @@ const router = useRouter();
 const route = useRoute();
 
 const loading = ref(true);
+const recommendations = ref([
+  "Control de costos operativos",
+  "Revisión de estrategia de precios",
+  "Optimización de procesos internos",
+]);
+
 const projectId = ref(null);
 
 // Formateadores
