@@ -1,5 +1,12 @@
 <script setup>
 import { ref } from "vue";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+
+function goToProyeccionProformaBalance() {
+  router.push({ name: "ProyeccionProformaBalanceGeneral" });
+}
 
 const projectConfig = ref({
   periodicidad: "Trimestral",
@@ -420,7 +427,7 @@ function generarProyeccion() {
         Cancelar
       </button>
 
-      <button class="btn-primary" type="button" @click="generarProyeccion">
+      <button class="btn-primary" type="button" @click="goToProyeccionProformaBalance">
         <span class="material-symbols-outlined">auto_graph</span>
         <span>Generar proyección proforma</span>
       </button>
@@ -908,3 +915,5 @@ function generarProyeccion() {
   }
 }
 </style>
+
+

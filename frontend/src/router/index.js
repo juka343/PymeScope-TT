@@ -88,6 +88,11 @@ const router = createRouter({
           name: "FormularioBalanceGeneral",
           component: () => import("../views/FormularioBalanceGeneralView.vue"),
         },
+        {
+          path: "ProyeccionProformaBalanceGeneral",
+          name: "ProyeccionProformaBalanceGeneral",
+          component: () => import("../views/ProyeccionProformaBalanceGeneralView.vue"),
+        },
       ],
     },
 
