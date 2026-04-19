@@ -30,6 +30,26 @@ const router = createRouter({
           name: "teoriaRentabilidad",
           component: () => import("../views/TeoriaRentabilidadView.vue"), 
         },
+        {
+          path: "/teoriaLiquidez",
+          name: "teoriaLiquidez",
+          component: () => import("../views/TeoriaLiquidezView.vue"), 
+        },
+        {
+          path: "/teoriaEstructura",
+          name: "teoriaEstructura",
+          component: () => import("../views/TeoriaEstructuraView.vue"), 
+        },
+        {
+          path: "/teoriaRotacion",
+          name: "teoriaRotacion",
+          component: () => import("../views/TeoriaRotacionView.vue"), 
+        },
+        {
+          path: "/teoriaEndeudamiento",
+          name: "teoriaEndeudamiento",
+          component: () => import("../views/TeoriaEndeudamientoView.vue"), 
+        },
 
     // DASHBOARD MONOPERIODO
     {
@@ -101,13 +121,13 @@ const router = createRouter({
       path: "/proyecto/:id_proyecto/dashboard-multi",
       component: DashboardLayoutMulti,
       children: [
-        { path: "", redirect: { name: "rentabilidadMulti" } }, // default
+        { path: "", redirect: { name: "resumenMulti" } }, // default
 
-        // {
-        //   path: "resumen",
-        //   name: "resumenMulti",
-        //   component: () => import("../views/ResumenGeneralMultiView.vue"),
-        // },
+        {
+          path: "resumen",
+          name: "resumenMulti",
+          component: () => import("../views/ResumenGeneralMultiView.vue"),
+        },
         {
           path: "rentabilidad",
           name: "rentabilidadMulti",

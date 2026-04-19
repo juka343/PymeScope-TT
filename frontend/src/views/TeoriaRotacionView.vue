@@ -5,19 +5,19 @@ import { computed, ref } from "vue";
 
 const videos = ref([
   {
-    title: "Video: Rentabilidad: ¿Qué es?",
-    youtubeUrl: "https://www.youtube.com/watch?v=MbdmfzCGY4A",
-    duration: "6:51",
+    title: "Video: Rotación de activos totales | Ejercicio + interpretacion",
+    youtubeUrl: "https://www.youtube.com/watch?v=dVhxiEDArPc",
+    duration: "2:17",
   },
   {
-    title: "Video: Descubre cómo conocer la RENTABILIDAD de tu NEGOCIO en pocos pasos",
-    youtubeUrl: "https://www.youtube.com/watch?v=FuAdhJLL_Mg",
-    duration: "3:17",
+    title: "Video: ROTACIÓN de ACTIVOS TOTALES, FIJOS y CORRIENTES ► 3 EJEMPLOS, FÓRMULA e INTERPRETACIÓN",
+    youtubeUrl: "https://www.youtube.com/watch?v=-f4gs4jCJHY",
+    duration: "8:31",
   },
   {
-    title: "Video: ¿Cómo saber si tu negocio es rentable?",
-    youtubeUrl: "https://www.youtube.com/watch?v=B7XpMM7IImE",
-    duration: "5:46",
+    title: "Video: ¿Qué es la rotación de activos y cómo se calcula? | Quipu Academy",
+    youtubeUrl: "https://www.youtube.com/watch?v=sFGlP-aUW_c",
+    duration: "4:23",
   },
 ]);
 
@@ -82,7 +82,7 @@ const yearLabel = computed(() => new Date().getFullYear());
       <header class="page-title">
         <h1>
           <span class="kicker">Centro de aprendizaje</span>
-          <span class="headline">Rentabilidad</span>
+          <span class="headline">Rotación de Activos</span>
         </h1>
       </header>
 
@@ -97,18 +97,19 @@ const yearLabel = computed(() => new Date().getFullYear());
             </h2>
 
             <div class="card-text">
-              <p>
-                La rentabilidad es el indicador fundamental que mide la capacidad de una empresa para generar beneficios
-                en relación con sus ingresos, activos o capital invertido. No se trata simplemente de vender más, sino de
-                asegurar que esas ventas traduzcan el esfuerzo operativo en ganancias reales que permitan la reinversión
-                y el crecimiento.
-              </p>
-              <p>
-                Para las pequeñas y medianas empresas (PYMES), entender la rentabilidad es crítico para la supervivencia
-                a largo plazo. Una empresa puede tener un alto volumen de facturación y, sin embargo, carecer de
-                rentabilidad debido a costos ineficientes. Analizar estos márgenes permite tomar decisiones informadas
-                sobre precios, reducción de gastos y áreas de inversión estratégica.
-              </p>
+                  <p>
+                    La rotación de activos es un conjunto de indicadores que permite evaluar qué tan eficientemente
+                    una empresa utiliza sus recursos para generar ventas y recuperar su dinero. Estas razones analizan
+                    la velocidad con la que se cobran las cuentas por cobrar, se renueva el inventario y se aprovechan
+                    los activos fijos y totales dentro de la operación del negocio.
+                    </p>
+                    <p>
+                    Para las pequeñas y medianas empresas (PYMES), este bloque es importante porque no basta con tener
+                    activos, inventario o ventas: también es necesario administrarlos bien. Una baja rotación puede
+                    señalar exceso de inventario, problemas de cobranza o recursos ociosos, mientras que una rotación
+                    adecuada refleja mayor eficiencia operativa, mejor uso del capital invertido y una mayor capacidad
+                    para sostener el flujo del negocio.
+                    </p>
             </div>
           </article>
 
@@ -119,32 +120,46 @@ const yearLabel = computed(() => new Date().getFullYear());
               Principales Fórmulas
             </h2>
 
-            <div class="formula-list">
-              <div class="formula">
-                <h3 class="formula-label">Margen de Rentabilidad</h3>
-                <p class="formula-eq">(Utilidad Neta / Ventas Netas)</p>
+             <div class="formula-list">
+                <div class="formula">
+                <h3 class="formula-label">Rotación de la Cartera o de Cuentas por Cobrar</h3>
+                <p class="formula-eq">(Ventas Anuales a Crédito / Clientes)</p>
                 <p class="formula-desc">
-                  Mide el porcentaje de los ingresos que queda después de pagar todos los gastos, indicando eficiencia
-                  operativa global.
+                    Indica el número de veces que se cobran las cuentas por cobrar en un periodo.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre Activos Totales (ROA)</h3>
-                <p class="formula-eq">(Utilidad Neta / Activos Totales)</p>
+                <div class="formula">
+                <h3 class="formula-label">Periodo Promedio de Recaudo</h3>
+                <p class="formula-eq">(Cuentas por Cobrar / Promedio Diario de Ventas a Crédito)</p>
                 <p class="formula-desc">
-                  Muestra con qué eficacia la empresa utiliza sus activos totales para generar beneficios.
+                    Mide los días promedio que tarda la empresa en recuperar sus cuentas por cobrar.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre el Patrimonio (ROE)</h3>
-                <p class="formula-eq">(Utilidad Neta / Capital Contable)</p>
+                <div class="formula">
+                <h3 class="formula-label">Rotación de Inventarios</h3>
+                <p class="formula-eq">(Costo de Ventas Netas / Inventario)</p>
                 <p class="formula-desc">
-                  Mide el rendimiento de la inversión realizada por los accionistas, reflejando la capacidad de
-                  remunerar a los propietarios.
+                    Muestra cuántas veces se renueva el inventario durante un periodo.
                 </p>
-              </div>
+                </div>
+
+                <div class="formula">
+                <h3 class="formula-label">Rotación de Activos Fijos</h3>
+                <p class="formula-eq">(Ventas Netas / Activo Fijo Neto)</p>
+                <p class="formula-desc">
+                    Evalúa la eficiencia con la que los activos fijos generan ventas.
+                </p>
+                </div>
+
+                <div class="formula">
+                <h3 class="formula-label">Rotación de Activos Totales</h3>
+                <p class="formula-eq">(Ventas Netas / Activo Total)</p>
+                <p class="formula-desc">
+                    Mide la eficiencia del activo total de la empresa para generar ventas.
+                </p>
+                </div>
             </div>
           </article>
         </section>

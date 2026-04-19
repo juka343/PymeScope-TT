@@ -5,19 +5,19 @@ import { computed, ref } from "vue";
 
 const videos = ref([
   {
-    title: "Video: Rentabilidad: ¿Qué es?",
-    youtubeUrl: "https://www.youtube.com/watch?v=MbdmfzCGY4A",
-    duration: "6:51",
+    title: "Video:Estructura Financiera | ¿Que es? | Explicación SENCILLA | CONTABILIDAD",
+    youtubeUrl: "https://www.youtube.com/watch?v=rn1frku_grk",
+    duration: "7:06",
   },
   {
-    title: "Video: Descubre cómo conocer la RENTABILIDAD de tu NEGOCIO en pocos pasos",
-    youtubeUrl: "https://www.youtube.com/watch?v=FuAdhJLL_Mg",
-    duration: "3:17",
+    title: "Video: ESTRUCTURA ECONOMICA y FINANCIERA de la EMPRESA| Economía 2º Bachillerato",
+    youtubeUrl: "https://www.youtube.com/watch?v=2U7Brh3STwM",
+    duration: "5:34",
   },
   {
-    title: "Video: ¿Cómo saber si tu negocio es rentable?",
-    youtubeUrl: "https://www.youtube.com/watch?v=B7XpMM7IImE",
-    duration: "5:46",
+    title: "Video: ESTRUCTURA FINANCIERA de la EMPRESA ⚖️ | Economía de la Empresa 2",
+    youtubeUrl: "https://www.youtube.com/watch?v=I4Fi7l6CiYU",
+    duration: "2:37",
   },
 ]);
 
@@ -82,7 +82,7 @@ const yearLabel = computed(() => new Date().getFullYear());
       <header class="page-title">
         <h1>
           <span class="kicker">Centro de aprendizaje</span>
-          <span class="headline">Rentabilidad</span>
+          <span class="headline">Estructura Financiera</span>
         </h1>
       </header>
 
@@ -98,17 +98,19 @@ const yearLabel = computed(() => new Date().getFullYear());
 
             <div class="card-text">
               <p>
-                La rentabilidad es el indicador fundamental que mide la capacidad de una empresa para generar beneficios
-                en relación con sus ingresos, activos o capital invertido. No se trata simplemente de vender más, sino de
-                asegurar que esas ventas traduzcan el esfuerzo operativo en ganancias reales que permitan la reinversión
-                y el crecimiento.
-              </p>
-              <p>
-                Para las pequeñas y medianas empresas (PYMES), entender la rentabilidad es crítico para la supervivencia
-                a largo plazo. Una empresa puede tener un alto volumen de facturación y, sin embargo, carecer de
-                rentabilidad debido a costos ineficientes. Analizar estos márgenes permite tomar decisiones informadas
-                sobre precios, reducción de gastos y áreas de inversión estratégica.
-              </p>
+                La estructura financiera muestra cómo está compuesta una empresa en términos de activos,
+                pasivos y capital. Este bloque de razones permite analizar si existe un equilibrio adecuado
+                entre los recursos propios, las deudas y la inversión realizada en activos fijos, lo que ayuda
+                a entender la solidez financiera del negocio.
+                </p>
+                <p>
+                Para las pequeñas y medianas empresas (PYMES), estudiar la estructura es importante porque no
+                solo interesa cuánto tiene o cuánto debe la empresa, sino también cómo están distribuidos esos
+                recursos. Una estructura poco equilibrada puede indicar dependencia excesiva de deuda o una parte
+                demasiado grande del patrimonio comprometida en activos fijos. En cambio, una estructura sana
+                facilita la estabilidad, la capacidad de crecimiento y una mejor toma de decisiones financieras
+                a largo plazo.
+                </p>
             </div>
           </article>
 
@@ -120,31 +122,37 @@ const yearLabel = computed(() => new Date().getFullYear());
             </h2>
 
             <div class="formula-list">
-              <div class="formula">
-                <h3 class="formula-label">Margen de Rentabilidad</h3>
-                <p class="formula-eq">(Utilidad Neta / Ventas Netas)</p>
+                <div class="formula">
+                <h3 class="formula-label">Solvencia</h3>
+                <p class="formula-eq">(Activo Total / Pasivo Total)</p>
                 <p class="formula-desc">
-                  Mide el porcentaje de los ingresos que queda después de pagar todos los gastos, indicando eficiencia
-                  operativa global.
+                    Mide la capacidad de la empresa para cubrir sus deudas a largo plazo con el total de sus activos.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre Activos Totales (ROA)</h3>
-                <p class="formula-eq">(Utilidad Neta / Activos Totales)</p>
+                <div class="formula">
+                <h3 class="formula-label">Seguridad a Largo Plazo</h3>
+                <p class="formula-eq">(Activo Fijo Neto / Pasivo Fijo (LP))</p>
                 <p class="formula-desc">
-                  Muestra con qué eficacia la empresa utiliza sus activos totales para generar beneficios.
+                    Indica el equilibrio entre los recursos permanentes de la empresa y sus obligaciones de largo plazo.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre el Patrimonio (ROE)</h3>
-                <p class="formula-eq">(Utilidad Neta / Capital Contable)</p>
+                <div class="formula">
+                <h3 class="formula-label">Inmovilización de Capital Social</h3>
+                <p class="formula-eq">(Activo Fijo Neto / Capital Social)</p>
                 <p class="formula-desc">
-                  Mide el rendimiento de la inversión realizada por los accionistas, reflejando la capacidad de
-                  remunerar a los propietarios.
+                    Muestra qué parte del capital social está invertida en activos fijos.
                 </p>
-              </div>
+                </div>
+
+                <div class="formula">
+                <h3 class="formula-label">Inmovilización de Capital Contable</h3>
+                <p class="formula-eq">(Activo Fijo Neto / Capital Contable)</p>
+                <p class="formula-desc">
+                    Indica la proporción del capital contable que se encuentra comprometida en activos fijos.
+                </p>
+                </div>
             </div>
           </article>
         </section>

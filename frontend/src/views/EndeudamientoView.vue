@@ -1,11 +1,17 @@
 <script setup>
 import { ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
 import { db } from "@/firebase/config";
 import { collection, getDocs } from "firebase/firestore";
+import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
+const router = useRouter();
 const projectId = route.params.id_proyecto;
+
+const centroDeAprendizaje = () => {
+  const routeData = router.resolve({ name: "teoriaEndeudamiento" });
+  window.open(routeData.href, "_blank");
+};
 
 const kpis = ref([]);
 const periodRows = ref([]);
@@ -93,7 +99,13 @@ onMounted(async () => {
   <div class="wrap">
     <!-- TITULO -->
     <div class="title">
-      <h1>Endeudamiento</h1>
+      <div class="title-row">
+        <h1>Endeudamiento</h1>
+        <button class="btn-learn" type="button" @click="centroDeAprendizaje">
+          <span class="material-symbols-outlined">info</span>
+          <span>Ir a centro de aprendizaje</span>
+        </button>
+      </div>
       <div class="subtitle">
         <p>Nivel de apalancamiento y estabilidad financiera de la empresa</p>
         <span class="dot" aria-hidden="true">•</span>
@@ -244,6 +256,34 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-learn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #d1dee6;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  color: #0e161b;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.btn-learn:hover {
+  background: #f8fafb;
+}
+
+.btn-learn .material-symbols-outlined {
+  font-size: 18px;
+}
+
 .wrap {
   width: min(1200px, 100%);
   margin: 0 auto;

@@ -5,19 +5,19 @@ import { computed, ref } from "vue";
 
 const videos = ref([
   {
-    title: "Video: Rentabilidad: ¿Qué es?",
-    youtubeUrl: "https://www.youtube.com/watch?v=MbdmfzCGY4A",
-    duration: "6:51",
+    title: "Video: Deuda MALA vs Deuda BUENA y Apalancamiento - Cómo ser rico usando la deuda!",
+    youtubeUrl: "https://www.youtube.com/watch?v=7k1D4dCtkW0",
+    duration: "6:36",
   },
   {
-    title: "Video: Descubre cómo conocer la RENTABILIDAD de tu NEGOCIO en pocos pasos",
-    youtubeUrl: "https://www.youtube.com/watch?v=FuAdhJLL_Mg",
-    duration: "3:17",
+    title: "Video: ¿Qué es el APALANCAMIENTO FINANCIERO? ➕ EJEMPLO PRACTICO ✅",
+    youtubeUrl: "https://www.youtube.com/watch?v=axF8URaTNuM",
+    duration: "6:33",
   },
   {
-    title: "Video: ¿Cómo saber si tu negocio es rentable?",
-    youtubeUrl: "https://www.youtube.com/watch?v=B7XpMM7IImE",
-    duration: "5:46",
+    title: "Video: RAZONES FINANCIERAS DE APALANCAMIENTO | FINANZAS BÁSICAS | Contabilidad para no contadores",
+    youtubeUrl: "https://www.youtube.com/watch?v=9GvkvKxyhs8", 
+    duration: "13:27",
   },
 ]);
 
@@ -82,7 +82,7 @@ const yearLabel = computed(() => new Date().getFullYear());
       <header class="page-title">
         <h1>
           <span class="kicker">Centro de aprendizaje</span>
-          <span class="headline">Rentabilidad</span>
+          <span class="headline">Endeudamiento</span>
         </h1>
       </header>
 
@@ -98,17 +98,18 @@ const yearLabel = computed(() => new Date().getFullYear());
 
             <div class="card-text">
               <p>
-                La rentabilidad es el indicador fundamental que mide la capacidad de una empresa para generar beneficios
-                en relación con sus ingresos, activos o capital invertido. No se trata simplemente de vender más, sino de
-                asegurar que esas ventas traduzcan el esfuerzo operativo en ganancias reales que permitan la reinversión
-                y el crecimiento.
-              </p>
-              <p>
-                Para las pequeñas y medianas empresas (PYMES), entender la rentabilidad es crítico para la supervivencia
-                a largo plazo. Una empresa puede tener un alto volumen de facturación y, sin embargo, carecer de
-                rentabilidad debido a costos ineficientes. Analizar estos márgenes permite tomar decisiones informadas
-                sobre precios, reducción de gastos y áreas de inversión estratégica.
-              </p>
+            El endeudamiento es el nivel en que una empresa utiliza recursos ajenos para financiar sus
+            operaciones y sus activos. Analizar esta razón permite conocer qué tan dependiente es el negocio
+            de sus deudas y qué tan capaz es de cumplir con los compromisos financieros que ha adquirido,
+            tanto en el corto como en el largo plazo.
+            </p>
+            <p>
+            Para las pequeñas y medianas empresas (PYMES), controlar el endeudamiento es clave porque un uso
+            excesivo de deuda puede comprometer la estabilidad financiera, aumentar el riesgo y reducir la
+            capacidad de maniobra ante imprevistos. Evaluar estas razones ayuda a identificar si la empresa
+            mantiene un equilibrio adecuado entre capital propio y financiamiento externo, y si sus utilidades
+            son suficientes para sostener el costo de sus obligaciones.
+            </p>
             </div>
           </article>
 
@@ -120,31 +121,29 @@ const yearLabel = computed(() => new Date().getFullYear());
             </h2>
 
             <div class="formula-list">
-              <div class="formula">
-                <h3 class="formula-label">Margen de Rentabilidad</h3>
-                <p class="formula-eq">(Utilidad Neta / Ventas Netas)</p>
+                <div class="formula">
+                <h3 class="formula-label">Apalancamiento o Deuda sobre el Activo Total</h3>
+                <p class="formula-eq">(Pasivo Total / Activo Total)</p>
                 <p class="formula-desc">
-                  Mide el porcentaje de los ingresos que queda después de pagar todos los gastos, indicando eficiencia
-                  operativa global.
+                    Mide la proporción de los activos de la empresa que está financiada con deuda.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre Activos Totales (ROA)</h3>
-                <p class="formula-eq">(Utilidad Neta / Activos Totales)</p>
+                <div class="formula">
+                <h3 class="formula-label">Razón de Cobertura de Intereses</h3>
+                <p class="formula-eq">(Utilidad de Operación / Intereses)</p>
                 <p class="formula-desc">
-                  Muestra con qué eficacia la empresa utiliza sus activos totales para generar beneficios.
+                    Indica cuántas veces la utilidad de operación puede cubrir el pago de los intereses.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre el Patrimonio (ROE)</h3>
-                <p class="formula-eq">(Utilidad Neta / Capital Contable)</p>
+                <div class="formula">
+                <h3 class="formula-label">Razón de Estabilidad Financiera</h3>
+                <p class="formula-eq">(Pasivo Total / Capital Social)</p>
                 <p class="formula-desc">
-                  Mide el rendimiento de la inversión realizada por los accionistas, reflejando la capacidad de
-                  remunerar a los propietarios.
+                    Evalúa el equilibrio entre el capital propio de la empresa y el financiamiento obtenido mediante deuda.
                 </p>
-              </div>
+                </div>
             </div>
           </article>
         </section>
