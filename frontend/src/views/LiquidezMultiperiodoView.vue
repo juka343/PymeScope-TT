@@ -1,17 +1,25 @@
 <script setup>
 import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
+const router = useRouter();
 const projectId = route.params.id_proyecto;
+
+const centroDeAprendizaje = () => {
+  const routeData = router.resolve({ name: "teoriaLiquidez" });
+  window.open(routeData.href, "_blank");
+};
 
 const loading = ref(true);
 const rawPeriods = ref([]);
 const metrics = ref([]);
 const activeKpi = ref("razon");
 const tableRows = ref([]);
+
+
 
 // Formateadores
 const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -292,9 +300,7 @@ const pasivosCirculantes = computed(() => {
 });
 
 
-function learnMore() {
-  // router.push(`/proyecto/${projectId}/dashboard-multi/learning/liquidez`);
-}
+
 
 onMounted(() => {
   fetchPeriods();
@@ -306,7 +312,7 @@ onMounted(() => {
     <div class="title">
       <div class="title-row">
         <h1>Liquidez</h1>
-        <button class="btn-learn" type="button" @click="learnMore">
+        <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
         </button>

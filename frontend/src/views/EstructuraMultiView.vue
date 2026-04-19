@@ -1,11 +1,17 @@
 <script setup>
 import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
+const router = useRouter();
 const projectId = route.params.id_proyecto;
+
+const centroDeAprendizaje = () => {
+  const routeData = router.resolve({ name: "teoriaEstructura" });
+  window.open(routeData.href, "_blank");
+};
 
 const loading = ref(true);
 const rawPeriods = ref([]);
@@ -312,7 +318,6 @@ const recommendationList = computed(() => {
   ];
 });
 
-function learnMore() {}
 
 onMounted(() => {
   fetchPeriods();
@@ -324,9 +329,9 @@ onMounted(() => {
     <div class="title">
       <div class="title-row">
         <h1>Estructura Financiera</h1>
-        <button class="btn-learn" type="button" @click="learnMore">
+        <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
-          <span>Saber más</span>
+          <span>Ir a centro de aprendizaje</span>
         </button>
       </div>
 

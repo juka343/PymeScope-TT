@@ -5,19 +5,19 @@ import { computed, ref } from "vue";
 
 const videos = ref([
   {
-    title: "Video: Rentabilidad: ¿Qué es?",
-    youtubeUrl: "https://www.youtube.com/watch?v=MbdmfzCGY4A",
-    duration: "6:51",
+    title: "Video: LIQUIDEZ | ¿Qué es? 🎓",
+    youtubeUrl: "https://www.youtube.com/watch?v=2v6QU-MG1XY",
+    duration: "2:01",
   },
   {
-    title: "Video: Descubre cómo conocer la RENTABILIDAD de tu NEGOCIO en pocos pasos",
-    youtubeUrl: "https://www.youtube.com/watch?v=FuAdhJLL_Mg",
-    duration: "3:17",
+    title: "Video: RAZONES FINANCIERAS DE LIQUIDEZ | Contabilidad para no contadores | Finanzas básicas",
+    youtubeUrl: "https://www.youtube.com/watch?v=sl-UBm6NdXo",
+    duration: "23:54",
   },
   {
-    title: "Video: ¿Cómo saber si tu negocio es rentable?",
-    youtubeUrl: "https://www.youtube.com/watch?v=B7XpMM7IImE",
-    duration: "5:46",
+    title: "Video: Rentabilidad vs liquidez",
+    youtubeUrl: "https://www.youtube.com/watch?v=S1Q9vRMp4KY",
+    duration: "22:57",
   },
 ]);
 
@@ -82,7 +82,7 @@ const yearLabel = computed(() => new Date().getFullYear());
       <header class="page-title">
         <h1>
           <span class="kicker">Centro de aprendizaje</span>
-          <span class="headline">Rentabilidad</span>
+          <span class="headline">Liquidez</span>
         </h1>
       </header>
 
@@ -97,18 +97,19 @@ const yearLabel = computed(() => new Date().getFullYear());
             </h2>
 
             <div class="card-text">
-              <p>
-                La rentabilidad es el indicador fundamental que mide la capacidad de una empresa para generar beneficios
-                en relación con sus ingresos, activos o capital invertido. No se trata simplemente de vender más, sino de
-                asegurar que esas ventas traduzcan el esfuerzo operativo en ganancias reales que permitan la reinversión
-                y el crecimiento.
-              </p>
-              <p>
-                Para las pequeñas y medianas empresas (PYMES), entender la rentabilidad es crítico para la supervivencia
-                a largo plazo. Una empresa puede tener un alto volumen de facturación y, sin embargo, carecer de
-                rentabilidad debido a costos ineficientes. Analizar estos márgenes permite tomar decisiones informadas
-                sobre precios, reducción de gastos y áreas de inversión estratégica.
-              </p>
+                 <p>
+                La liquidez es la capacidad que tiene una empresa para cumplir con sus obligaciones de corto plazo
+                utilizando sus activos más disponibles, como efectivo, cuentas por cobrar o bienes que pueden
+                convertirse rápidamente en dinero. En otras palabras, permite saber si el negocio puede responder
+                a sus pagos inmediatos sin poner en riesgo su operación diaria.
+                </p>
+                <p>
+                Para las pequeñas y medianas empresas (PYMES), la liquidez es fundamental porque no basta con ser
+                rentable en el largo plazo si en el corto plazo no se cuenta con recursos suficientes para pagar
+                proveedores, sueldos, deudas o gastos operativos. Analizar la liquidez ayuda a prevenir problemas
+                de flujo de efectivo, mantener estabilidad financiera y tomar mejores decisiones sobre cobranza,
+                inventarios y administración de obligaciones.
+                </p>
             </div>
           </article>
 
@@ -120,31 +121,29 @@ const yearLabel = computed(() => new Date().getFullYear());
             </h2>
 
             <div class="formula-list">
-              <div class="formula">
-                <h3 class="formula-label">Margen de Rentabilidad</h3>
-                <p class="formula-eq">(Utilidad Neta / Ventas Netas)</p>
+                <div class="formula">
+                <h3 class="formula-label">Razón de Liquidez o Razón Corriente</h3>
+                <p class="formula-eq">(Activo Circulante / Pasivo Circulante)</p>
                 <p class="formula-desc">
-                  Mide el porcentaje de los ingresos que queda después de pagar todos los gastos, indicando eficiencia
-                  operativa global.
+                    Indica la capacidad de la empresa para cubrir sus deudas de corto plazo con sus activos circulantes.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre Activos Totales (ROA)</h3>
-                <p class="formula-eq">(Utilidad Neta / Activos Totales)</p>
+                <div class="formula">
+                <h3 class="formula-label">Prueba del Ácido o Liquidez Inmediata</h3>
+                <p class="formula-eq">((Activo Circulante - Inventario) / Pasivo Circulante)</p>
                 <p class="formula-desc">
-                  Muestra con qué eficacia la empresa utiliza sus activos totales para generar beneficios.
+                    Mide la capacidad de pago inmediato sin depender de la venta del inventario.
                 </p>
-              </div>
+                </div>
 
-              <div class="formula">
-                <h3 class="formula-label">Rendimiento sobre el Patrimonio (ROE)</h3>
-                <p class="formula-eq">(Utilidad Neta / Capital Contable)</p>
+                <div class="formula">
+                <h3 class="formula-label">Capital de Trabajo</h3>
+                <p class="formula-eq">(Activo Circulante - Pasivo Circulante)</p>
                 <p class="formula-desc">
-                  Mide el rendimiento de la inversión realizada por los accionistas, reflejando la capacidad de
-                  remunerar a los propietarios.
+                    Muestra el colchón financiero disponible después de cubrir las obligaciones de corto plazo.
                 </p>
-              </div>
+                </div>
             </div>
           </article>
         </section>

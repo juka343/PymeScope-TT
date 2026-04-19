@@ -1,10 +1,17 @@
 <script setup>
 import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useRouter, useRoute } from "vue-router";
 
+const router = useRouter();
 const route = useRoute();
+
+const centroDeAprendizaje = () => {
+  const routeData = router.resolve({ name: "teoriaRentabilidad" });
+  window.open(routeData.href, "_blank");
+};
+
 const projectId = route.params.id_proyecto;
 
 const loading = ref(true);
@@ -38,14 +45,15 @@ const fetchPeriods = async () => {
     snapshot.forEach((docSnap) => {
       const d = docSnap.data();
       if (d.rentabilidad || d.analisis_rentabilidad) {
-        // Extraemos todo el contexto financiero para armar las donas cruzadas
         loaded.push({
           id: docSnap.id,
           label: d.label || "Periodo",
           periodDate: d.periodDate || d.label,
-          rentabilidad: d.analisis_rentabilidad || d.rentabilidad || { datos_crudos: {}, kpis: [] },
+          rentabilidad:
+            d.analisis_rentabilidad ||
+            d.rentabilidad || { datos_crudos: {}, kpis: [] },
           rotacion: d.analisis_rotacion || { datos_crudos: {} },
-          endeudamiento: d.analisis_endeudamiento || { datos_crudos: {} }
+          endeudamiento: d.analisis_endeudamiento || { datos_crudos: {} },
         });
       }
     });
@@ -104,13 +112,18 @@ const generateDashboardData = () => {
       fmtLabel(yMin),
     ];
 
-    // Ajuste visual para separar del eje Y
     const xStep = periods.length > 1 ? 600 / (periods.length - 1) : 0;
 
     const points = values.map((val, i) => {
       const x = periods.length > 1 ? 100 + i * xStep : 400;
       const y = 230 - ((val - yMin) / finalRange) * 180;
-      return { x, y, label: labels[i], bold: i === values.length - 1, value: val };
+      return {
+        x,
+        y,
+        label: labels[i],
+        bold: i === values.length - 1,
+        value: val,
+      };
     });
 
     const lastVal = values[values.length - 1];
@@ -127,7 +140,8 @@ const generateDashboardData = () => {
       status,
       deltaType: delta >= 0 ? "up" : "down",
       deltaValue: `${delta > 0 ? "+" : ""}${delta.toFixed(2)}%`,
-      deltaNote: periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      deltaNote:
+        periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
       chartTitle: title,
       chartSubtitle: subtitle,
       legendLabel,
@@ -137,12 +151,41 @@ const generateDashboardData = () => {
   };
 
   metrics.value = [
-    { key: "margen", label: "Margen de Rentabilidad", ...buildChart(dataMargen, "Evolución Margen de Rentabilidad", "Tendencia histórica por periodo", "Margen Neto", "margen") },
-    { key: "rat", label: "Rendimiento sobre Activos Totales (RAT)", ...buildChart(dataRat, "Evolución RAT", "Capacidad de los activos para generar utilidad", "RAT", "rat") },
-    { key: "roe", label: "Rendimiento sobre el Patrimonio (ROE)", ...buildChart(dataRoe, "Evolución ROE", "Rentabilidad generada sobre el capital propio", "ROE", "roe") },
+    {
+      key: "margen",
+      label: "Margen de Rentabilidad",
+      ...buildChart(
+        dataMargen,
+        "Evolución Margen de Rentabilidad",
+        "Tendencia histórica por periodo",
+        "Margen Neto",
+        "margen"
+      ),
+    },
+    {
+      key: "rat",
+      label: "Rendimiento sobre Activos Totales (RAT)",
+      ...buildChart(
+        dataRat,
+        "Evolución RAT",
+        "Capacidad de los activos para generar utilidad",
+        "RAT",
+        "rat"
+      ),
+    },
+    {
+      key: "roe",
+      label: "Rendimiento sobre el Patrimonio (ROE)",
+      ...buildChart(
+        dataRoe,
+        "Evolución ROE",
+        "Rentabilidad generada sobre el capital propio",
+        "ROE",
+        "roe"
+      ),
+    },
   ];
 
-  // Invertir tabla para ver primero el mes más reciente
   const reversedPeriods = [...periods].reverse();
   const reversedMargen = [...dataMargen].reverse();
   const reversedRat = [...dataRat].reverse();
@@ -164,9 +207,17 @@ const selectedKpi = computed(() => {
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(k) { activeKpi.value = k; }
-function showTooltip(p) { hoveredPoint.value = p; }
-function hideTooltip() { hoveredPoint.value = null; }
+function setActive(k) {
+  activeKpi.value = k;
+}
+
+function showTooltip(p) {
+  hoveredPoint.value = p;
+}
+
+function hideTooltip() {
+  hoveredPoint.value = null;
+}
 
 const baselineY = 230;
 
@@ -233,10 +284,9 @@ const recommendationList = computed(() => {
   ];
 });
 
-function learnMore() {}
-
-// --- LÓGICA DE DONAS (Dinámica) ---
-const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
+const lastPeriodData = computed(() =>
+  rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null
+);
 
 const rentabilidadBreakdown = computed(() => {
   if (!lastPeriodData.value) return { total: "$0", segments: [] };
@@ -244,14 +294,12 @@ const rentabilidadBreakdown = computed(() => {
   const rentCrudos = lastPeriodData.value.rentabilidad?.datos_crudos || {};
   const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
 
-  const ventas = rentCrudos.ventas_netas || 1; // Evitar divisiones por cero
+  const ventas = rentCrudos.ventas_netas || 1;
   const utilidad = rentCrudos.utilidad_neta || 0;
   let costoVentas = rotCrudos.costo_ventas || 0;
 
-  // Calculamos los gastos por diferencia
   let gastos = ventas - costoVentas - utilidad;
 
-  // Respaldo de seguridad en caso de que el módulo de rotación no se haya extraído
   if (gastos < 0) {
     gastos = ventas - utilidad;
     costoVentas = 0;
@@ -260,20 +308,27 @@ const rentabilidadBreakdown = computed(() => {
   const items = [
     { label: "Costo de Ventas", value: costoVentas, color: "#1e293b" },
     { label: "Gastos y Otros", value: gastos, color: "#299de0" },
-    { label: "Utilidad Neta", value: utilidad, color: "#507c95" }
-  ].filter(i => i.value > 0);
+    { label: "Utilidad Neta", value: utilidad, color: "#507c95" },
+  ].filter((i) => i.value > 0);
 
   const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
 
   let currentOffset = 0;
-  const segments = items.map(item => {
+  const segments = items.map((item) => {
     const pct = (item.value / totalCalculo) * 100;
-    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+    const dashoffset = -currentOffset;
+    currentOffset += pct;
+    return {
+      ...item,
+      pct: pct.toFixed(1),
+      dasharray: `${pct} 100`,
+      dashoffset,
+    };
   });
 
   return {
-    total: ventas >= 1000000 ? `$${(ventas/1000000).toFixed(1)}M` : currencyFmt.format(ventas),
-    segments
+    total: ventas >= 1000000 ? `$${(ventas / 1000000).toFixed(1)}M` : currencyFmt.format(ventas),
+    segments,
   };
 });
 
@@ -286,13 +341,12 @@ const margenesBreakdown = computed(() => {
 
   const ventas = rentCrudos.ventas_netas || 1;
   const utilidad = rentCrudos.utilidad_neta || 0;
-  
-  // Rescate inteligente para buscar los costos si no están directos
+
   let costoVentas = rotCrudos.costo_ventas || 0;
   if (costoVentas === 0 && ventas > 0 && endCrudos.utilidad_operacion) {
-      costoVentas = ventas - endCrudos.utilidad_operacion;
+    costoVentas = ventas - endCrudos.utilidad_operacion;
   } else if (costoVentas === 0) {
-      costoVentas = (ventas - utilidad) * 0.5; // Rescate visual
+    costoVentas = (ventas - utilidad) * 0.5;
   }
 
   let utilidadBruta = ventas - costoVentas;
@@ -301,26 +355,32 @@ const margenesBreakdown = computed(() => {
   const margenBruto = (utilidadBruta / ventas) * 100;
   const margenNeto = (utilidad / ventas) * 100;
 
-  // Calculamos la "merma" (lo que se va en gastos e impuestos entre el m. bruto y el m. neto)
   let merma = margenBruto - margenNeto;
   if (merma < 0) merma = 0;
 
   const items = [
     { label: "Gastos Operativos (Absorbidos)", value: merma, color: "#fb923c" },
-    { label: "Margen Neto Final", value: margenNeto, color: "#fcd34d" }
-  ].filter(i => i.value > 0);
+    { label: "Margen Neto Final", value: margenNeto, color: "#fcd34d" },
+  ].filter((i) => i.value > 0);
 
   const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
 
   let currentOffset = 0;
-  const segments = items.map(item => {
+  const segments = items.map((item) => {
     const pct = (item.value / totalCalculo) * 100;
-    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+    const dashoffset = -currentOffset;
+    currentOffset += pct;
+    return {
+      ...item,
+      pct: pct.toFixed(1),
+      dasharray: `${pct} 100`,
+      dashoffset,
+    };
   });
 
   return {
     total: `${margenBruto.toFixed(1)}%`,
-    segments
+    segments,
   };
 });
 
@@ -334,7 +394,7 @@ onMounted(() => {
     <div class="title">
       <div class="title-row">
         <h1>Rentabilidad</h1>
-        <button class="btn-learn" type="button" @click="learnMore">
+        <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
         </button>
