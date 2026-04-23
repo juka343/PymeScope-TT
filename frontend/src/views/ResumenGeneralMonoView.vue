@@ -42,23 +42,18 @@ const cards = ref([
   { title: "Rentabilidad", icon: "trending_up", detailRoute: "rentabilidad", items: [] },
   { title: "Liquidez", icon: "attach_money", detailRoute: "liquidez", items: [] },
   { title: "Endeudamiento", icon: "account_balance_wallet", detailRoute: "endeudamiento", items: [] },
-  { title: "Rotación de Activos (AÚN NO FUNCIONAL)", icon: "sync_alt", detailRoute: "rotacion", items: [] },
+  { title: "Rotación de Activos", icon: "sync_alt", detailRoute: "rotacion", items: [] },
   { title: "Estructura Financiera", icon: "layers", detailRoute: "estructura", items: [] },
 ]);
 
 const periodLabel = ref("");
 const interpretation = ref("Cargando datos...");
+const resultadosPdfUrl = ref(null);
 
-// ===== ESTRUCTURA DEL RESULTADO DUMMY =====
+// ===== ESTRUCTURA DEL RESULTADO =====
 const estructuraResultado = ref({
-  period: "Q3 2024",
-  rows: [
-    { concept: "Ingresos", value: "$4,250,000", pct: "100%", tone: "income" },
-    { concept: "Costos", value: "($2,465,000)", pct: "58.0%", tone: "negative" },
-    { concept: "Gastos", value: "($600,000)", pct: "14.1%", tone: "negative" },
-    { concept: "Impuestos", value: "($340,000)", pct: "8.0%", tone: "negative" },
-    { concept: "Total", value: "$845,000", pct: "19.9%", tone: "total" },
-  ],
+  period: "",
+  rows: [],
 });
 
 // ===== LÓGICA DE CARGA DE DATOS =====
@@ -101,6 +96,9 @@ const fetchDashboardData = async () => {
         periodo: latest.label,
       };
 
+      // Capturar la URL del PDF del estado de resultados
+      resultadosPdfUrl.value = d.resultsFile?.url || d.resultados_url || null;
+
       mapDataToDashboard(dashboardData);
       periodLabel.value = dashboardData.periodo ? `Periodo: ${dashboardData.periodo}` : "Periodo Actual";
     } else {
@@ -120,7 +118,7 @@ const mapDataToDashboard = (data) => {
   const liq = data.liquidez || { datos_crudos: {}, kpis: [] };
   const end = data.endeudamiento || { datos_crudos: {}, kpis: [] };
   const est = data.estructura || { datos_crudos: {}, kpis: [] };
-  const rot = data.rotacion || { datos_crudos: {} };
+  const rot = data.rotacion || { datos_crudos: {}, kpis: [] };
 
   const ventas = rent.datos_crudos?.ventas_netas || 0;
   const ut_neta = rent.datos_crudos?.utilidad_neta || 0;
@@ -198,19 +196,24 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
-  // D) Rotación de activos - DUMMY
+  // D) Rotación de activos
+  const rawRotInv = rot.kpis?.find(k => k.label.toLowerCase().includes("inventarios"));
+  const rotInvValue = (!rawRotInv || rawRotInv.value === "N/A") 
+    ? "N/A" 
+    : (findKpiValue(rot.kpis, "Inventarios") || "-");
+
   cards.value[3].items = [
     {
       label: "Rot. Inventario",
       target: ">4.0x",
-      value: "4.5x",
-      dot: "ok",
+      value: rotInvValue,
+      dot: getDotColor(rot.kpis, "Inventarios"),
     },
     {
       label: "Periodo Cobro",
       target: "<60 días",
-      value: "58 días",
-      dot: "warn",
+      value: findKpiValue(rot.kpis, "Recaudo") || "-",
+      dot: getDotColor(rot.kpis, "Recaudo"),
     },
   ];
 
@@ -229,6 +232,22 @@ const mapDataToDashboard = (data) => {
       dot: getDotColor(est.kpis, "Seguridad a largo plazo"),
     },
   ];
+
+  // F) Resumen del Resultado
+  const calcPct = (val, total) => total ? `${((val / total) * 100).toFixed(1)}%` : "0%";
+  const gastos = ventas - costo - ut_operacion;
+  const impuestos = ut_operacion - ut_neta;
+
+  estructuraResultado.value = {
+    period: data.periodo || "Periodo actual",
+    rows: [
+      { concept: "Ingresos", value: currencyFmt.format(ventas), pct: "100%", tone: "income" },
+      { concept: "Costos", value: `(${currencyFmt.format(costo)})`, pct: calcPct(costo, ventas), tone: "negative" },
+      { concept: "Gastos", value: `(${currencyFmt.format(gastos > 0 ? gastos : 0)})`, pct: calcPct(gastos > 0 ? gastos : 0, ventas), tone: "negative" },
+      { concept: "Impuestos y Otros", value: `(${currencyFmt.format(impuestos > 0 ? impuestos : 0)})`, pct: calcPct(impuestos > 0 ? impuestos : 0, ventas), tone: "negative" },
+      { concept: "Total (Utilidad Neta)", value: currencyFmt.format(ut_neta), pct: calcPct(ut_neta, ventas), tone: "total" },
+    ],
+  };
 
   interpretation.value =
     ut_neta > 0
@@ -260,8 +279,11 @@ function goDetail(routeName) {
 }
 
 function goToIncomeStatementDetail() {
-  if (!projectId.value) return;
-  router.push({ name: "rentabilidad", params: { id_proyecto: projectId.value } });
+  if (resultadosPdfUrl.value) {
+    window.open(resultadosPdfUrl.value, "_blank");
+  } else {
+    alert("No se encontró el documento PDF para este periodo.");
+  }
 }
 
 onMounted(() => {
@@ -323,7 +345,7 @@ onMounted(() => {
       <div class="result-head">
         <div class="result-title">
           <span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>
-          <h4>Resumen del Resultado (AÚN NO FUNCIONAL)</h4>
+          <h4>Resumen del Resultado</h4>
         </div>
         <span class="result-pill">{{ estructuraResultado.period }}</span>
       </div>

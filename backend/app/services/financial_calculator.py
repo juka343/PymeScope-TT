@@ -498,8 +498,9 @@ class FinancialCalculator:
                 },
                 {
                     "label": "Rotación de Inventarios",
-                    "value": f"{rotacion_inventarios:.2f}",
-                    "status": "ok" if rotacion_inventarios > 0 else "warn",
+                    "value": "N/A" if inventario == 0 else f"{rotacion_inventarios:.2f}",
+                    # Si el inventario es 0, es una empresa de servicios y el estatus es OK
+                    "status": "ok" if (rotacion_inventarios > 0 or inventario == 0) else "warn",
                 },
                 {
                     "label": "Rotación de Activos Fijos",
@@ -579,7 +580,8 @@ class FinancialCalculator:
                 },
                 {
                     "label": "Seguridad a largo plazo",
-                    "value": "Sin Deuda LP" if seguridad_largo_plazo is None else f"{seguridad_largo_plazo:.2f}",
+                    "value": "N/A" if seguridad_largo_plazo is None else f"{seguridad_largo_plazo:.2f}",
+                    # Sin deuda a largo plazo es una posición de seguridad (OK)
                     "status": "ok" if (seguridad_largo_plazo is None or seguridad_largo_plazo >= 1.0) else "warn",
                 },
                 {
