@@ -74,7 +74,15 @@ const generateDashboardData = () => {
   const findKpi = (kpis, keyword) => {
     if (!kpis) return 0;
     const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
-    return item ? parseVal(item.value) : 0;
+    const val = item ? parseVal(item.value) : 0;
+    return isNaN(val) ? 0 : val;
+  };
+
+  // Nueva función para rescatar el status original de Python
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? item.status : "warn";
   };
 
   const dataCobrar = periods.map(p => findKpi(p.rotacion.kpis, "cartera")); // En tu backend se llama "Rotación de la Cartera"
@@ -83,7 +91,7 @@ const generateDashboardData = () => {
   const dataFijos = periods.map(p => findKpi(p.rotacion.kpis, "fijos"));
   const dataActivosTotales = periods.map(p => findKpi(p.rotacion.kpis, "totales"));
 
-  function buildChart(values, title, subtitle, legendLabel, type = "times") {
+  function buildChart(values, title, subtitle, legendLabel, type = "times", backendStatus = "warn") {
     const maxFallback = type === "days" ? 30 : 1;
     const maxVal = Math.max(...values, maxFallback);
     let minVal = Math.min(...values, 0);
@@ -131,19 +139,17 @@ const generateDashboardData = () => {
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     const delta = lastVal - prevVal;
 
-    // Lógica de colores (Recaudo es mejor si baja, los demás son mejores si suben)
+    // Lógica de colores del delta (Recaudo es mejor si baja, los demás son mejores si suben)
     let isPositive = delta >= 0;
     if (type === "days") isPositive = delta <= 0; 
     
-    // Status visual
-    let status = "warn";
-    if (legendLabel === "Rotación CxC") status = lastVal > 0 ? "ok" : "warn";
-    else if (type === "days") status = (lastVal <= 60 && lastVal > 0) ? "ok" : "warn";
-    else status = lastVal >= 1 ? "ok" : "warn";
+    // === ELIMINAMOS LA LÓGICA DE ESTATUS DE VUE Y USAMOS LA DE PYTHON ===
+    let status = backendStatus;
 
     return {
-      kpiValue: type === "days" ? `${Math.round(lastVal)} días` : `${lastVal.toFixed(1)}x`,
-      status,
+      // Si el valor es 0 (y no son días de recaudo), mostramos N/A. Si no, mostramos el número normal.
+      kpiValue: (lastVal === 0 && type !== "days") ? "N/A" : (type === "days" ? `${Math.round(lastVal)} días` : `${lastVal.toFixed(1)}x`),
+      status, // <-- Vue ahora obedece ciegamente a Python
       deltaStyle: isPositive ? "positive" : "negative",
       deltaIcon: delta >= 0 ? "trending_up" : "trending_down",
       deltaValue: type === "days" ? `${delta > 0 ? "+" : ""}${Math.round(delta)} días` : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}`,
@@ -157,12 +163,14 @@ const generateDashboardData = () => {
     };
   }
 
+  const lastP = periods[periods.length - 1]; // Extraemos el último mes analizado
+
   metrics.value = [
-    { key: "cobrar", label: "Rotación de Cuentas por Cobrar", ...buildChart(dataCobrar, "Evolución de Rotación de CxC", "Velocidad con la que la empresa recupera su cartera", "Rotación CxC", "times") },
-    { key: "recaudo", label: "Periodo Promedio de Recaudo", ...buildChart(dataRecaudo, "Evolución del Periodo Promedio de Recaudo", "Tiempo promedio que tarda la empresa en cobrar", "Periodo de Cobro", "days") },
-    { key: "inventarios", label: "Rotación de Inventarios", ...buildChart(dataInventarios, "Evolución de Rotación de Inventarios", "Frecuencia con la que el inventario se convierte en ventas", "Rotación Inventarios", "times") },
-    { key: "fijos", label: "Rotación de Activos Fijos", ...buildChart(dataFijos, "Evolución de Rotación de Activos Fijos", "Nivel de aprovechamiento de la infraestructura productiva", "Activos Fijos", "times") },
-    { key: "activosTotales", label: "Rotación de Activos Totales", ...buildChart(dataActivosTotales, "Evolución de Rotación de Activos Totales", "Tendencia de eficiencia operativa en los últimos trimestres", "Rotación Activos", "times") },
+    { key: "cobrar", label: "Rotación de Cuentas por Cobrar", ...buildChart(dataCobrar, "Evolución de Rotación de CxC", "Velocidad con la que la empresa recupera su cartera", "Rotación CxC", "times", getKpiStatus(lastP.rotacion.kpis, "cartera")) },
+    { key: "recaudo", label: "Periodo Promedio de Recaudo", ...buildChart(dataRecaudo, "Evolución del Periodo Promedio de Recaudo", "Tiempo promedio que tarda la empresa en cobrar", "Periodo de Cobro", "days", getKpiStatus(lastP.rotacion.kpis, "recaudo")) },
+    { key: "inventarios", label: "Rotación de Inventarios", ...buildChart(dataInventarios, "Evolución de Rotación de Inventarios", "Frecuencia con la que el inventario se convierte en ventas", "Rotación Inventarios", "times", getKpiStatus(lastP.rotacion.kpis, "inventarios")) },
+    { key: "fijos", label: "Rotación de Activos Fijos", ...buildChart(dataFijos, "Evolución de Rotación de Activos Fijos", "Nivel de aprovechamiento de la infraestructura productiva", "Activos Fijos", "times", getKpiStatus(lastP.rotacion.kpis, "fijos")) },
+    { key: "activosTotales", label: "Rotación de Activos Totales", ...buildChart(dataActivosTotales, "Evolución de Rotación de Activos Totales", "Tendencia de eficiencia operativa en los últimos trimestres", "Rotación Activos", "times", getKpiStatus(lastP.rotacion.kpis, "totales")) },
   ];
 
   // Construir Tabla (Orden Ascendente)

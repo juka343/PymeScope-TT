@@ -122,10 +122,12 @@ const generateDashboardData = () => {
 
     // Status (Foquitos)
     let status = "warn";
-    if (legendLabel === "Solvencia" || legendLabel === "Seguridad LP") {
+    if (legendLabel === "Solvencia") {
       status = lastVal >= 1.0 ? "ok" : "danger";
+    } else if (legendLabel === "Seguridad LP") {
+      // Si es 0 (Sin Deuda), es OK. Si no, aplica la regla normal.
+      status = (lastVal === 0 || lastVal >= 1.0) ? "ok" : "danger";
     } else {
-      // Inmovilización
       status = lastVal <= 1.0 ? "ok" : (lastVal <= 1.5 ? "warn" : "danger");
     }
 
@@ -140,7 +142,8 @@ const generateDashboardData = () => {
     }
 
     return {
-      kpiValue: lastVal.toFixed(2),
+      // Si es Seguridad LP y vale 0, imprimimos N/A en vez de 0.00
+      kpiValue: (legendLabel === "Seguridad LP" && lastVal === 0) ? "N/A" : lastVal.toFixed(2),
       status,
       deltaClass,
       deltaIcon: delta >= 0 ? "trending_up" : "trending_down",

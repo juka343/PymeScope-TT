@@ -1,214 +1,290 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/firebase/config";
 
 const router = useRouter();
 const route = useRoute();
 const projectId = computed(() => route.params.id_proyecto || null);
 
+const loading = ref(true);
+const rawPeriods = ref([]);
+
+// Textos estáticos (por ahora)
 const recommendations = ref([
   "Control de costos operativos.",
   "Revisión de estrategia de precios.",
   "Optimización de procesos internos.",
 ]);
-
-// =====================
-// FORMATEADORES
-// =====================
-const currencyFmt = new Intl.NumberFormat("es-MX", {
-  style: "currency",
-  currency: "MXN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-
-// =====================
-// KPIs SUPERIORES DUMMY
-// =====================
-const kpis = ref([
-  {
-    label: "Ingresos Totales",
-    value: "$4,250,000",
-    status: "ok",
-    deltaType: "up",
-    deltaValue: "+8.6%",
-    deltaNote: "vs periodo base",
-  },
-  {
-    label: "Utilidad Neta",
-    value: "$845,000",
-    status: "ok",
-    deltaType: "up",
-    deltaValue: "+11.2%",
-    deltaNote: "vs periodo base",
-  },
-  {
-    label: "Margen Neto",
-    value: "19.9%",
-    status: "ok",
-    deltaType: "up",
-    deltaValue: "+1.4 pp",
-    deltaNote: "vs periodo base",
-  },
-  {
-    label: "Liquidez General",
-    value: "1.36",
-    status: "warn",
-    deltaType: "down",
-    deltaValue: "-0.2",
-    deltaNote: "vs periodo base",
-  },
-]);
-
-// =====================
-// TARJETAS DUMMY
-// =====================
-const cards = ref([
-  {
-    title: "Rentabilidad",
-    icon: "trending_up",
-    detailRoute: "rentabilidadMulti",
-    items: [
-      { label: "ROE", target: ">10%", value: "21.0%", dot: "ok" },
-      { label: "Margen Neto", target: ">10%", value: "19.9%", dot: "ok" },
-    ],
-  },
-  {
-    title: "Liquidez",
-    icon: "attach_money",
-    detailRoute: "liquidezMulti",
-    items: [
-      { label: "Prueba Ácida", target: ">0.8", value: "1.12", dot: "ok" },
-      { label: "Cap. Trabajo", target: "> $0", value: "$620,000", dot: "ok" },
-    ],
-  },
-  {
-    title: "Endeudamiento",
-    icon: "account_balance_wallet",
-    detailRoute: "endeudamientoMulti",
-    items: [
-      { label: "Nivel Deuda", target: "<0.5", value: "0.48", dot: "ok" },
-      { label: "Cobertura Int.", target: ">1.5x", value: "4.2x", dot: "warn" },
-    ],
-  },
-  {
-    title: "Rotación de Activos",
-    icon: "sync_alt",
-    detailRoute: "rotacionMulti",
-    items: [
-      { label: "Rot. Inventario", target: ">4.0x", value: "4.5x", dot: "ok" },
-      { label: "Periodo Cobro", target: "<60 días", value: "58 días", dot: "warn" },
-    ],
-  },
-  {
-    title: "Estructura Financiera",
-    icon: "layers",
-    detailRoute: "estructuraMulti",
-    items: [
-      { label: "Solvencia", target: ">1.0", value: "2.15", dot: "ok" },
-      { label: "Seguridad LP", target: ">=1.0", value: "1.84", dot: "ok" },
-    ],
-  },
-]);
-
 const interpretation = ref(
-  "La empresa mantiene una tendencia positiva en ingresos y utilidad neta durante los periodos analizados. Sin embargo, la liquidez general muestra una ligera presión respecto al periodo base, por lo que conviene monitorear capital de trabajo y compromisos de corto plazo."
+  "La empresa mantiene una tendencia en ingresos y utilidad neta durante los periodos analizados. Conviene monitorear capital de trabajo y compromisos de corto plazo."
 );
 
-// =====================
-// RESUMEN DEL RESULTADO POR PERIODO
-// =====================
-const estructuraResultadoOptions = ref([
-  {
-    period: "Q4 2024",
-    rows: [
-      { concept: "Ingresos", value: "$4,250,000", pct: "100%", tone: "income" },
-      { concept: "Costos", value: "($2,465,000)", pct: "58.0%", tone: "negative" },
-      { concept: "Gastos", value: "($600,000)", pct: "14.1%", tone: "negative" },
-      { concept: "Impuestos", value: "($340,000)", pct: "8.0%", tone: "negative" },
-      { concept: "Total", value: "$845,000", pct: "19.9%", tone: "total" },
-    ],
-  },
-  {
-    period: "Q3 2024",
-    rows: [
-      { concept: "Ingresos", value: "$3,920,000", pct: "100%", tone: "income" },
-      { concept: "Costos", value: "($2,310,000)", pct: "58.9%", tone: "negative" },
-      { concept: "Gastos", value: "($560,000)", pct: "14.3%", tone: "negative" },
-      { concept: "Impuestos", value: "($290,000)", pct: "7.4%", tone: "negative" },
-      { concept: "Total", value: "$760,000", pct: "19.4%", tone: "total" },
-    ],
-  },
-  {
-    period: "Q2 2024",
-    rows: [
-      { concept: "Ingresos", value: "$3,680,000", pct: "100%", tone: "income" },
-      { concept: "Costos", value: "($2,180,000)", pct: "59.2%", tone: "negative" },
-      { concept: "Gastos", value: "($525,000)", pct: "14.3%", tone: "negative" },
-      { concept: "Impuestos", value: "($286,000)", pct: "7.8%", tone: "negative" },
-      { concept: "Total", value: "$689,000", pct: "18.7%", tone: "total" },
-    ],
-  },
-  {
-    period: "Q1 2024",
-    rows: [
-      { concept: "Ingresos", value: "$3,420,000", pct: "100%", tone: "income" },
-      { concept: "Costos", value: "($2,050,000)", pct: "59.9%", tone: "negative" },
-      { concept: "Gastos", value: "($490,000)", pct: "14.3%", tone: "negative" },
-      { concept: "Impuestos", value: "($270,000)", pct: "7.9%", tone: "negative" },
-      { concept: "Total", value: "$610,000", pct: "17.8%", tone: "total" },
-    ],
-  },
-  {
-    period: "Q4 2023",
-    rows: [
-      { concept: "Ingresos", value: "$3,150,000", pct: "100%", tone: "income" },
-      { concept: "Costos", value: "($1,920,000)", pct: "61.0%", tone: "negative" },
-      { concept: "Gastos", value: "($455,000)", pct: "14.4%", tone: "negative" },
-      { concept: "Impuestos", value: "($235,000)", pct: "7.5%", tone: "negative" },
-      { concept: "Total", value: "$540,000", pct: "17.1%", tone: "total" },
-    ],
-  },
-]);
+// Formateadores
+const currencyFmt = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const percentFmt = new Intl.NumberFormat("es-MX", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 2 });
 
-const selectedResultPeriod = ref("Q4 2024");
+const parseVal = (val) => {
+  if (!val) return 0;
+  if (typeof val === "number") return val;
+  return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
+};
 
+// =====================
+// ESTADOS REACTIVOS
+// =====================
+const kpis = ref([]);
+const cards = ref([]);
+const chartLabels = ref([]);
+const ingresosValues = ref([]);
+const utilidadValues = ref([]);
+const estructuraResultadoOptions = ref([]);
+const selectedResultPeriod = ref("");
+
+// Interacción de gráficas
+const hoveredIngresosPoint = ref(null);
+const hoveredUtilidadPoint = ref(null);
+
+// =====================
+// CARGA DE DATOS
+// =====================
+const fetchDashboardData = async () => {
+  try {
+    if (!projectId.value) return;
+
+    const periodosRef = collection(db, "proyectos", projectId.value, "periodos");
+    const snapshot = await getDocs(periodosRef);
+
+    let loaded = [];
+    snapshot.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (d.analisis_rentabilidad || d.rentabilidad) {
+        loaded.push({
+          id: docSnap.id,
+          label: d.label || "Periodo",
+          periodDate: d.periodDate || d.label,
+          resultados_url: d.resultsFile?.url || null, // Guardamos la URL del PDF
+          rentabilidad: d.analisis_rentabilidad || d.rentabilidad || { datos_crudos: {}, kpis: [] },
+          liquidez: d.analisis_liquidez || d.liquidez || { datos_crudos: {}, kpis: [] },
+          endeudamiento: d.analisis_endeudamiento || d.endeudamiento || { datos_crudos: {}, kpis: [] },
+          rotacion: d.analisis_rotacion || d.rotacion || { datos_crudos: {}, kpis: [] },
+          estructura: d.analisis_estructura || d.estructura || { datos_crudos: {}, kpis: [] },
+        });
+      }
+    });
+
+    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    rawPeriods.value = loaded;
+
+    if (loaded.length > 0) {
+      generateDashboardData();
+    }
+  } catch (error) {
+    console.error("Error cargando resumen multiperiodo:", error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const generateDashboardData = () => {
+  const periods = rawPeriods.value;
+  chartLabels.value = periods.map(p => p.label);
+
+  const lastP = periods[periods.length - 1];
+  const prevP = periods.length > 1 ? periods[periods.length - 2] : lastP;
+
+  const getKpiValue = (kpis, keyword) => {
+    if (!kpis) return 0;
+    const item = kpis.find((k) => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    const val = item ? parseVal(item.value) : 0;
+    return isNaN(val) ? 0 : val;
+  };
+
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "gray";
+    const item = kpis.find((k) => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item?.status === "ok" ? "ok" : "warn";
+  };
+
+  // 1. Extraer datos para gráficas y Top KPIs
+  ingresosValues.value = periods.map(p => p.rentabilidad.datos_crudos?.ventas_netas || 0);
+  utilidadValues.value = periods.map(p => p.rentabilidad.datos_crudos?.utilidad_neta || 0);
+  
+  const lastIngresos = ingresosValues.value[ingresosValues.value.length - 1];
+  const prevIngresos = ingresosValues.value.length > 1 ? ingresosValues.value[ingresosValues.value.length - 2] : lastIngresos;
+  const deltaIngresos = prevIngresos ? ((lastIngresos - prevIngresos) / prevIngresos) : 0;
+
+  const lastUtilidad = utilidadValues.value[utilidadValues.value.length - 1];
+  const prevUtilidad = utilidadValues.value.length > 1 ? utilidadValues.value[utilidadValues.value.length - 2] : lastUtilidad;
+  const deltaUtilidad = prevUtilidad ? ((lastUtilidad - prevUtilidad) / prevUtilidad) : 0;
+
+  const lastMargen = lastIngresos ? lastUtilidad / lastIngresos : 0;
+  const prevMargen = prevIngresos ? prevUtilidad / prevIngresos : 0;
+  const deltaMargen = lastMargen - prevMargen;
+
+  const lastLiq = getKpiValue(lastP.liquidez.kpis, "Razón de Liquidez");
+  const prevLiq = getKpiValue(prevP.liquidez.kpis, "Razón de Liquidez");
+  const deltaLiq = lastLiq - prevLiq;
+
+  // 2. Construir TOP KPIs
+  kpis.value = [
+    {
+      label: "Ingresos Totales",
+      value: currencyFmt.format(lastIngresos),
+      status: lastIngresos > 0 ? "ok" : "warn",
+      deltaType: deltaIngresos >= 0 ? "up" : "down",
+      deltaValue: `${deltaIngresos > 0 ? "+" : ""}${(deltaIngresos * 100).toFixed(1)}%`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
+    },
+    {
+      label: "Utilidad Neta",
+      value: currencyFmt.format(lastUtilidad),
+      status: lastUtilidad > 0 ? "ok" : "warn",
+      deltaType: deltaUtilidad >= 0 ? "up" : "down",
+      deltaValue: `${deltaUtilidad > 0 ? "+" : ""}${(deltaUtilidad * 100).toFixed(1)}%`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
+    },
+    {
+      label: "Margen Neto",
+      value: percentFmt.format(lastMargen),
+      status: lastMargen > 0.1 ? "ok" : "warn",
+      deltaType: deltaMargen >= 0 ? "up" : "down",
+      deltaValue: `${deltaMargen > 0 ? "+" : ""}${(deltaMargen * 100).toFixed(1)} pp`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
+    },
+    {
+      label: "Liquidez General",
+      value: lastLiq.toFixed(2),
+      status: lastLiq >= 1.0 ? "ok" : "warn",
+      deltaType: deltaLiq >= 0 ? "up" : "down",
+      deltaValue: `${deltaLiq > 0 ? "+" : ""}${deltaLiq.toFixed(2)}`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
+    },
+  ];
+
+  // 3. Construir CARDS
+  cards.value = [
+    {
+      title: "Rentabilidad", icon: "trending_up", detailRoute: "rentabilidadMulti",
+      items: [
+        { label: "ROE", target: ">10%", value: `${getKpiValue(lastP.rentabilidad.kpis, "Patrimonio").toFixed(1)}%`, dot: getKpiStatus(lastP.rentabilidad.kpis, "Patrimonio") },
+        { label: "Margen Neto", target: ">10%", value: `${getKpiValue(lastP.rentabilidad.kpis, "Margen de Rentabilidad").toFixed(1)}%`, dot: getKpiStatus(lastP.rentabilidad.kpis, "Margen de Rentabilidad") },
+      ],
+    },
+    {
+      title: "Liquidez", icon: "attach_money", detailRoute: "liquidezMulti",
+      items: [
+        { label: "Prueba Ácida", target: ">0.8", value: getKpiValue(lastP.liquidez.kpis, "Prueba del Ácido").toFixed(2), dot: getKpiStatus(lastP.liquidez.kpis, "Prueba del Ácido") },
+        { label: "Cap. Trabajo", target: "> $0", value: currencyFmt.format(getKpiValue(lastP.liquidez.kpis, "Capital de Trabajo")), dot: getKpiStatus(lastP.liquidez.kpis, "Capital de Trabajo") },
+      ],
+    },
+    {
+      title: "Endeudamiento", icon: "account_balance_wallet", detailRoute: "endeudamientoMulti",
+      items: [
+        { label: "Nivel Deuda", target: "<0.5", value: getKpiValue(lastP.endeudamiento.kpis, "Apalancamiento").toFixed(2), dot: getKpiStatus(lastP.endeudamiento.kpis, "Apalancamiento") },
+        { label: "Cobertura Int.", target: ">1.5x", value: `${getKpiValue(lastP.endeudamiento.kpis, "Cobertura de Intereses").toFixed(1)}x`, dot: getKpiStatus(lastP.endeudamiento.kpis, "Cobertura de Intereses") },
+      ],
+    },
+    {
+      title: "Rotación de Activos", icon: "sync_alt", detailRoute: "rotacionMulti",
+      items: [
+        { 
+          label: "Rot. Inventario", 
+          target: ">4.0x", 
+          // Si Python manda "N/A" (empresa de servicios sin inventario), mostramos N/A
+          value: (() => {
+            const raw = lastP.rotacion.kpis?.find(k => k.label.toLowerCase().includes("inventarios"));
+            if (!raw || raw.value === "N/A") return "N/A";
+            const num = parseVal(raw.value);
+            return isNaN(num) ? "N/A" : `${num.toFixed(1)}x`;
+          })(),
+          dot: getKpiStatus(lastP.rotacion.kpis, "Inventarios") 
+        },
+        { label: "Periodo Cobro", target: "<60 días", value: `${getKpiValue(lastP.rotacion.kpis, "Recaudo").toFixed(0)} días`, dot: getKpiStatus(lastP.rotacion.kpis, "Recaudo") },
+      ],
+    },
+    {
+      title: "Estructura Financiera", icon: "layers", detailRoute: "estructuraMulti",
+      items: [
+        { label: "Solvencia", target: ">1.0", value: getKpiValue(lastP.estructura.kpis, "Solvencia General").toFixed(2), dot: getKpiStatus(lastP.estructura.kpis, "Solvencia General") },
+        { 
+          label: "Seguridad LP", 
+          target: ">=1.0", 
+          value: isNaN(getKpiValue(lastP.estructura.kpis, "Seguridad a largo plazo")) 
+                ? "N/A" 
+                : getKpiValue(lastP.estructura.kpis, "Seguridad a largo plazo").toFixed(2), 
+          dot: getKpiStatus(lastP.estructura.kpis, "Seguridad a largo plazo") 
+        },
+      ],
+    },
+  ];
+
+  // 4. Construir Tabla de Resumen por Periodo (Orden Inverso)
+  const calcPct = (val, total) => total ? `${((val / total) * 100).toFixed(1)}%` : "0%";
+  
+  const reversedPeriods = [...periods].reverse();
+  estructuraResultadoOptions.value = reversedPeriods.map((p) => {
+    const rentCrudos = p.rentabilidad.datos_crudos || {};
+    const rotCrudos = p.rotacion.datos_crudos || {};
+    const endCrudos = p.endeudamiento.datos_crudos || {};
+
+    const v = rentCrudos.ventas_netas || 0;
+    const ut_neta = rentCrudos.utilidad_neta || 0;
+    const costo = rotCrudos.costo_ventas || 0;
+    const ut_op = endCrudos.utilidad_operacion || 0;
+    
+    const gastos = v - costo - ut_op;
+    const impuestos = ut_op - ut_neta;
+
+    return {
+      period: p.label,
+      pdfUrl: p.resultados_url,
+      rows: [
+        { concept: "Ingresos", value: currencyFmt.format(v), pct: "100%", tone: "income" },
+        { concept: "Costos", value: `(${currencyFmt.format(costo)})`, pct: calcPct(costo, v), tone: "negative" },
+        { concept: "Gastos", value: `(${currencyFmt.format(gastos > 0 ? gastos : 0)})`, pct: calcPct(gastos > 0 ? gastos : 0, v), tone: "negative" },
+        { concept: "Impuestos y Otros", value: `(${currencyFmt.format(impuestos > 0 ? impuestos : 0)})`, pct: calcPct(impuestos > 0 ? impuestos : 0, v), tone: "negative" },
+        { concept: "Total (Utilidad Neta)", value: currencyFmt.format(ut_neta), pct: calcPct(ut_neta, v), tone: "total" },
+      ],
+    };
+  });
+
+  // Seleccionar por defecto el periodo más reciente
+  if (estructuraResultadoOptions.value.length > 0) {
+    selectedResultPeriod.value = estructuraResultadoOptions.value[0].period;
+  }
+};
+
+// Computada para la tabla de resultados activa
 const estructuraResultado = computed(() => {
   return (
     estructuraResultadoOptions.value.find(
       (item) => item.period === selectedResultPeriod.value
-    ) || estructuraResultadoOptions.value[0]
+    ) || { rows: [], pdfUrl: null }
   );
 });
 
-// =====================
-// GRÁFICAS DUMMY
-// =====================
-const chartLabels = ["Q4 2023", "Q1 2024", "Q2 2024", "Q3 2024", "Q4 2024"];
-const ingresosValues = [3150000, 3420000, 3680000, 3920000, 4250000];
-const utilidadValues = [540000, 610000, 690000, 760000, 845000];
-
-const hoveredIngresosPoint = ref(null);
-const hoveredUtilidadPoint = ref(null);
-
+// Lógica de Gráficas
 const buildChartModel = (values, labels, isCurrency = false) => {
+  if (values.length === 0) return { yAxisLabels: [], points: [] };
+  
   const maxVal = Math.max(...values, isCurrency ? 1000 : 10);
   let minVal = Math.min(...values, 0);
   if (minVal > 0) minVal = 0;
 
   const rawRange = maxVal - minVal;
-
   let step;
   if (isCurrency) {
     const magnitude = Math.pow(10, Math.floor(Math.log10(rawRange || 1)));
-    step = Math.max(magnitude / 2, 100000);
+    step = Math.max(magnitude / 2, 10000);
   } else {
     step = 5;
   }
 
   const yMin = Math.floor(minVal / step) * step;
   const yMax = Math.ceil(maxVal / step) * step;
-  const finalRange = Math.max(yMax - yMin, isCurrency ? 100000 : 1);
+  const finalRange = Math.max(yMax - yMin, isCurrency ? 10000 : 1);
 
   const fmtLabel = (val) => {
     if (!isCurrency) return `${val.toFixed(0)}`;
@@ -217,74 +293,51 @@ const buildChartModel = (values, labels, isCurrency = false) => {
     return `$${val}`;
   };
 
-  const yAxisLabels = [
-    fmtLabel(yMax),
-    fmtLabel(yMax - finalRange / 3),
-    fmtLabel(yMax - (finalRange / 3) * 2),
-    fmtLabel(yMin),
-  ];
-
-  const xStep = labels.length > 1 ? 560 / (labels.length - 1) : 0;
+  const yAxisLabels = [fmtLabel(yMax), fmtLabel(yMax - finalRange / 3), fmtLabel(yMax - (finalRange / 3) * 2), fmtLabel(yMin)];
+  const xStep = labels.length > 1 ? 600 / (labels.length - 1) : 0;
 
   const points = values.map((val, i) => {
-    const x = labels.length > 1 ? 120 + i * xStep : 400;
+    const x = labels.length > 1 ? 100 + i * xStep : 400;
     const y = 230 - ((val - yMin) / finalRange) * 180;
-    return {
-      x,
-      y,
-      label: labels[i],
-      bold: i === values.length - 1,
-      value: val,
-      isCurrency,
-    };
+    return { x, y, label: labels[i], bold: i === values.length - 1, value: val, isCurrency };
   });
 
   return { yAxisLabels, points };
 };
 
-const ingresosChart = computed(() =>
-  buildChartModel(ingresosValues, chartLabels, true)
-);
-
-const utilidadChart = computed(() =>
-  buildChartModel(utilidadValues, chartLabels, true)
-);
+const ingresosChart = computed(() => buildChartModel(ingresosValues.value, chartLabels.value, true));
+const utilidadChart = computed(() => buildChartModel(utilidadValues.value, chartLabels.value, true));
 
 const baselineY = 230;
-
-const linePathFor = (chart) => {
-  const pts = chart?.points || [];
-  if (!pts.length) return "";
-  return pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ");
-};
-
+const linePathFor = (chart) => chart?.points?.length ? chart.points.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ") : "";
 const areaPathFor = (chart) => {
   const pts = chart?.points || [];
   if (!pts.length) return "";
-  const first = pts[0];
-  const last = pts[pts.length - 1];
+  const first = pts[0], last = pts[pts.length - 1];
   const mid = pts.map((p) => `L${p.x} ${p.y}`).join(" ");
   return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 };
 
 // =====================
-// NAVEGACIÓN
+// NAVEGACIÓN Y ACCIONES
 // =====================
 function pushWithProject(name) {
-  if (projectId.value) {
-    router.push({ name, params: { id_proyecto: projectId.value } });
-    return;
+  if (projectId.value) router.push({ name, params: { id_proyecto: projectId.value } });
+}
+function goDetail(routeName) { pushWithProject(routeName); }
+
+function openPDF() {
+  const url = estructuraResultado.value?.pdfUrl;
+  if (url) {
+    window.open(url, "_blank"); // Abre el PDF en una pestaña nueva
+  } else {
+    alert("No se encontró el documento PDF para este periodo.");
   }
-  router.push({ name });
 }
 
-function goDetail(routeName) {
-  pushWithProject(routeName);
-}
-
-function goToIncomeStatementDetail() {
-  pushWithProject("rentabilidadMulti");
-}
+onMounted(() => {
+  fetchDashboardData();
+});
 </script>
 
 <template>
@@ -620,7 +673,13 @@ function goToIncomeStatementDetail() {
       </div>
 
       <div class="result-foot">
-        <button class="result-link" type="button" @click="goToIncomeStatementDetail">
+        <button 
+          class="result-link" 
+          type="button" 
+          @click="openPDF"
+          :disabled="!estructuraResultado?.pdfUrl"
+        >
+          <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 16px; margin-right: 4px;">open_in_new</span>
           Ver estado de resultados completo
         </button>
       </div>
