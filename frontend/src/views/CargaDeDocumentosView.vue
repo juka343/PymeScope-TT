@@ -423,6 +423,13 @@ async function generateAnalysis() {
 
     for (const res of resultados) {
       if (res.estatus === "Completado") {
+
+        console.log("Rentabilidad:", res.dashboard_data.rentabilidad?.datos_crudos);
+        console.log("Liquidez:", res.dashboard_data.liquidez?.datos_crudos);
+        console.log("Endeudamiento:", res.dashboard_data.endeudamiento?.datos_crudos);
+        console.log("Rotación:", res.dashboard_data.rotacion?.datos_crudos);
+        console.log("Estructura:", res.dashboard_data.estructura?.datos_crudos);
+
         const periodoRef = doc(db, "proyectos", projectId, "periodos", res.period_id);
 
         await setDoc(

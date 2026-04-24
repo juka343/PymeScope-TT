@@ -23,7 +23,8 @@ class FinancialCalculator:
             "resul. ejerc. en curso", "resul ejerc en curso",
             "resultado ejerc en curso", "resultado del ejerc en curso",
             "resultado del ejercicio en curso",
-            "utilidad total", 
+            "utilidad total", "remanente (utilidad) neta", "remanente neto", 
+            "remanente del ejercicio"
         ]
 
         self.kw_utilidad_antes_impuestos = [
@@ -38,6 +39,7 @@ class FinancialCalculator:
             "importe de ventas", "productos y servicios",
             "ingresos por venta", "venta de inmuebles",
             "ingresos por arrendamiento", "ingresos por rentas",
+            "ingresos por donativos/servicios", "ingresos por donativos"
             # "ingresos", <--- ELIMINADO PARA EVITAR FALSOS POSITIVOS CON "OTROS INGRESOS"
         ]
 
@@ -45,8 +47,7 @@ class FinancialCalculator:
             "total de activos", "activo total", "suma del activo",
             "activos totales", "total del activo", "activo general",
             "activo circulante y fijo", "activo corriente y no corriente",
-            "total activos:", 
-            "total activos",
+            "total activos:", "total activos", "total activo"
         ]
 
         # CORRECCIÓN 1: Quitamos "capital social" para obligar a buscar el CONTABLE
@@ -69,7 +70,8 @@ class FinancialCalculator:
             "pasivo circulante", "total pasivo circulante",
             "total de pasivo circulante", "pasivos corrientes",
             "total de pasivos corrientes", "suma del pasivo circulante",
-            "pasivo a corto plazo",
+            "pasivo a corto plazo", "total pasivo corto plazo", "pasivo corto plazo", 
+            "pasivo c.p.", "pasivo a c.p.", "pasivo circulante a c.p."
         ]
 
         self.kw_inventario = [
@@ -81,7 +83,7 @@ class FinancialCalculator:
         # CORRECCIÓN 2: Quitamos "total pasivo" para que no lea la línea "Total Pasivo + Capital"
         self.kw_pasivo_total = [
             "pasivo total", "total del pasivo", "suma del pasivo", 
-            "pasivos totales", "total pasivos",
+            "pasivos totales", "total pasivos", "total pasivo"
             # "total pasivo", <--- ELIMINADO: Peligroso en formatos que suman Capital
         ]
         
@@ -106,7 +108,8 @@ class FinancialCalculator:
         self.kw_costo_de_ventas = [
             "costo de venta", "costos de venta", # TAAS usa "Costo de venta y/o servicio"
             "costo de ventas", "costos de ventas", 
-            "costo de lo vendido",
+            "costo de lo vendido", "costo de los servicios", 
+            "costo de servicios"
         ]
 
         self.kw_compras = [
@@ -127,7 +130,7 @@ class FinancialCalculator:
             "propiedades planta y equipo",
             "propiedad, planta y equipo",
             "activo fijo neto", "activo fijo",
-            "inmuebles maquinaria y equipo",
+            "inmuebles maquinaria y equipo", "total activo no circulante", "activo no circulante"
         ]
 
         # ===== Estructura =====
@@ -139,6 +142,11 @@ class FinancialCalculator:
             "capital pagado",
             "capital contribuido",      # Término formal de las NIF
             "capital suscrito",
+            "certif. aportación", 
+            "certif aportacion",        
+            "certif. aportacion", "certificados de aportacion"
+            "aportaciones de socios", "cap. social", "cap social",    # Para Consultores Asociados
+            "patrimonio inicial"
         ]
 
         self.kw_pasivo_largo_plazo = [
@@ -151,6 +159,10 @@ class FinancialCalculator:
             "pasivos no corrientes",    # Común en traducciones o software internacional
             "deuda a largo plazo",      # A veces se etiqueta así la deuda bancaria
             "créditos a largo plazo",
+            "pasivos l.p.", "pasivo l.p.",
+            "pasivo lp",                 # <- Sin puntos
+            "pasivo l. p.",              # <- Con espacio entre letras
+            "pasivos lp"
         ]
     # -------------------------------------------------------------------------
     # Parsing de números
@@ -196,9 +208,9 @@ class FinancialCalculator:
             return None
 
     # -------------------------------------------------------------------------
-    # Búsqueda de valores en tablas OCR (Proximidad Inteligente)
+    # Búsqueda de valores en tablas OCR (Proximidad Inteligente + Columnas)
     # -------------------------------------------------------------------------
-    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False) -> float:
+    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0) -> float:
         for table in reversed(tables_data):
             rows: Dict[int, List[Dict[str, Any]]] = {}
             for cell in table:
@@ -229,14 +241,21 @@ class FinancialCalculator:
                             # --- FILTRO ANTI-PORCENTAJES (Nivel Experto) ---
                             max_magnitude = max(abs(v) for v in found_values)
                             
-                            # Conservamos el número si es mayor a 1000 (dinero real), 
-                            # o si de plano es el número más grande de la fila.
                             val_monetarios = [v for v in found_values if abs(v) > 1000 or abs(v) == max_magnitude]
                             
-                            if val_monetarios:
-                                return val_monetarios[-1] if take_last else val_monetarios[0]
+                            # Determinamos la lista a usar
+                            lista_final = val_monetarios if val_monetarios else found_values
+                            
+                            # Lógica de extracción de columna
+                            if take_last:
+                                return lista_final[-1]
+                            
+                            # Usamos el col_index para elegir la columna deseada (0=Año actual, 1=Año anterior)
+                            # Si el índice pedido es mayor a los números que hay, nos protegemos tomando el último
+                            if col_index < len(lista_final):
+                                return lista_final[col_index]
                             else:
-                                return found_values[-1] if take_last else found_values[0]
+                                return lista_final[-1]
                             
                         # Fallback si texto y número están pegados en la misma celda
                         for cell in row_cells:
@@ -246,10 +265,11 @@ class FinancialCalculator:
                                     return float(val)
         return 0.0
 
+
     # -------------------------------------------------------------------------
     # KPIs
     # -------------------------------------------------------------------------
-    def calcular_rentabilidad(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any]) -> Dict[str, Any]:
+    def calcular_rentabilidad(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], col_index: int = 0) -> Dict[str, Any]:
         tablas_resultados = resultados_data.get("tables_data", []) or []
         tablas_balance = balance_data.get("tables_data", []) or []
 
@@ -264,17 +284,17 @@ class FinancialCalculator:
         
         # 2a) Fallback: buscar utilidad neta en el Balance (aquí no usamos take_last)
         if utilidad_neta == 0:
-            utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_neta)
+            utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_neta, col_index=col_index)
 
         # 2b) Fallback: utilidad antes de impuestos
         if utilidad_neta == 0:
             utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=True)
             if utilidad_neta == 0:
-                utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_antes_impuestos)
+                utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_antes_impuestos, col_index=col_index)
 
         # 3) Balance
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total)
-        capital_contable = self._find_value(tablas_balance, self.kw_capital)
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, col_index=col_index)
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, col_index=col_index)
 
         # 4) Cálculos
         margen_utilidad = (utilidad_neta / ventas_netas) if ventas_netas else 0
@@ -307,13 +327,13 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_liquidez(self, balance_data: Dict[str, Any]) -> Dict[str, Any]:
+    def calcular_liquidez(self, balance_data: Dict[str, Any], col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de liquidez basados en el Balance General."""
         tablas_balance = balance_data.get("tables_data", []) or []
 
-        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante)
-        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante)
-        inventario = self._find_value(tablas_balance, self.kw_inventario)
+        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante, col_index=col_index)
+        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, col_index=col_index)
+        inventario = self._find_value(tablas_balance, self.kw_inventario, col_index=col_index)
 
         if pasivo_circulante < 0:
             pasivo_circulante = abs(pasivo_circulante)
@@ -347,24 +367,29 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any]) -> Dict[str, Any]:
+    def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de endeudamiento cruzando Balance General y Estado de Resultados."""
         tablas_balance = balance_data.get("tables_data", []) or []
         tablas_resultados = resultados_data.get("tables_data", []) or []
 
         # --- EXTRACCIÓN DEL BALANCE ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total)
-        capital_social = self._find_value(tablas_balance, self.kw_capital)
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total)
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, col_index=col_index)
+        
+        # Renombramos a capital_contable para evitar confusiones y asegurar la fórmula
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, col_index=col_index)
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, col_index=col_index)
 
         # Lógica de rescate para Pasivo Total (Ecuación Contable: P = A - C)
-        if pasivo_total_doc == 0 and activo_total > 0:
-            pasivo_total = activo_total - capital_social
+        # Si no lo encuentra (0) o si captura la fila "Total Pasivo + Capital" (>= activo_total)
+        if (pasivo_total_doc == 0 or pasivo_total_doc >= activo_total) and activo_total > 0:
+            pasivo_total = activo_total - capital_contable
         else:
             pasivo_total = pasivo_total_doc
         
         # Limpieza de signos
         if pasivo_total < 0: pasivo_total = abs(pasivo_total)
+
+        # (Nota: Más abajo en tus cálculos, cambia estabilidad_financiera = (pasivo_total / capital_contable))
 
         # --- EXTRACCIÓN DEL ESTADO DE RESULTADOS ---
         utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=True)
@@ -385,13 +410,13 @@ class FinancialCalculator:
         # --- CÁLCULOS ---
         apalancamiento = (pasivo_total / activo_total) if activo_total else 0
         cobertura_intereses = (utilidad_operacion / intereses) if intereses else 0
-        estabilidad_financiera = (pasivo_total / capital_social) if capital_social else 0
+        estabilidad_financiera = (pasivo_total / capital_contable) if capital_contable else 0
 
         return {
             "datos_crudos": {
                 "pasivo_total": pasivo_total,
                 "activo_total": activo_total,
-                "capital_social": capital_social,
+                "capital_social": capital_contable,
                 "utilidad_operacion": utilidad_operacion,
                 "intereses": intereses,
             },
@@ -416,16 +441,16 @@ class FinancialCalculator:
 
     # En financial_calculator.py
 
-    def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual") -> Dict[str, Any]:
+    def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de rotación ajustando los días según la periodicidad."""
         tablas_balance = balance_data.get("tables_data", []) or []
         tablas_resultados = resultados_data.get("tables_data", []) or []
 
         # Valores del Balance
-        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar)
-        inventario = self._find_value(tablas_balance, self.kw_inventario)
-        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo)
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total)
+        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, col_index=col_index)
+        inventario = self._find_value(tablas_balance, self.kw_inventario, col_index=col_index)
+        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, col_index=col_index)
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, col_index=col_index)
 
         # Valores de Resultados
         ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=True)
@@ -515,21 +540,21 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_estructura(self, balance_data: Dict[str, Any]) -> Dict[str, Any]:
+    def calcular_estructura(self, balance_data: Dict[str, Any], col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de Estructura Financiera basados en el Balance General."""
         tablas_balance = balance_data.get("tables_data", []) or []
 
         # --- 1. EXTRACCIÓN BÁSICA ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total)
-        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo) 
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total)
-        capital_contable = self._find_value(tablas_balance, self.kw_capital)
-        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo)
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, col_index=col_index)
+        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, col_index=col_index) 
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, col_index=col_index)
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, col_index=col_index)
+        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, col_index=col_index)
 
         # --- 2. LÓGICA INTELIGENTE PARA CAPITAL SOCIAL ---
-        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social)
-        capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"])
-        capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"])
+        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, col_index=col_index)
+        capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"], col_index=col_index)
+        capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"], col_index=col_index)
         
         suma_capitales = capital_fijo + capital_variable
         
@@ -541,7 +566,8 @@ class FinancialCalculator:
             capital_social = capital_social_doc
 
         # --- 3. RESCATE PARA PASIVO TOTAL ---
-        if pasivo_total_doc == 0 and activo_total > 0:
+        # Si lee 0, o si se confunde con "Suma de Pasivo y Capital" (dando un valor >= al activo)
+        if (pasivo_total_doc == 0 or pasivo_total_doc >= activo_total) and activo_total > 0:
             pasivo_total = activo_total - capital_contable
         else:
             pasivo_total = pasivo_total_doc

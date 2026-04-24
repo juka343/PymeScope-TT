@@ -74,6 +74,12 @@ const generateDashboardData = () => {
     return item ? parseVal(item.value) : 0;
   };
 
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? item.status : "warn";
+  };
+
   const dataRazon = periods.map(p => findKpi(p.liquidez.kpis, "liquidez")); 
   const dataAcida = periods.map(p => findKpi(p.liquidez.kpis, "ácido"));
   const dataCapital = periods.map(p => {
@@ -81,7 +87,7 @@ const generateDashboardData = () => {
     return item ? parseVal(item.value) : 0;
   });
 
-  const buildChart = (values, title, subtitle, legendLabel, isCurrency = false) => {
+  const buildChart = (values, title, subtitle, legendLabel, isCurrency = false, backendStatus = "warn") => {
     const maxVal = Math.max(...values, isCurrency ? 1000 : 2); 
     let minVal = Math.min(...values, 0); 
     if (minVal > 0 && !isCurrency) minVal = 0; 
@@ -131,12 +137,8 @@ const generateDashboardData = () => {
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     
     let delta = lastVal - prevVal;
-    let status = "warn";
-    
-    // Umbrales teóricos
-    if (title.includes("Circulante")) status = (lastVal >= 1.5 && lastVal <= 2.5) ? "ok" : "warn";
-    else if (title.includes("Ácida")) status = lastVal >= 1.0 ? "ok" : "warn";
-    else status = lastVal > 0 ? "ok" : "warn";
+    // === USAMOS EL STATUS QUE CALCULÓ PYTHON ===
+    let status = backendStatus;
 
     return {
       kpiValue: isCurrency ? currencyFmt.format(lastVal) : lastVal.toFixed(2),
@@ -152,10 +154,12 @@ const generateDashboardData = () => {
     };
   };
 
+  const lastP = periods[periods.length - 1];
+
   metrics.value = [
-    { key: "razon", label: "Razón Circulante", ...buildChart(dataRazon, "Evolución Razón Circulante", "Capacidad para cubrir deudas a corto plazo", "Circulante") },
-    { key: "acida", label: "Prueba Ácida", ...buildChart(dataAcida, "Evolución Prueba Ácida", "Liquidez inmediata sin depender de inventarios", "Ácida") },
-    { key: "capital", label: "Capital de Trabajo", ...buildChart(dataCapital, "Evolución Capital de Trabajo", "Recursos netos para la operación diaria", "Capital", true) }
+    { key: "razon", label: "Razón Circulante", ...buildChart(dataRazon, "Evolución Razón Circulante", "Capacidad para cubrir deudas a corto plazo", "Circulante", false, getKpiStatus(lastP.liquidez.kpis, "liquidez")) },
+    { key: "acida", label: "Prueba Ácida", ...buildChart(dataAcida, "Evolución Prueba Ácida", "Liquidez inmediata sin depender de inventarios", "Ácida", false, getKpiStatus(lastP.liquidez.kpis, "ácido")) },
+    { key: "capital", label: "Capital de Trabajo", ...buildChart(dataCapital, "Evolución Capital de Trabajo", "Recursos netos para la operación diaria", "Capital", true, getKpiStatus(lastP.liquidez.kpis, "capital")) }
   ];
 
   // Construir Tabla (Orden Ascendente)
