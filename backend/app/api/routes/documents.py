@@ -45,6 +45,7 @@ class SolicitudAnalisisPeriodo(BaseModel):
     balance_url: str
     resultados_url: str
     periodicidad: str
+    col_index: int = 0
 
 # --- ENDPOINTS ---
 @router.post("/documents/analyze-period")
@@ -61,13 +62,15 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
             _azure_service.process_financial_document_async(payload.resultados_url)
         )
 
+        indice = payload.col_index
+
         # 3. Pasar la data por tu Motor Extractor para calcular rentabilidad
         print("-> Calculando indicadores financieros...")
-        analisis_rentabilidad = _calculator.calcular_rentabilidad(balance_data, resultados_data)
-        analisis_liquidez = _calculator.calcular_liquidez(balance_data)
-        analisis_endeudamiento = _calculator.calcular_endeudamiento(balance_data, resultados_data)
-        analisis_rotacion = _calculator.calcular_rotacion(balance_data, resultados_data, periodicidad=payload.periodicidad)
-        analisis_estructura = _calculator.calcular_estructura(balance_data)
+        analisis_rentabilidad = _calculator.calcular_rentabilidad(balance_data, resultados_data, periodicidad=payload.periodicidad, col_index=indice)
+        analisis_liquidez = _calculator.calcular_liquidez(balance_data, periodicidad=payload.periodicidad, col_index=indice)
+        analisis_endeudamiento = _calculator.calcular_endeudamiento(balance_data, resultados_data, periodicidad=payload.periodicidad, col_index=indice)
+        analisis_rotacion = _calculator.calcular_rotacion(balance_data, resultados_data, periodicidad=payload.periodicidad, col_index=indice)
+        analisis_estructura = _calculator.calcular_estructura(balance_data, periodicidad=payload.periodicidad, col_index=indice)
 
         # 4. Retornar el paquete completo listo para el Dashboard de Vue
         return {

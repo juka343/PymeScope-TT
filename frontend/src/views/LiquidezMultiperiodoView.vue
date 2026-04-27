@@ -22,7 +22,7 @@ const tableRows = ref([]);
 
 
 // Formateadores
-const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Función para parsear valores que podrían venir como string o número desde el motor
 const parseVal = (val) => {

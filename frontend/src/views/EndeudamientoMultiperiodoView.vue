@@ -22,8 +22,8 @@ const tableRows = ref([]);
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 const parseVal = (val) => {

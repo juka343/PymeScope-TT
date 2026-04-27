@@ -22,14 +22,14 @@ const tableRows = ref([]);
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 const parseVal = (val) => {
   if (!val) return 0;
   if (typeof val === 'number') return val;
-  if (val === "Sin Deuda LP") return 0; // Manejo del caso especial desde Python
+  if (val === "Sin Deuda LP" || val === "N/A") return 0; // Manejo del caso especial desde Python
   return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
 };
 
