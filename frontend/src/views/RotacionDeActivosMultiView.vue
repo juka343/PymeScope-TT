@@ -22,8 +22,8 @@ const tableRows = ref([]);
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 const parseVal = (val) => {
@@ -148,7 +148,7 @@ const generateDashboardData = () => {
 
     return {
       // Si el valor es 0 (y no son días de recaudo), mostramos N/A. Si no, mostramos el número normal.
-      kpiValue: (lastVal === 0 && type !== "days") ? "N/A" : (type === "days" ? `${Math.round(lastVal)} días` : `${lastVal.toFixed(1)}x`),
+      kpiValue: (lastVal === 0 && type !== "days") ? "N/A" : (type === "days" ? `${Math.round(lastVal)} días` : `${lastVal.toFixed(2)}x`),
       status, // <-- Vue ahora obedece ciegamente a Python
       deltaStyle: isPositive ? "positive" : "negative",
       deltaIcon: delta >= 0 ? "trending_up" : "trending_down",
@@ -825,8 +825,8 @@ onMounted(() => {
 }
 
 .kpi-dot.warn {
-  background: #e11d48;
-  box-shadow: 0 0 8px rgba(225,29,72,0.35);
+  background: #facc15;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
 }
 
 .kpi-value {

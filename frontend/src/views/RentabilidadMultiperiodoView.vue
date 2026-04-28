@@ -83,11 +83,17 @@ const generateDashboardData = () => {
     return item ? parseVal(item.value) : 0;
   };
 
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find((k) => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? item.status : "warn";
+  };
+
   const dataMargen = periods.map((p) => findKpi(p.rentabilidad.kpis, "margen"));
   const dataRat = periods.map((p) => findKpi(p.rentabilidad.kpis, "activos"));
   const dataRoe = periods.map((p) => findKpi(p.rentabilidad.kpis, "patrimonio"));
 
-  const buildChart = (values, title, subtitle, legendLabel, type) => {
+  const buildChart = (values, title, subtitle, legendLabel, type, backendStatus = "warn") => {
     const maxVal = Math.max(...values, type === "margen" ? 10 : 5);
     let minVal = Math.min(...values, 0);
     if (minVal > 0) minVal = 0;
@@ -130,10 +136,8 @@ const generateDashboardData = () => {
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     const delta = lastVal - prevVal;
 
-    let status = "warn";
-    if (type === "margen") status = lastVal >= 10 ? "ok" : "warn";
-    if (type === "rat") status = lastVal >= 5 ? "ok" : "warn";
-    if (type === "roe") status = lastVal >= 10 ? "ok" : "warn";
+    // === USAMOS EL STATUS QUE CALCULÓ PYTHON ===
+    let status = backendStatus;
 
     return {
       kpiValue: `${lastVal.toFixed(2)}%`,
@@ -150,6 +154,8 @@ const generateDashboardData = () => {
     };
   };
 
+  const lastP = periods[periods.length - 1];
+
   metrics.value = [
     {
       key: "margen",
@@ -159,7 +165,8 @@ const generateDashboardData = () => {
         "Evolución Margen de Rentabilidad",
         "Tendencia histórica por periodo",
         "Margen Neto",
-        "margen"
+        "margen",
+        getKpiStatus(lastP.rentabilidad.kpis, "margen")
       ),
     },
     {
@@ -170,7 +177,8 @@ const generateDashboardData = () => {
         "Evolución RAT",
         "Capacidad de los activos para generar utilidad",
         "RAT",
-        "rat"
+        "rat",
+        getKpiStatus(lastP.rentabilidad.kpis, "activos")
       ),
     },
     {
@@ -181,7 +189,8 @@ const generateDashboardData = () => {
         "Evolución ROE",
         "Rentabilidad generada sobre el capital propio",
         "ROE",
-        "roe"
+        "roe",
+        getKpiStatus(lastP.rentabilidad.kpis, "patrimonio")
       ),
     },
   ];

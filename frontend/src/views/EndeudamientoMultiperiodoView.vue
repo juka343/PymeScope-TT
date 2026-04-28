@@ -22,8 +22,8 @@ const tableRows = ref([]);
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 const parseVal = (val) => {
@@ -78,11 +78,17 @@ const generateDashboardData = () => {
     return item ? parseVal(item.value) : 0;
   };
 
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? item.status : "warn";
+  };
+
   const dataApalancamiento = periods.map(p => findKpi(p.endeudamiento.kpis, "apalancamiento"));
   const dataCobertura = periods.map(p => findKpi(p.endeudamiento.kpis, "cobertura"));
   const dataEstabilidad = periods.map(p => findKpi(p.endeudamiento.kpis, "estabilidad"));
 
-  function buildChart(values, title, subtitle, legendLabel, type = "ratio") {
+  function buildChart(values, title, subtitle, legendLabel, type = "ratio", backendStatus = "warn") {
     const maxFallback = type === "cobertura" ? 2 : 0.2;
     const maxVal = Math.max(...values, maxFallback);
     let minVal = Math.min(...values, 0);
@@ -130,10 +136,8 @@ const generateDashboardData = () => {
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     const delta = lastVal - prevVal;
 
-    let status = "warn";
-    if (type === "apalancamiento") status = lastVal <= 0.6 ? "ok" : "warn";
-    else if (type === "cobertura") status = lastVal >= 3 ? "ok" : "warn";
-    else if (type === "estabilidad") status = lastVal <= 1.0 ? "ok" : "warn";
+    // === USAMOS EL STATUS QUE CALCULÓ PYTHON ===
+    let status = backendStatus;
 
     return {
       kpiValue: type === "cobertura" ? `${lastVal.toFixed(2)}x` : lastVal.toFixed(2),
@@ -150,10 +154,12 @@ const generateDashboardData = () => {
     };
   }
 
+  const lastP = periods[periods.length - 1];
+
   metrics.value = [
-    { key: "apalancamiento", label: "Apalancamiento (deuda / activo)", ...buildChart(dataApalancamiento, "Evolución Apalancamiento", "Nivel de deuda respecto al activo total", "Apalancamiento", "apalancamiento") },
-    { key: "cobertura", label: "Cobertura de intereses", ...buildChart(dataCobertura, "Evolución Cobertura de Intereses", "Capacidad para cubrir gastos financieros", "Cobertura", "cobertura") },
-    { key: "estabilidad", label: "Estabilidad financiera", ...buildChart(dataEstabilidad, "Evolución Estabilidad Financiera", "Equilibrio entre recursos ajenos y propios", "Estabilidad", "estabilidad") },
+    { key: "apalancamiento", label: "Apalancamiento (deuda / activo)", ...buildChart(dataApalancamiento, "Evolución Apalancamiento", "Nivel de deuda respecto al activo total", "Apalancamiento", "apalancamiento", getKpiStatus(lastP.endeudamiento.kpis, "apalancamiento")) },
+    { key: "cobertura", label: "Cobertura de intereses", ...buildChart(dataCobertura, "Evolución Cobertura de Intereses", "Capacidad para cubrir gastos financieros", "Cobertura", "cobertura", getKpiStatus(lastP.endeudamiento.kpis, "cobertura")) },
+    { key: "estabilidad", label: "Estabilidad financiera", ...buildChart(dataEstabilidad, "Evolución Estabilidad Financiera", "Equilibrio entre recursos ajenos y propios", "Estabilidad", "estabilidad", getKpiStatus(lastP.endeudamiento.kpis, "estabilidad")) },
   ];
 
   // Construir Tabla (Orden Ascendente)

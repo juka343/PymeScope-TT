@@ -22,14 +22,14 @@ const tableRows = ref([]);
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 const parseVal = (val) => {
   if (!val) return 0;
   if (typeof val === 'number') return val;
-  if (val === "Sin Deuda LP") return 0; // Manejo del caso especial desde Python
+  if (val === "Sin Deuda LP" || val === "N/A") return 0; // Manejo del caso especial desde Python
   return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
 };
 
@@ -76,12 +76,18 @@ const generateDashboardData = () => {
     return item ? parseVal(item.value) : 0;
   };
 
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    return item ? item.status : "warn";
+  };
+
   const dataSolvencia = periods.map(p => findKpi(p.estructura.kpis, "solvencia"));
   const dataSeguridad = periods.map(p => findKpi(p.estructura.kpis, "seguridad"));
   const dataInmovSocial = periods.map(p => findKpi(p.estructura.kpis, "social"));
   const dataInmovContable = periods.map(p => findKpi(p.estructura.kpis, "contable"));
 
-  function buildChart(values, title, subtitle, legendLabel) {
+  function buildChart(values, title, subtitle, legendLabel, backendStatus = "warn") {
     const maxVal = Math.max(...values, 1);
     let minVal = Math.min(...values, 0);
 
@@ -120,17 +126,16 @@ const generateDashboardData = () => {
     let isPositive = delta >= 0;
     if (legendLabel.includes("Inmov")) isPositive = delta <= 0;
 
-    // Status (Foquitos)
-    let status = "warn";
-    if (legendLabel === "Solvencia") {
-      status = lastVal >= 1.0 ? "ok" : "danger";
-    } else if (legendLabel === "Seguridad LP") {
-      // Si es 0 (Sin Deuda), es OK. Si no, aplica la regla normal.
-      status = (lastVal === 0 || lastVal >= 1.0) ? "ok" : "danger";
-    } else {
-      status = lastVal <= 1.0 ? "ok" : (lastVal <= 1.5 ? "warn" : "danger");
-    }
+    // === ELIMINAMOS LA LÓGICA DE VUE Y USAMOS LA DE PYTHON ===
+    let status = backendStatus;
 
+    // Lógica para el manejo especial de N/A en Seguridad
+    let displayValue = lastVal.toFixed(2);
+    if (legendLabel === "Seguridad LP" && lastVal === 0) {
+      displayValue = "N/A";
+      status = "ok"; // Forzamos verde visualmente si no hay deuda
+    }
+    
     let deltaType = "flat";
     if (delta > 0) deltaType = isPositive ? "up" : "down"; // Si sube y es positivo, verde. Si sube y es malo, rojo.
     if (delta < 0) deltaType = isPositive ? "down" : "up"; // Hack CSS: usamos up/down para inyectar color
@@ -143,7 +148,7 @@ const generateDashboardData = () => {
 
     return {
       // Si es Seguridad LP y vale 0, imprimimos N/A en vez de 0.00
-      kpiValue: (legendLabel === "Seguridad LP" && lastVal === 0) ? "N/A" : lastVal.toFixed(2),
+      kpiValue: displayValue,
       status,
       deltaClass,
       deltaIcon: delta >= 0 ? "trending_up" : "trending_down",
@@ -157,11 +162,13 @@ const generateDashboardData = () => {
     };
   }
 
+  const lastP = periods[periods.length - 1]; // Extraemos el último periodo
+
   metrics.value = [
-    { key: "solvencia", label: "Solvencia", ...buildChart(dataSolvencia, "Evolución de Solvencia", "Análisis histórico del índice de solvencia", "Solvencia") },
-    { key: "seguridad", label: "Seguridad a largo plazo", ...buildChart(dataSeguridad, "Evolución de Seguridad a Largo Plazo", "Respaldo financiero para obligaciones de largo plazo", "Seguridad LP") },
-    { key: "inmovSocial", label: "Inmov. cap. social", ...buildChart(dataInmovSocial, "Evolución de Inmovilización del Capital Social", "Proporción del capital social comprometida en activos fijos", "Inmov. Cap. Social") },
-    { key: "inmovContable", label: "Inmov. cap. contable", ...buildChart(dataInmovContable, "Evolución de Inmovilización del Capital Contable", "Proporción del capital contable comprometida en activos fijos", "Inmov. Cap. Contable") },
+    { key: "solvencia", label: "Solvencia", ...buildChart(dataSolvencia, "Evolución de Solvencia", "Análisis histórico del índice de solvencia", "Solvencia", getKpiStatus(lastP.estructura.kpis, "solvencia")) },
+    { key: "seguridad", label: "Seguridad a largo plazo", ...buildChart(dataSeguridad, "Evolución de Seguridad a Largo Plazo", "Respaldo financiero para obligaciones de largo plazo", "Seguridad LP", getKpiStatus(lastP.estructura.kpis, "seguridad")) },
+    { key: "inmovSocial", label: "Inmov. cap. social", ...buildChart(dataInmovSocial, "Evolución de Inmovilización del Capital Social", "Proporción del capital social comprometida en activos fijos", "Inmov. Cap. Social", getKpiStatus(lastP.estructura.kpis, "social")) },
+    { key: "inmovContable", label: "Inmov. cap. contable", ...buildChart(dataInmovContable, "Evolución de Inmovilización del Capital Contable", "Proporción del capital contable comprometida en activos fijos", "Inmov. Cap. Contable", getKpiStatus(lastP.estructura.kpis, "contable")) },
   ];
 
   // Construir Tabla (Orden Ascendente)
@@ -781,7 +788,7 @@ onMounted(() => {
 
 .kpi-dot.warn {
   background: #facc15;
-  box-shadow: 0 0 8px rgba(250,204,21,0.4);
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
 }
 
 .kpi-dot.danger {

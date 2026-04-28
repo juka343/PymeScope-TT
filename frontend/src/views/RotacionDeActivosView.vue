@@ -64,11 +64,12 @@ onMounted(async () => {
     rowsTemp.sort((a, b) => a.period.localeCompare(b.period));
 
     if (ultimosKpis) {
-      // Mapeamos ".status" a ".dot" que es la clase de CSS que usa este componente. 
+      // Mapeamos ".status" a ".dot" obedeciendo directamente a Python
       kpis.value = ultimosKpis.map(k => ({
          label: k.label,
-         value: k.value,
-         dot: k.status === 'ok' ? 'ok' : 'warn' 
+         // Si Python mandó un texto especial (Sin Inventario), lo respetamos.
+         value: (k.value === "Sin Inventario" || k.value === "N/A") ? "N/A" : k.value,
+         dot: k.status // OBEDECEMOS AL BACKEND (ok, warn, etc.)
       }));
     }
     periodRows.value = rowsTemp;

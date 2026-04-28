@@ -404,12 +404,35 @@ async function generateAnalysis() {
     }
 
     const promesas = aProcesar.map((p) => {
+      // Calculamos el índice de la columna basado en el mes guardado
+      // 1. Calculamos el índice de la columna blindado
+      let indiceColumna = 0;
+      if (periodicity.value === 'mensual' && p.periodDate) {
+        const dateStr = String(p.periodDate).toLowerCase();
+        
+        // Si viene con guion (ej. "2026-03")
+        if (dateStr.includes('-')) {
+          const parts = dateStr.split('-');
+          if (parts.length > 1) {
+            indiceColumna = parseInt(parts[1], 10) - 1;
+          }
+        } else {
+          // Fallback de rescate: busca el nombre del mes en el texto
+          const meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+          const indexEncontrado = meses.findIndex(m => dateStr.includes(m));
+          if (indexEncontrado !== -1) {
+            indiceColumna = indexEncontrado;
+          }
+        }
+      }
+
       const payload = {
         project_id: projectId,
         period_id: p.id,
         balance_url: p.balanceFile.url,
         resultados_url: p.resultsFile.url,
         periodicidad: periodicity.value,
+        col_index: indiceColumna 
       };
 
       return fetch("http://127.0.0.1:8000/api/documents/analyze-period", {
@@ -423,6 +446,13 @@ async function generateAnalysis() {
 
     for (const res of resultados) {
       if (res.estatus === "Completado") {
+
+        console.log("Rentabilidad:", res.dashboard_data.rentabilidad?.datos_crudos);
+        console.log("Liquidez:", res.dashboard_data.liquidez?.datos_crudos);
+        console.log("Endeudamiento:", res.dashboard_data.endeudamiento?.datos_crudos);
+        console.log("Rotación:", res.dashboard_data.rotacion?.datos_crudos);
+        console.log("Estructura:", res.dashboard_data.estructura?.datos_crudos);
+
         const periodoRef = doc(db, "proyectos", projectId, "periodos", res.period_id);
 
         await setDoc(
