@@ -25,31 +25,31 @@ const router = createRouter({
     },
 
     //PANTALLAS DE TEORIA
-        {
-          path: "/teoriaRentabilidad",
-          name: "teoriaRentabilidad",
-          component: () => import("../views/TeoriaRentabilidadView.vue"), 
-        },
-        {
-          path: "/teoriaLiquidez",
-          name: "teoriaLiquidez",
-          component: () => import("../views/TeoriaLiquidezView.vue"), 
-        },
-        {
-          path: "/teoriaEstructura",
-          name: "teoriaEstructura",
-          component: () => import("../views/TeoriaEstructuraView.vue"), 
-        },
-        {
-          path: "/teoriaRotacion",
-          name: "teoriaRotacion",
-          component: () => import("../views/TeoriaRotacionView.vue"), 
-        },
-        {
-          path: "/teoriaEndeudamiento",
-          name: "teoriaEndeudamiento",
-          component: () => import("../views/TeoriaEndeudamientoView.vue"), 
-        },
+    {
+      path: "/teoriaRentabilidad",
+      name: "teoriaRentabilidad",
+      component: () => import("../views/TeoriaRentabilidadView.vue"),
+    },
+    {
+      path: "/teoriaLiquidez",
+      name: "teoriaLiquidez",
+      component: () => import("../views/TeoriaLiquidezView.vue"),
+    },
+    {
+      path: "/teoriaEstructura",
+      name: "teoriaEstructura",
+      component: () => import("../views/TeoriaEstructuraView.vue"),
+    },
+    {
+      path: "/teoriaRotacion",
+      name: "teoriaRotacion",
+      component: () => import("../views/TeoriaRotacionView.vue"),
+    },
+    {
+      path: "/teoriaEndeudamiento",
+      name: "teoriaEndeudamiento",
+      component: () => import("../views/TeoriaEndeudamientoView.vue"),
+    },
 
     // DASHBOARD MONOPERIODO
     {
@@ -131,27 +131,27 @@ const router = createRouter({
         {
           path: "rentabilidad",
           name: "rentabilidadMulti",
-          component: () => import("../views/RentabilidadMultiperiodoView.vue"), 
+          component: () => import("../views/RentabilidadMultiperiodoView.vue"),
         },
         {
           path: "liquidez",
           name: "liquidezMulti",
-          component: () => import("../views/LiquidezMultiperiodoView.vue"), 
+          component: () => import("../views/LiquidezMultiperiodoView.vue"),
         },
         {
           path: "endeudamiento",
           name: "endeudamientoMulti",
-          component: () => import("../views/EndeudamientoMultiperiodoView.vue"), 
+          component: () => import("../views/EndeudamientoMultiperiodoView.vue"),
         },
         {
           path: "rotacion",
           name: "rotacionMulti",
-          component: () => import("../views/RotacionDeActivosMultiView.vue"), 
+          component: () => import("../views/RotacionDeActivosMultiView.vue"),
         },
         {
           path: "estructura",
           name: "estructuraMulti",
-          component: () => import("../views/EstructuraMultiView.vue"), 
+          component: () => import("../views/EstructuraMultiView.vue"),
         },
         // {
         //   path: "proyecciones",

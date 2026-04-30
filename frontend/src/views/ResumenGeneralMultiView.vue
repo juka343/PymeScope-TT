@@ -3,10 +3,12 @@ import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useToast } from "@/composables/useToast";
 
 const router = useRouter();
 const route = useRoute();
 const projectId = computed(() => route.params.id_proyecto || null);
+const { toast } = useToast();
 
 const loading = ref(true);
 const rawPeriods = ref([]);
@@ -331,7 +333,7 @@ function openPDF() {
   if (url) {
     window.open(url, "_blank"); // Abre el PDF en una pestaña nueva
   } else {
-    alert("No se encontró el documento PDF para este periodo.");
+    toast({ message: "No se encontró el documento PDF para este periodo.", type: "warning" });
   }
 }
 

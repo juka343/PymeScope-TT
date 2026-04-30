@@ -24,19 +24,79 @@ const showConfirmPassword = ref(false);
 const loading = ref(false);
 const errorMsg = ref("");
 
+// ===== Estado "touched" por campo =====
+const touched = ref({
+  fullName: false,
+  email: false,
+  password: false,
+  confirmPassword: false,
+  terms: false,
+});
+
+// Se activa cuando el usuario intenta enviar el form sin que sea válido
+const submitAttempted = ref(false);
+
+function markTouched(field) {
+  touched.value[field] = true;
+}
+
+// ===== Validaciones por campo =====
+// Nombre: solo letras, espacios, acentos, ñ, diéresis
+const nameRegex = /^[A-Za-zÀ-ÿÑñ\s]+$/;
+const nameError = computed(() => {
+  const v = fullName.value.trim();
+  if (!v) return "Este campo es obligatorio.";
+  if (v.length < 2) return "El nombre debe tener al menos 2 caracteres.";
+  if (!nameRegex.test(v)) return "El nombre solo puede contener letras y espacios.";
+  return "";
+});
+
+// Correo
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const emailError = computed(() => {
+  const v = email.value.trim();
+  if (!v) return "Este campo es obligatorio.";
+  if (!emailRegex.test(v)) return "Ingresa un correo electrónico válido.";
+  return "";
+});
+
+// Contraseña
+const passwordError = computed(() => {
+  if (!password.value) return "Este campo es obligatorio.";
+  if (password.value.length < 8) return `La contraseña debe tener al menos 8 caracteres (faltan ${8 - password.value.length}).`;
+  return "";
+});
+
+// Confirmar contraseña
+const confirmPasswordError = computed(() => {
+  if (!confirmPassword.value) return "Este campo es obligatorio.";
+  if (password.value !== confirmPassword.value) return "Las contraseñas no coinciden.";
+  return "";
+});
+
+// Términos
+const termsError = computed(() => {
+  if (!acceptTerms.value) return "Debes aceptar los términos y condiciones.";
+  return "";
+});
+
+// Helper: ¿mostrar error de un campo?
+function showError(field) {
+  return touched.value[field] || submitAttempted.value;
+}
+
 const passwordsMatch = computed(() => {
   if (!password.value && !confirmPassword.value) return true;
   return password.value === confirmPassword.value;
 });
 
-const canSubmit = computed(() => {
+const isFormValid = computed(() => {
   return (
-    fullName.value.trim().length > 0 &&
-    email.value.trim().length > 0 &&
-    password.value.length >= 8 &&
-    confirmPassword.value.length >= 8 &&
-    passwordsMatch.value &&
-    acceptTerms.value &&
+    !nameError.value &&
+    !emailError.value &&
+    !passwordError.value &&
+    !confirmPasswordError.value &&
+    !termsError.value &&
     !loading.value
   );
 });
@@ -65,7 +125,9 @@ function mapFirebaseError(err) {
 
 async function handleSubmit() {
   errorMsg.value = "";
-  if (!canSubmit.value) return;
+  submitAttempted.value = true;
+
+  if (!isFormValid.value) return;
 
   loading.value = true;
   try {
@@ -146,10 +208,10 @@ async function handleGoogle() {
           </div>
 
           <!-- ERROR -->
-          <p v-if="errorMsg" class="alert" role="alert">
+          <div v-if="errorMsg" class="form-error" role="alert">
             <span class="material-symbols-outlined">error</span>
             <span>{{ errorMsg }}</span>
-          </p>
+          </div>
 
           <form class="form" @submit.prevent="handleSubmit">
             <label class="field">
@@ -159,9 +221,14 @@ async function handleGoogle() {
                 type="text"
                 placeholder="Ej. Juan Pérez"
                 autocomplete="name"
-                required
+                :class="{ invalid: showError('fullName') && nameError }"
                 :disabled="loading"
+                @blur="markTouched('fullName')"
               />
+              <small v-if="showError('fullName') && nameError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ nameError }}
+              </small>
             </label>
 
             <label class="field">
@@ -171,9 +238,14 @@ async function handleGoogle() {
                 type="email"
                 placeholder="nombre@empresa.com"
                 autocomplete="email"
-                required
+                :class="{ invalid: showError('email') && emailError }"
                 :disabled="loading"
+                @blur="markTouched('email')"
               />
+              <small v-if="showError('email') && emailError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ emailError }}
+              </small>
             </label>
 
             <label class="field">
@@ -184,9 +256,9 @@ async function handleGoogle() {
                   :type="showPassword ? 'text' : 'password'"
                   placeholder="••••••••"
                   autocomplete="new-password"
-                  minlength="8"
-                  required
+                  :class="{ invalid: showError('password') && passwordError }"
                   :disabled="loading"
+                  @blur="markTouched('password')"
                 />
                 <button class="eye" type="button" @click="togglePassword" :disabled="loading">
                   <span class="material-symbols-outlined">
@@ -194,7 +266,11 @@ async function handleGoogle() {
                   </span>
                 </button>
               </div>
-              <small class="hint">Mínimo 8 caracteres.</small>
+              <small v-if="showError('password') && passwordError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ passwordError }}
+              </small>
+              <small v-else class="hint">Mínimo 8 caracteres.</small>
             </label>
 
             <label class="field">
@@ -205,10 +281,9 @@ async function handleGoogle() {
                 :type="showPassword ? 'text' : 'password'"
                 placeholder="••••••••"
                 autocomplete="new-password"
-                minlength="8"
-                required
-                :class="{ invalid: !passwordsMatch }"
+                :class="{ invalid: showError('confirmPassword') && confirmPasswordError }"
                 :disabled="loading"
+                @blur="markTouched('confirmPassword')"
               />
               <button class="eye" type="button" @click="toggleConfirmPassword" :disabled="loading">
                   <span class="material-symbols-outlined">
@@ -216,19 +291,26 @@ async function handleGoogle() {
                   </span>
               </button>
               </div>
-              <small v-if="!passwordsMatch" class="error">Las contraseñas no coinciden.</small>
+              <small v-if="showError('confirmPassword') && confirmPasswordError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ confirmPasswordError }}
+              </small>
             </label>
 
             <div class="terms">
-              <input id="terms" v-model="acceptTerms" type="checkbox" :disabled="loading" />
+              <input id="terms" v-model="acceptTerms" type="checkbox" :disabled="loading" @change="markTouched('terms')" />
               <label for="terms">
                 Acepto los
                 <a href="#" class="link">términos y condiciones</a>
                 y la política de privacidad de PymeScope.
               </label>
             </div>
+            <small v-if="showError('terms') && termsError" class="field-error terms-error">
+              <span class="material-symbols-outlined">error</span>
+              {{ termsError }}
+            </small>
 
-            <button class="btn-primary" type="submit" :disabled="!canSubmit">
+            <button class="btn-primary" type="submit" :disabled="loading">
               <span v-if="loading">Creando cuenta…</span>
               <span v-else>Crear cuenta</span>
             </button>
@@ -387,22 +469,23 @@ async function handleGoogle() {
   letter-spacing: -0.02em;
 }
 
-.alert {
+.form-error {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #991b1b;
-  border-radius: 12px;
-  padding: 10px 12px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #ef4444;
   font-size: 13px;
   font-weight: 700;
   margin: 0 0 14px;
+  animation: shake 0.3s ease;
 }
-.alert span.material-symbols-outlined {
+
+.form-error .material-symbols-outlined {
   font-size: 18px;
-  margin-top: 1px;
+  flex-shrink: 0;
 }
 
 .form {
@@ -480,8 +563,38 @@ input:focus {
   font-weight: 700;
 }
 
+.field-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ef4444;
+  background: #fee2e2;
+  padding: 4px 8px;
+  border-radius: 6px;
+  animation: shake 0.3s ease;
+}
+
+.field-error .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.terms-error {
+  margin-top: -8px;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
 .invalid {
   border-color: rgba(239, 68, 68, 0.6) !important;
+  background: #fef8f8 !important;
 }
 
 .terms {

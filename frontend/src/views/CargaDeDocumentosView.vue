@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+import { useConfirm } from "@/composables/useConfirm";
+import { useToast } from "@/composables/useToast";
 
 import { db, storage, auth } from "@/firebase/config";
 import {
@@ -16,13 +18,16 @@ import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "fi
 
 const route = useRoute();
 const router = useRouter();
-
 const projectId = route.params.id_proyecto;
+const { confirm } = useConfirm();
+const { toast } = useToast();
 
 // Datos del proyecto
 const projectTitle = ref("Cargando...");
 const periodicity = ref("...");
 const isLoadingProject = ref(true);
+const projectStatus = ref("");
+const projectAnalysisMode = ref("");
 
 // Periodos
 const periods = ref([]); // { id, label, balanceFile, resultsFile, hasChanges, hasAnalysis }
@@ -37,7 +42,7 @@ const setInputRef = (el, periodId, type) => {
 
 onMounted(async () => {
   if (!projectId) {
-    alert("No se encontró el ID del proyecto en la URL");
+    toast({ message: "No se encontró el ID del proyecto en la URL.", type: "error" });
     return;
   }
 
@@ -49,6 +54,8 @@ onMounted(async () => {
       const data = docSnap.data();
       projectTitle.value = data.nombre || "Sin Título";
       periodicity.value = data.periodicidad || "Desconocida";
+      projectStatus.value = data.status || "";
+      projectAnalysisMode.value = data.analysis_mode || "";
 
       await loadExistingPeriods();
 
@@ -280,7 +287,7 @@ async function handleFileChange(event, periodId, type) {
   if (!file) return;
 
   if (file.type !== "application/pdf") {
-    alert("Por favor sube solo archivos PDF");
+    toast({ message: "Por favor sube solo archivos PDF.", type: "warning" });
     event.target.value = null;
     return;
   }
@@ -321,7 +328,7 @@ async function handleFileChange(event, periodId, type) {
     }
   } catch (error) {
     console.error("Error subiendo:", error);
-    alert("Error al subir a Firebase.");
+    toast({ message: "Error al subir a Firebase.", type: "error" });
   } finally {
     isUploading.value = false;
     event.target.value = null;
@@ -335,7 +342,13 @@ async function removeDocument(periodId, type) {
   const fileData = type === "balance" ? p.balanceFile : p.resultsFile;
   if (!fileData) return;
 
-  if (!confirm(`¿Eliminar ${fileData.name}?`)) return;
+  const confirmed = await confirm({
+    title: `Eliminar ${fileData.name}`,
+    message: "¿Estás seguro de eliminar este archivo?",
+    confirmText: "Sí, eliminar",
+    variant: "danger",
+  });
+  if (!confirmed) return;
 
   isUploading.value = true;
 
@@ -358,7 +371,14 @@ async function removeDocument(periodId, type) {
 
 async function removePeriod(periodId) {
   const p = periods.value.find((x) => x.id === periodId);
-  if (!p || !confirm(`¿Eliminar ${p.label}?`)) return;
+  if (!p) return;
+  const confirmed = await confirm({
+    title: `Eliminar ${p.label}`,
+    message: "¿Estás seguro de eliminar este periodo y sus archivos?",
+    confirmText: "Sí, eliminar",
+    variant: "danger",
+  });
+  if (!confirmed) return;
 
   isUploading.value = true;
 
@@ -369,10 +389,14 @@ async function removePeriod(periodId) {
     await deleteDoc(doc(db, "proyectos", projectId, "periodos", periodId));
     periods.value = periods.value.filter((period) => period.id !== periodId);
 
-    // re-etiquetar
+    // re-etiquetar solo periodos con nombre genérico (no personalizados)
     for (let i = 0; i < periods.value.length; i++) {
-      periods.value[i].label = `Periodo ${i + 1}`;
-      await savePeriodToFirestore(periods.value[i]);
+      const current = periods.value[i];
+      const isGenericName = /^Periodo \d+$/.test(current.label);
+      if (isGenericName) {
+        current.label = `Periodo ${i + 1}`;
+      }
+      await savePeriodToFirestore(current);
     }
 
     // por si bajó de multi a mono
@@ -499,7 +523,7 @@ async function generateAnalysis() {
     router.push(`${base}/rentabilidad`);
   } catch (error) {
     console.error("Error en el análisis:", error);
-    alert("Hubo un error procesando los documentos.");
+    toast({ message: "Hubo un error procesando los documentos.", type: "error" });
   } finally {
     isProcessing.value = false;
   }
@@ -543,6 +567,16 @@ async function generateAnalysis() {
             <span class="material-symbols-outlined">arrow_back</span>
             <span class="back-text">Volver a proyectos</span>
           </RouterLink>
+
+          <button
+            v-if="projectStatus === 'completo'"
+            class="btn-back-analysis"
+            type="button"
+            @click="router.push(`/proyecto/${projectId}/${projectAnalysisMode === 'multi' ? 'dashboard-multi' : 'dashboard'}/rentabilidad`)"
+          >
+            <span class="material-symbols-outlined">analytics</span>
+            <span class="back-text">Volver al análisis</span>
+          </button>
         </div>
       </div>
     </header>
@@ -634,7 +668,7 @@ async function generateAnalysis() {
                     </ul>
                   </div>
                 </div>
-                <span v-if="isMultiPeriod && (!p.periodDate || p.periodDate.length < 6)" class="required-badge">
+                <span v-if="isMultiPeriod && (!p.periodDate || (periodicity === 'anual' ? p.periodDate.length < 4 : p.periodDate.length < 6))" class="required-badge">
                   * Obligatorio
                 </span>
               </div>
@@ -847,6 +881,7 @@ async function generateAnalysis() {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 16px;
   min-width: 180px;
 }
 
@@ -866,6 +901,25 @@ async function generateAnalysis() {
 }
 .back-text {
   display: none;
+}
+
+.btn-back-analysis {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #22c55e;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 0;
+}
+.btn-back-analysis:hover {
+  color: #16a34a;
+}
+.btn-back-analysis span.material-symbols-outlined {
+  font-size: 20px;
 }
 
 /* Main */

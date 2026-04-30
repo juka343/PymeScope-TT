@@ -126,9 +126,10 @@ async function handleGoogle() {
               <h1>Iniciar sesión</h1>
               <p>Bienvenido de nuevo a tu panel de control</p>
 
-              <p v-if="errorMsg" class="error">
-                {{ errorMsg }}
-              </p>
+              <div v-if="errorMsg" class="form-error">
+                <span class="material-symbols-outlined">error</span>
+                <span>{{ errorMsg }}</span>
+              </div>
             </div>
 
             <form class="form" @submit.prevent="handleSubmit">
@@ -389,11 +390,53 @@ async function handleGoogle() {
   font-size: 13px;
 }
 
-.error {
-  margin: 12px 0 0;
+.form-error {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 14px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fee2e2;
   color: #ef4444;
-  font-weight: 900;
   font-size: 13px;
+  font-weight: 700;
+  animation: shake 0.3s ease;
+}
+
+.form-error .material-symbols-outlined {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.field-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ef4444;
+  background: #fee2e2;
+  padding: 4px 8px;
+  border-radius: 6px;
+  animation: shake 0.3s ease;
+}
+
+.field-error .material-symbols-outlined {
+  font-size: 14px;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+.invalid {
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  background: #fef8f8 !important;
 }
 
 .form {

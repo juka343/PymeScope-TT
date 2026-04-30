@@ -3,9 +3,11 @@ import { ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useToast } from "@/composables/useToast";
 
 const router = useRouter();
 const route = useRoute();
+const { toast } = useToast();
 
 const loading = ref(true);
 const recommendations = ref([
@@ -282,7 +284,7 @@ function goToIncomeStatementDetail() {
   if (resultadosPdfUrl.value) {
     window.open(resultadosPdfUrl.value, "_blank");
   } else {
-    alert("No se encontró el documento PDF para este periodo.");
+    toast({ message: "No se encontró el documento PDF para este periodo.", type: "warning" });
   }
 }
 
