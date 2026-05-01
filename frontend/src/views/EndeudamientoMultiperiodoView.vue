@@ -173,9 +173,7 @@ const generateDashboardData = () => {
       activo: currencyFmt.format(crudos.activo_total || 0),
       apalancamiento: dataApalancamiento[i].toFixed(2),
       cobertura: `${dataCobertura[i].toFixed(2)}x`,
-      variacion: varTrimestral > 0 ? `+${varTrimestral}` : varTrimestral,
       highlight: i === periods.length - 1,
-      variationClass: varTrimestral > 0 ? "up" : (varTrimestral < 0 ? "down" : ""),
     };
   });
 };
@@ -576,7 +574,6 @@ onMounted(() => {
               <th class="right">Activo Total</th>
               <th class="center" style="text-align: center;">Apalancamiento</th>
               <th class="center" style="text-align: center;">Cobertura Intereses</th>
-              <th class="right">Var. trimestral</th>
             </tr>
           </thead>
           <tbody>
@@ -586,7 +583,6 @@ onMounted(() => {
               <td class="right" :class="{ strong: r.highlight }">{{ r.activo }}</td>
               <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.apalancamiento }}</td>
               <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.cobertura }}</td>
-              <td class="right" :class="[r.variationClass, { strong: r.highlight }]">{{ r.variacion }}</td>
             </tr>
           </tbody>
         </table>
@@ -623,7 +619,7 @@ onMounted(() => {
     </section>
 
     <footer class="foot">
-      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
+      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.</p>
     </footer>
   </div>
   <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">

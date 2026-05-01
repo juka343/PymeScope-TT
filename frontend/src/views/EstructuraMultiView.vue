@@ -644,7 +644,7 @@ onMounted(() => {
     </section>
 
     <footer class="foot">
-      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
+      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.</p>
     </footer>
   </div>
   <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">

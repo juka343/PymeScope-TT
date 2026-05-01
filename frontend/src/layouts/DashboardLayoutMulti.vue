@@ -1,19 +1,25 @@
 <script setup>
+import { ref } from "vue";
 import { RouterView } from "vue-router";
-import DashboardTopbar from "@/components/app/DashboardTopbar.vue";
-import DashboardSidebar from "@/components/app/DashboardSidebar.vue";
 import DashboardTopbarMulti from "@/components/app/DashboardTopbarMulti.vue";
+import DashboardSidebar from "@/components/app/DashboardSidebar.vue";
+
+const sidebarOpen = ref(false);
 </script>
 
 <template>
   <div class="dashboard-layout">
     <!-- TOPBAR -->
-    <DashboardTopbarMulti />
+    <DashboardTopbarMulti @toggle-sidebar="sidebarOpen = !sidebarOpen" />
 
     <!-- BODY -->
     <div class="dashboard-body">
       <!-- SIDEBAR -->
-      <DashboardSidebar mode="multi"/>
+      <DashboardSidebar
+        mode="multi"
+        :mobile-open="sidebarOpen"
+        @close="sidebarOpen = false"
+      />
 
       <!-- CONTENT -->
       <main class="dashboard-content">

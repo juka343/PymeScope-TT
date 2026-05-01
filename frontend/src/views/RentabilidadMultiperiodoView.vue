@@ -710,7 +710,7 @@ onMounted(() => {
     </section>
 
     <footer class="foot">
-      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
+      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.</p>
     </footer>
   </div>
 

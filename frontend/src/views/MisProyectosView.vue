@@ -2,6 +2,8 @@
 import { onBeforeUnmount, onMounted, ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { ref as storageRef, deleteObject } from "firebase/storage";
+import { useConfirm } from "@/composables/useConfirm";
+import { useToast } from "@/composables/useToast";
 
 import { auth, db, storage } from "@/firebase/config";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -18,6 +20,8 @@ import {
 } from "firebase/firestore";
 
 const router = useRouter();
+const { confirm } = useConfirm();
+const { toast } = useToast();
 
 // ====== AUTH UI ======
 const user = ref(null);
@@ -92,12 +96,12 @@ const creating = ref(false);
 async function handleCreate() {
   const currentUser = auth.currentUser;
   if (!currentUser) {
-    alert("Debes iniciar sesión para crear un proyecto");
+    toast({ message: "Debes iniciar sesión para crear un proyecto.", type: "warning" });
     return;
   }
 
   if (!projectName.value.trim()) {
-    alert("El nombre del proyecto es obligatorio");
+    toast({ message: "El nombre del proyecto es obligatorio.", type: "warning" });
     return;
   }
 
@@ -132,7 +136,7 @@ async function handleCreate() {
     router.push(`/proyecto/${projectId}/cargar`);
   } catch (error) {
     console.error("Error creando proyecto:", error);
-    alert("Error al crear el proyecto. Intenta de nuevo.");
+    toast({ message: "Error al crear el proyecto. Intenta de nuevo.", type: "error" });
   } finally {
     creating.value = false;
   }
@@ -205,9 +209,13 @@ function goToAnalysis(p) {
 const deleting = ref(null);
 
 async function removeProject(id) {
-  const confirmed = confirm(
-    "¿Estás seguro de eliminar este proyecto y TODOS sus archivos?\n\nEsta acción no se puede deshacer."
-  );
+  const confirmed = await confirm({
+    title: "Eliminar proyecto",
+    message: "¿Estás seguro de eliminar este proyecto y TODOS sus archivos? Esta acción no se puede deshacer.",
+    confirmText: "Sí, eliminar",
+    cancelText: "Cancelar",
+    variant: "danger",
+  });
   if (!confirmed) return;
 
   deleting.value = id;
@@ -247,7 +255,7 @@ async function removeProject(id) {
     projects.value = projects.value.filter((p) => p.id !== id);
   } catch (error) {
     console.error("Error eliminando proyecto:", error);
-    alert("Error al eliminar el proyecto. Intenta de nuevo.");
+    toast({ message: "Error al eliminar el proyecto. Intenta de nuevo.", type: "error" });
   } finally {
     deleting.value = null;
   }
