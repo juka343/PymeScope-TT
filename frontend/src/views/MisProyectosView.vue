@@ -76,7 +76,37 @@ const periodicity = ref("mensual");
 const companyName = ref("");
 const notes = ref("");
 
+// ===== Validaciones =====
+const touched = ref({
+  projectName: false,
+  companyName: false,
+});
+const submitAttempted = ref(false);
+
+function markTouched(field) {
+  touched.value[field] = true;
+}
+
+const projectNameError = computed(() => {
+  if (!projectName.value.trim()) return "Este campo es obligatorio.";
+  return "";
+});
+
+const companyNameError = computed(() => {
+  if (!companyName.value.trim()) return "Este campo es obligatorio.";
+  return "";
+});
+
+function showError(field) {
+  return touched.value[field] || submitAttempted.value;
+}
+
+const isFormValid = computed(() => {
+  return !projectNameError.value && !companyNameError.value;
+});
+
 function openModal() {
+  resetForm();
   isModalOpen.value = true;
 }
 function closeModal() {
@@ -87,6 +117,8 @@ function resetForm() {
   periodicity.value = "mensual";
   companyName.value = "";
   notes.value = "";
+  touched.value = { projectName: false, companyName: false };
+  submitAttempted.value = false;
 }
 function handleCancel() {
   closeModal();
@@ -100,8 +132,8 @@ async function handleCreate() {
     return;
   }
 
-  if (!projectName.value.trim()) {
-    toast({ message: "El nombre del proyecto es obligatorio.", type: "warning" });
+  submitAttempted.value = true;
+  if (!isFormValid.value) {
     return;
   }
 
@@ -430,9 +462,15 @@ async function removeProject(id) {
                 v-model.trim="projectName"
                 type="text"
                 placeholder="Ej. Análisis financiero 2024"
+                :class="{ invalid: showError('projectName') && projectNameError }"
+                @blur="markTouched('projectName')"
                 required
               />
-              <small>Este nombre te ayudará a identificar tu análisis</small>
+              <small v-if="showError('projectName') && projectNameError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ projectNameError }}
+              </small>
+              <small v-else>Este nombre te ayudará a identificar tu análisis</small>
             </div>
 
             <div class="field">
@@ -460,14 +498,21 @@ async function removeProject(id) {
 
             <div class="field">
               <label for="company-name">
-                Nombre de la empresa <span class="opt">(opcional)</span>
+                Nombre de la empresa <span class="req">*</span>
               </label>
               <input
                 id="company-name"
                 v-model.trim="companyName"
                 type="text"
                 placeholder="Ej. Pyme Comercial S.A. de C.V."
+                :class="{ invalid: showError('companyName') && companyNameError }"
+                @blur="markTouched('companyName')"
+                required
               />
+              <small v-if="showError('companyName') && companyNameError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ companyNameError }}
+              </small>
             </div>
 
             <div class="field">
@@ -882,6 +927,39 @@ async function removeProject(id) {
 .modal-actions { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f1f5f9; display: flex; gap: 10px; flex-direction: column; }
 .btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 16px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; font-weight: 900; font-size: 14px; }
 .btn-secondary:hover { background: #f8fafc; }
+
+/* Validaciones */
+.invalid {
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  background: #fef8f8 !important;
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ef4444;
+  background: #fee2e2;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 6px;
+  animation: shake 0.3s ease;
+}
+
+.field-error .material-symbols-outlined {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
 
 /* Responsive */
 @media (min-width: 640px) {

@@ -33,7 +33,7 @@ const parseVal = (val) => {
   return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
 };
 
-const fetchPeriods = async () => {
+const fetchDashboardData = async () => {
   try {
     if (!projectId) return;
 
@@ -42,13 +42,13 @@ const fetchPeriods = async () => {
 
     let loaded = [];
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.analisis_estructura) {
+      const data = docSnap.data();
+      if (data.analisis_estructura) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          estructura: d.analisis_estructura || { datos_crudos: {}, kpis: [] },
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          estructura: data.analisis_estructura || { datos_crudos: {}, kpis: [] },
         });
       }
     });
@@ -56,6 +56,14 @@ const fetchPeriods = async () => {
     loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
     rawPeriods.value = loaded;
     
+    // ====== LOG PARA DEMOSTRAR LOS DATOS HISTÓRICOS A LA IA ======
+    const kpisParaIA = loaded.map(p => ({
+      periodo: p.label,
+      kpis: p.estructura.kpis
+    }));
+    console.log("📊 KPIs DE ESTRUCTURA FINANCIERA (MULTIPERIODO):", kpisParaIA);
+    // =============================================================
+
     if (loaded.length > 0) {
       generateDashboardData();
     }
@@ -330,7 +338,7 @@ const recommendationList = computed(() => {
 
 
 onMounted(() => {
-  fetchPeriods();
+  fetchDashboardData();
 });
 </script>
 

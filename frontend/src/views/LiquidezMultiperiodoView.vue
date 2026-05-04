@@ -31,7 +31,7 @@ const parseVal = (val) => {
   return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
 };
 
-const fetchPeriods = async () => {
+const fetchDashboardData = async () => {
   try {
     if (!projectId) return;
 
@@ -40,13 +40,13 @@ const fetchPeriods = async () => {
 
     let loaded = [];
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.liquidez || d.analisis_liquidez) {
+      const data = docSnap.data();
+      if (data.liquidez || data.analisis_liquidez) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          liquidez: d.liquidez || d.analisis_liquidez || { datos_crudos: {}, kpis: [], desglose_activos: [], desglose_pasivos: [] },
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          liquidez: data.liquidez || data.analisis_liquidez || { datos_crudos: {}, kpis: [], desglose_activos: [], desglose_pasivos: [] },
         });
       }
     });
@@ -54,6 +54,14 @@ const fetchPeriods = async () => {
     loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
     rawPeriods.value = loaded;
     
+    // ====== LOG PARA DEMOSTRAR LOS DATOS HISTÓRICOS A LA IA ======
+    const kpisParaIA = loaded.map(p => ({
+      periodo: p.label,
+      kpis: p.liquidez.kpis
+    }));
+    console.log("📊 KPIs DE LIQUIDEZ (MULTIPERIODO):", kpisParaIA);
+    // =============================================================
+
     if (loaded.length > 0) {
       generateDashboardData();
     }
@@ -307,7 +315,7 @@ const pasivosCirculantes = computed(() => {
 
 
 onMounted(() => {
-  fetchPeriods();
+  fetchDashboardData();
 });
 </script>
 

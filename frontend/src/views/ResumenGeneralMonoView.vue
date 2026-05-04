@@ -74,12 +74,12 @@ const fetchDashboardData = async () => {
     let data_list = [];
 
     snapshot.forEach((docSnap) => {
-      const pData = docSnap.data();
-      if (pData.rentabilidad || pData.analisis_rentabilidad) {
+      const data = docSnap.data();
+      if (data.rentabilidad || data.analisis_rentabilidad) {
         data_list.push({
           id: docSnap.id,
-          label: pData.label || docSnap.id,
-          data: pData,
+          label: data.label || docSnap.id,
+          data: data,
         });
       }
     });
@@ -100,6 +100,16 @@ const fetchDashboardData = async () => {
 
       // Capturar la URL del PDF del estado de resultados
       resultadosPdfUrl.value = d.resultsFile?.url || d.resultados_url || null;
+
+      // ====== LOG PARA DEMOSTRAR LOS DATOS MONOPERIODO A LA IA ======
+      console.log("📊 KPIs DE TODOS LOS MÓDULOS (MONOPERIODO):", {
+        rentabilidad: dashboardData.rentabilidad.kpis,
+        liquidez: dashboardData.liquidez.kpis,
+        endeudamiento: dashboardData.endeudamiento.kpis,
+        estructura: dashboardData.estructura.kpis,
+        rotacion: dashboardData.rotacion.kpis
+      });
+      // =============================================================
 
       mapDataToDashboard(dashboardData);
       periodLabel.value = dashboardData.periodo ? `Periodo: ${dashboardData.periodo}` : "Periodo Actual";

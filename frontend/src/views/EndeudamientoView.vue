@@ -39,7 +39,7 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
-onMounted(async () => {
+const fetchDashboardData = async () => {
   if (!projectId) return;
 
   try {
@@ -61,6 +61,10 @@ onMounted(async () => {
         ultimosKpis = analisis.kpis;
         ultimoPasivo = crudos.pasivo_total || 0;
         ultimoCapital = crudos.capital_social || 0;
+
+        // ====== LOG PARA DEMOSTRAR LOS DATOS MONOPERIODO A LA IA ======
+        console.log("📊 KPIs DE ENDEUDAMIENTO (MONOPERIODO):", analisis.kpis);
+        // =============================================================
 
         rowsTemp.push({
           period: data.label || docSnap.id,
@@ -92,6 +96,10 @@ onMounted(async () => {
   } catch (error) {
     console.error("Error al cargar los datos de endeudamiento:", error);
   }
+};
+
+onMounted(() => {
+  fetchDashboardData();
 });
 </script>
 

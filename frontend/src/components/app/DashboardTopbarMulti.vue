@@ -42,9 +42,9 @@ const fetchProjectData = async () => {
     let pFreq = "Desconocida";
 
     if (projectSnap.exists()) {
-      const pData = projectSnap.data();
-      pName = pData.nombre || pName;
-      pFreq = pData.periodicidad || pFreq;
+      const data = projectSnap.data();
+      pName = data.nombre || pName;
+      pFreq = data.periodicidad || pFreq;
     }
 
     // 2. Obtener la colección de periodos para calcular Rangos y Base
