@@ -31,7 +31,7 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
-onMounted(async () => {
+const fetchDashboardData = async () => {
   if (!projectId) return;
 
   try {
@@ -49,6 +49,10 @@ onMounted(async () => {
         const crudos = analisis.datos_crudos;
 
         ultimosKpis = analisis.kpis;
+
+        // ====== LOG PARA DEMOSTRAR LOS DATOS MONOPERIODO A LA IA ======
+        console.log("📊 KPIs DE ESTRUCTURA FINANCIERA (MONOPERIODO):", analisis.kpis);
+        // =============================================================
 
         // "ACTIVO TOTAL", "PASIVO TOTAL", "CAPITAL SOCIAL", "CAPITAL CONTABLE", "PASIVO FIJO", "ACTIVO FIJO"
         rowsTemp.push({
@@ -77,6 +81,10 @@ onMounted(async () => {
   } catch (error) {
     console.error("Error al cargar los datos de estructura financiera:", error);
   }
+};
+
+onMounted(() => {
+  fetchDashboardData();
 });
 </script>
 

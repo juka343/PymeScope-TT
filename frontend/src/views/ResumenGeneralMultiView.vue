@@ -60,24 +60,28 @@ const fetchDashboardData = async () => {
 
     let loaded = [];
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.analisis_rentabilidad || d.rentabilidad) {
+      const data = docSnap.data();
+      if (data.analisis_rentabilidad || data.rentabilidad) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          resultados_url: d.resultsFile?.url || null, // Guardamos la URL del PDF
-          rentabilidad: d.analisis_rentabilidad || d.rentabilidad || { datos_crudos: {}, kpis: [] },
-          liquidez: d.analisis_liquidez || d.liquidez || { datos_crudos: {}, kpis: [] },
-          endeudamiento: d.analisis_endeudamiento || d.endeudamiento || { datos_crudos: {}, kpis: [] },
-          rotacion: d.analisis_rotacion || d.rotacion || { datos_crudos: {}, kpis: [] },
-          estructura: d.analisis_estructura || d.estructura || { datos_crudos: {}, kpis: [] },
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          resultados_url: data.resultsFile?.url || null, // Guardamos la URL del PDF
+          rentabilidad: data.analisis_rentabilidad || data.rentabilidad || { datos_crudos: {}, kpis: [] },
+          liquidez: data.analisis_liquidez || data.liquidez || { datos_crudos: {}, kpis: [] },
+          endeudamiento: data.analisis_endeudamiento || data.endeudamiento || { datos_crudos: {}, kpis: [] },
+          rotacion: data.analisis_rotacion || data.rotacion || { datos_crudos: {}, kpis: [] },
+          estructura: data.analisis_estructura || data.estructura || { datos_crudos: {}, kpis: [] },
         });
       }
     });
 
     loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
     rawPeriods.value = loaded;
+
+    // ====== LOG PARA DEMOSTRAR LOS DATOS HISTÓRICOS A LA IA ======
+    console.log("📊 DATOS HISTÓRICOS COMPLETOS DE TODOS LOS MÓDULOS (IDEAL PARA LA IA):", JSON.parse(JSON.stringify(loaded)));
+    // =============================================================
 
     if (loaded.length > 0) {
       generateDashboardData();

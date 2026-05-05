@@ -34,7 +34,7 @@ const parseVal = (val) => {
   return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
 };
 
-const fetchPeriods = async () => {
+const fetchDashboardData = async () => {
   try {
     if (!projectId) return;
 
@@ -43,23 +43,31 @@ const fetchPeriods = async () => {
 
     let loaded = [];
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.rentabilidad || d.analisis_rentabilidad) {
+      const data = docSnap.data();
+      if (data.rentabilidad || data.analisis_rentabilidad) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
           rentabilidad:
-            d.analisis_rentabilidad ||
-            d.rentabilidad || { datos_crudos: {}, kpis: [] },
-          rotacion: d.analisis_rotacion || { datos_crudos: {} },
-          endeudamiento: d.analisis_endeudamiento || { datos_crudos: {} },
+            data.analisis_rentabilidad ||
+            data.rentabilidad || { datos_crudos: {}, kpis: [] },
+          rotacion: data.analisis_rotacion || { datos_crudos: {} },
+          endeudamiento: data.analisis_endeudamiento || { datos_crudos: {} },
         });
       }
     });
 
     loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
     rawPeriods.value = loaded;
+
+    // ====== LOG PARA DEMOSTRAR LOS DATOS HISTÓRICOS A LA IA ======
+    const kpisParaIA = loaded.map(p => ({
+      periodo: p.label,
+      kpis: p.rentabilidad.kpis
+    }));
+    console.log("📊 KPIs DE RENTABILIDAD (MULTIPERIODO):", kpisParaIA);
+    // =============================================================
 
     if (loaded.length > 0) {
       generateDashboardData();
@@ -394,7 +402,7 @@ const margenesBreakdown = computed(() => {
 });
 
 onMounted(() => {
-  fetchPeriods();
+  fetchDashboardData();
 });
 </script>
 

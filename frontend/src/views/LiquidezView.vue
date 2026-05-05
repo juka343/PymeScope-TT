@@ -33,7 +33,7 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
-onMounted(async () => {
+const fetchDashboardData = async () => {
   if (!projectId) return;
 
   try {
@@ -53,6 +53,10 @@ onMounted(async () => {
 
         // Guardamos las 3 tarjetas blancas superiores
         ultimosKpis = analisis.kpis;
+
+        // ====== LOG PARA DEMOSTRAR LOS DATOS MONOPERIODO A LA IA ======
+        console.log("📊 KPIs DE LIQUIDEZ (MONOPERIODO):", analisis.kpis);
+        // =============================================================
 
         // Armamos la fila mapeando exactamente a lo que pide tu HTML (r.activo, r.pasivo, r.capital)
         rowsTemp.push({
@@ -78,6 +82,10 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
+};
+
+onMounted(() => {
+  fetchDashboardData();
 });
 </script>
 

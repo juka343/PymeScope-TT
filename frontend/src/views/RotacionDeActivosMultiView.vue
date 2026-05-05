@@ -32,7 +32,7 @@ const parseVal = (val) => {
   return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
 };
 
-const fetchPeriods = async () => {
+const fetchDashboardData = async () => {
   try {
     if (!projectId) return;
 
@@ -41,15 +41,15 @@ const fetchPeriods = async () => {
 
     let loaded = [];
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.analisis_rotacion) {
+      const data = docSnap.data();
+      if (data.analisis_rotacion) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          rotacion: d.analisis_rotacion || { datos_crudos: {}, kpis: [] },
-          liquidez: d.analisis_liquidez || { datos_crudos: {} },
-          estructura: d.analisis_estructura || { datos_crudos: {} },
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          rotacion: data.analisis_rotacion || { datos_crudos: {}, kpis: [] },
+          liquidez: data.analisis_liquidez || { datos_crudos: {} },
+          estructura: data.analisis_estructura || { datos_crudos: {} },
         });
       }
     });
@@ -57,6 +57,14 @@ const fetchPeriods = async () => {
     loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
     rawPeriods.value = loaded;
     
+    // ====== LOG PARA DEMOSTRAR LOS DATOS HISTÓRICOS A LA IA ======
+    const kpisParaIA = loaded.map(p => ({
+      periodo: p.label,
+      kpis: p.rotacion.kpis
+    }));
+    console.log("📊 KPIs DE ROTACIÓN DE ACTIVOS (MULTIPERIODO):", kpisParaIA);
+    // =============================================================
+
     if (loaded.length > 0) {
       generateDashboardData();
     }
@@ -367,7 +375,7 @@ const recommendationList = computed(() => {
 
 
 onMounted(() => {
-  fetchPeriods();
+  fetchDashboardData();
 });
 </script>
 

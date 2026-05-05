@@ -16,14 +16,6 @@ const centroDeAprendizaje = () => {
 const kpis = ref([]);
 const periodRows = ref([]);
 
-const capitalPie = ref({
-  totalLabel: "$0",
-  pasivoPct: 0,
-  capPct: 0,
-  pasivo: "$0",
-  cap: "$0",
-});
-
 const interpretation = ref(
   "Los indicadores de endeudamiento muestran la dependencia de la empresa frente a terceros y la suficiencia del capital propio."
 );
@@ -39,7 +31,7 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
-onMounted(async () => {
+const fetchDashboardData = async () => {
   if (!projectId) return;
 
   try {
@@ -48,8 +40,6 @@ onMounted(async () => {
 
     const rowsTemp = [];
     let ultimosKpis = null;
-    let ultimoPasivo = 0;
-    let ultimoCapital = 0;
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
@@ -59,8 +49,10 @@ onMounted(async () => {
         const crudos = analisis.datos_crudos;
 
         ultimosKpis = analisis.kpis;
-        ultimoPasivo = crudos.pasivo_total || 0;
-        ultimoCapital = crudos.capital_social || 0;
+
+        // ====== LOG PARA DEMOSTRAR LOS DATOS MONOPERIODO A LA IA ======
+        console.log("📊 KPIs DE ENDEUDAMIENTO (MONOPERIODO):", analisis.kpis);
+        // =============================================================
 
         rowsTemp.push({
           period: data.label || docSnap.id,
@@ -78,20 +70,13 @@ onMounted(async () => {
     }
     periodRows.value = rowsTemp;
 
-    const total = ultimoPasivo + ultimoCapital;
-    if (total > 0) {
-      capitalPie.value = {
-        totalLabel: formatCurrency(total),
-        pasivoPct: Math.round((ultimoPasivo / total) * 100),
-        capPct: Math.round((ultimoCapital / total) * 100),
-        pasivo: formatCurrency(ultimoPasivo),
-        cap: formatCurrency(ultimoCapital)
-      };
-    }
-
   } catch (error) {
     console.error("Error al cargar los datos de endeudamiento:", error);
   }
+};
+
+onMounted(() => {
+  fetchDashboardData();
 });
 </script>
 
@@ -162,55 +147,6 @@ onMounted(async () => {
         análisis.
       </p>
     </div>
-
-    <!-- COMPOSICION DEL CAPITAL -->
-    <section class="panel pad">
-      <div class="cap-head">
-        <div>
-          <h3>Composición del Capital</h3>
-          <p>Estructura de capital para el periodo actual</p>
-        </div>
-      </div>
-
-      <div class="cap-body">
-        <div
-          class="pie"
-          :style="{
-            background: `conic-gradient(
-              #60a5fa 0% ${capitalPie.pasivoPct}%,
-              #34d399 ${capitalPie.pasivoPct}% 100%
-            )`,
-          }"
-        >
-          <div class="pie-inner">
-            <span class="pie-label">Suma</span>
-            <span class="pie-total">{{ capitalPie.totalLabel }}</span>
-          </div>
-        </div>
-
-        <div class="legend">
-          <div class="legend-item">
-            <span class="dot-color blue"></span>
-            <div class="legend-text">
-              <span class="legend-title">
-                Pasivo Total <span class="pct">{{ capitalPie.pasivoPct }}%</span>
-              </span>
-              <span class="legend-value">{{ capitalPie.pasivo }}</span>
-            </div>
-          </div>
-
-          <div class="legend-item">
-            <span class="dot-color green"></span>
-            <div class="legend-text">
-              <span class="legend-title">
-                Capital Contable <span class="pct">{{ capitalPie.capPct }}%</span>
-              </span>
-              <span class="legend-value">{{ capitalPie.cap }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <!-- INTERPRETACION + RECS -->
     <section class="grid-2">
@@ -477,115 +413,6 @@ onMounted(async () => {
   color: #299de0;
 }
 
-/* COMPOSICION DEL CAPITAL */
-.cap-head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 900;
-}
-.cap-head p {
-  margin: 6px 0 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: #507c95;
-}
-
-.cap-body {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  align-items: center;
-  justify-content: center;
-  padding-top: 12px;
-}
-
-.pie {
-  width: 224px;
-  height: 224px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 10px rgba(0, 0, 0, 0.02);
-  display: grid;
-  place-items: center;
-}
-
-.pie-inner {
-  width: 140px;
-  height: 140px;
-  background: #ffffff;
-  border-radius: 999px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.pie-label {
-  font-size: 11px;
-  font-weight: 900;
-  color: #507c95;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.pie-total {
-  margin-top: 4px;
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.legend {
-  width: 100%;
-  border-top: 1px solid #f1f5f9;
-  padding-top: 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px 26px;
-  justify-content: center;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.dot-color {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-.dot-color.blue {
-  background: #60a5fa;
-}
-.dot-color.sky {
-  background: #bfdbfe;
-}
-.dot-color.green {
-  background: #34d399;
-}
-
-.legend-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.legend-title {
-  font-size: 13px;
-  font-weight: 800;
-}
-.pct {
-  margin-left: 6px;
-  color: #9ca3af;
-  font-weight: 700;
-}
-.legend-value {
-  font-size: 12px;
-  font-weight: 800;
-  color: #507c95;
-}
-
 /* INTERPRETACION + RECS */
 .grid-2 {
   display: grid;
@@ -713,9 +540,6 @@ onMounted(async () => {
   }
   .grid-2 {
     grid-template-columns: repeat(2, 1fr);
-  }
-  .cap-body {
-    gap: 22px;
   }
 }
 </style>
