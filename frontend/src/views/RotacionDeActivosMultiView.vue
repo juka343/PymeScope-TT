@@ -3,10 +3,21 @@ import { computed, ref, onMounted } from "vue";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { useRoute, useRouter } from "vue-router";
+import { useFinancialAiBlock } from "@/composables/useFinancialAiBlock";
 
 const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id_proyecto;
+
+const {
+  loadAiResult,
+  interpretationText,
+  mainFindings,
+  recommendationItems,
+  alertItems,
+  aiBlockLoading,
+  aiBlockError,
+} = useFinancialAiBlock("rotacion");
 
 const centroDeAprendizaje = () => {
   const routeData = router.resolve({ name: "teoriaRotacion" });
@@ -28,8 +39,8 @@ const currencyFmt = new Intl.NumberFormat("es-MX", {
 
 const parseVal = (val) => {
   if (!val) return 0;
-  if (typeof val === 'number') return val;
-  return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+  if (typeof val === "number") return val;
+  return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
 };
 
 const fetchDashboardData = async () => {
@@ -42,28 +53,37 @@ const fetchDashboardData = async () => {
     let loaded = [];
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      if (data.analisis_rotacion) {
+
+      if (data.analisis_rotacion || data.rotacion) {
         loaded.push({
           id: docSnap.id,
           label: data.label || "Periodo",
           periodDate: data.periodDate || data.label,
-          rotacion: data.analisis_rotacion || { datos_crudos: {}, kpis: [] },
-          liquidez: data.analisis_liquidez || { datos_crudos: {} },
-          estructura: data.analisis_estructura || { datos_crudos: {} },
+          rotacion:
+            data.analisis_rotacion ||
+            data.rotacion || { datos_crudos: {}, kpis: [] },
+          liquidez:
+            data.analisis_liquidez ||
+            data.liquidez || { datos_crudos: {} },
+          estructura:
+            data.analisis_estructura ||
+            data.estructura || { datos_crudos: {} },
         });
       }
     });
 
-    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    loaded.sort((a, b) =>
+      String(a.periodDate).localeCompare(String(b.periodDate))
+    );
+
     rawPeriods.value = loaded;
-    
-    // ====== LOG PARA DEMOSTRAR LOS DATOS HISTÓRICOS A LA IA ======
-    const kpisParaIA = loaded.map(p => ({
+
+    const kpisParaIA = loaded.map((p) => ({
       periodo: p.label,
-      kpis: p.rotacion.kpis
+      kpis: p.rotacion.kpis,
     }));
+
     console.log("📊 KPIs DE ROTACIÓN DE ACTIVOS (MULTIPERIODO):", kpisParaIA);
-    // =============================================================
 
     if (loaded.length > 0) {
       generateDashboardData();
@@ -77,29 +97,43 @@ const fetchDashboardData = async () => {
 
 const generateDashboardData = () => {
   const periods = rawPeriods.value;
-  const labels = periods.map(p => p.label);
+  const labels = periods.map((p) => p.label);
 
   const findKpi = (kpis, keyword) => {
     if (!kpis) return 0;
-    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
     const val = item ? parseVal(item.value) : 0;
     return isNaN(val) ? 0 : val;
   };
 
-  // Nueva función para rescatar el status original de Python
   const getKpiStatus = (kpis, keyword) => {
     if (!kpis) return "warn";
-    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
     return item ? item.status : "warn";
   };
 
-  const dataCobrar = periods.map(p => findKpi(p.rotacion.kpis, "cartera")); // En tu backend se llama "Rotación de la Cartera"
-  const dataRecaudo = periods.map(p => findKpi(p.rotacion.kpis, "recaudo"));
-  const dataInventarios = periods.map(p => findKpi(p.rotacion.kpis, "inventarios"));
-  const dataFijos = periods.map(p => findKpi(p.rotacion.kpis, "fijos"));
-  const dataActivosTotales = periods.map(p => findKpi(p.rotacion.kpis, "totales"));
+  const dataCobrar = periods.map((p) => findKpi(p.rotacion.kpis, "cartera"));
+  const dataRecaudo = periods.map((p) => findKpi(p.rotacion.kpis, "recaudo"));
+  const dataInventarios = periods.map((p) =>
+    findKpi(p.rotacion.kpis, "inventarios")
+  );
+  const dataFijos = periods.map((p) => findKpi(p.rotacion.kpis, "fijos"));
+  const dataActivosTotales = periods.map((p) =>
+    findKpi(p.rotacion.kpis, "totales")
+  );
 
-  function buildChart(values, title, subtitle, legendLabel, type = "times", backendStatus = "warn") {
+  function buildChart(
+    values,
+    title,
+    subtitle,
+    legendLabel,
+    type = "times",
+    backendStatus = "warn"
+  ) {
     const maxFallback = type === "days" ? 30 : 1;
     const maxVal = Math.max(...values, maxFallback);
     let minVal = Math.min(...values, 0);
@@ -116,7 +150,7 @@ const generateDashboardData = () => {
       step = 0.2;
       if (rawRange > 2) step = 0.5;
       if (rawRange > 5) step = 1;
-      if (rawRange > 15) step = 5; // Para rotaciones muy altas
+      if (rawRange > 15) step = 5;
     }
 
     const yMin = Math.floor(minVal / step) * step;
@@ -140,28 +174,40 @@ const generateDashboardData = () => {
     const points = values.map((val, i) => {
       const x = values.length > 1 ? 100 + i * xStep : 400;
       const y = 230 - ((val - yMin) / finalRange) * 160;
-      return { x, y, label: labels[i], bold: i === values.length - 1, value: val, type };
+
+      return {
+        x,
+        y,
+        label: labels[i],
+        bold: i === values.length - 1,
+        value: val,
+        type,
+      };
     });
 
     const lastVal = values[values.length - 1];
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     const delta = lastVal - prevVal;
 
-    // Lógica de colores del delta (Recaudo es mejor si baja, los demás son mejores si suben)
     let isPositive = delta >= 0;
-    if (type === "days") isPositive = delta <= 0; 
-    
-    // === ELIMINAMOS LA LÓGICA DE ESTATUS DE VUE Y USAMOS LA DE PYTHON ===
-    let status = backendStatus;
+    if (type === "days") isPositive = delta <= 0;
 
     return {
-      // Si el valor es 0 (y no son días de recaudo), mostramos N/A. Si no, mostramos el número normal.
-      kpiValue: (lastVal === 0 && type !== "days") ? "N/A" : (type === "days" ? `${Math.round(lastVal)} días` : `${lastVal.toFixed(2)}x`),
-      status, // <-- Vue ahora obedece ciegamente a Python
+      kpiValue:
+        lastVal === 0 && type !== "days"
+          ? "N/A"
+          : type === "days"
+            ? `${Math.round(lastVal)} días`
+            : `${lastVal.toFixed(2)}x`,
+      status: backendStatus,
       deltaStyle: isPositive ? "positive" : "negative",
       deltaIcon: delta >= 0 ? "trending_up" : "trending_down",
-      deltaValue: type === "days" ? `${delta > 0 ? "+" : ""}${Math.round(delta)} días` : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}`,
-      deltaNote: values.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      deltaValue:
+        type === "days"
+          ? `${delta > 0 ? "+" : ""}${Math.round(delta)} días`
+          : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}`,
+      deltaNote:
+        values.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
       chartTitle: title,
       chartSubtitle: subtitle,
       legendLabel,
@@ -171,19 +217,74 @@ const generateDashboardData = () => {
     };
   }
 
-  const lastP = periods[periods.length - 1]; // Extraemos el último mes analizado
+  const lastP = periods[periods.length - 1];
 
   metrics.value = [
-    { key: "cobrar", label: "Rotación de Cuentas por Cobrar", ...buildChart(dataCobrar, "Evolución de Rotación de CxC", "Velocidad con la que la empresa recupera su cartera", "Rotación CxC", "times", getKpiStatus(lastP.rotacion.kpis, "cartera")) },
-    { key: "recaudo", label: "Periodo Promedio de Recaudo", ...buildChart(dataRecaudo, "Evolución del Periodo Promedio de Recaudo", "Tiempo promedio que tarda la empresa en cobrar", "Periodo de Cobro", "days", getKpiStatus(lastP.rotacion.kpis, "recaudo")) },
-    { key: "inventarios", label: "Rotación de Inventarios", ...buildChart(dataInventarios, "Evolución de Rotación de Inventarios", "Frecuencia con la que el inventario se convierte en ventas", "Rotación Inventarios", "times", getKpiStatus(lastP.rotacion.kpis, "inventarios")) },
-    { key: "fijos", label: "Rotación de Activos Fijos", ...buildChart(dataFijos, "Evolución de Rotación de Activos Fijos", "Nivel de aprovechamiento de la infraestructura productiva", "Activos Fijos", "times", getKpiStatus(lastP.rotacion.kpis, "fijos")) },
-    { key: "activosTotales", label: "Rotación de Activos Totales", ...buildChart(dataActivosTotales, "Evolución de Rotación de Activos Totales", "Tendencia de eficiencia operativa en los últimos trimestres", "Rotación Activos", "times", getKpiStatus(lastP.rotacion.kpis, "totales")) },
+    {
+      key: "cobrar",
+      label: "Rotación de Cuentas por Cobrar",
+      ...buildChart(
+        dataCobrar,
+        "Evolución de Rotación de CxC",
+        "Velocidad con la que la empresa recupera su cartera",
+        "Rotación CxC",
+        "times",
+        getKpiStatus(lastP.rotacion.kpis, "cartera")
+      ),
+    },
+    {
+      key: "recaudo",
+      label: "Periodo Promedio de Recaudo",
+      ...buildChart(
+        dataRecaudo,
+        "Evolución del Periodo Promedio de Recaudo",
+        "Tiempo promedio que tarda la empresa en cobrar",
+        "Periodo de Cobro",
+        "days",
+        getKpiStatus(lastP.rotacion.kpis, "recaudo")
+      ),
+    },
+    {
+      key: "inventarios",
+      label: "Rotación de Inventarios",
+      ...buildChart(
+        dataInventarios,
+        "Evolución de Rotación de Inventarios",
+        "Frecuencia con la que el inventario se convierte en ventas",
+        "Rotación Inventarios",
+        "times",
+        getKpiStatus(lastP.rotacion.kpis, "inventarios")
+      ),
+    },
+    {
+      key: "fijos",
+      label: "Rotación de Activos Fijos",
+      ...buildChart(
+        dataFijos,
+        "Evolución de Rotación de Activos Fijos",
+        "Nivel de aprovechamiento de la infraestructura productiva",
+        "Activos Fijos",
+        "times",
+        getKpiStatus(lastP.rotacion.kpis, "fijos")
+      ),
+    },
+    {
+      key: "activosTotales",
+      label: "Rotación de Activos Totales",
+      ...buildChart(
+        dataActivosTotales,
+        "Evolución de Rotación de Activos Totales",
+        "Tendencia de eficiencia operativa en los últimos trimestres",
+        "Rotación Activos",
+        "times",
+        getKpiStatus(lastP.rotacion.kpis, "totales")
+      ),
+    },
   ];
 
-  // Construir Tabla (Orden Ascendente)
   tableRows.value = periods.map((p, i) => {
     const crudos = p.rotacion.datos_crudos || {};
+
     return {
       period: p.label,
       ventas: currencyFmt.format(crudos.ventas_netas || 0),
@@ -201,186 +302,233 @@ const selectedKpi = computed(() => {
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(key) { activeKpi.value = key; }
+function setActive(key) {
+  activeKpi.value = key;
+}
 
 const hoveredPoint = ref(null);
-function showTooltip(point) { hoveredPoint.value = point; }
-function hideTooltip() { hoveredPoint.value = null; }
+
+function showTooltip(point) {
+  hoveredPoint.value = point;
+}
+
+function hideTooltip() {
+  hoveredPoint.value = null;
+}
 
 const baselineY = 230;
+
 const linePath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
   if (!pts.length) return "";
-  return pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ");
+
+  return pts
+    .map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`))
+    .join(" ");
 });
+
 const areaPath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
   if (!pts.length) return "";
+
   const first = pts[0];
   const last = pts[pts.length - 1];
   const mid = pts.map((p) => `L${p.x} ${p.y}`).join(" ");
+
   return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 });
 
 // --- LÓGICA DE DONUTS (Último periodo) ---
-const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
+const lastPeriodData = computed(() =>
+  rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null
+);
 
 const activoCirculante = computed(() => {
   if (!lastPeriodData.value) return { total: "$0", segments: [] };
-  
+
   const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
   const liqCrudos = lastPeriodData.value.liquidez?.datos_crudos || {};
 
   const aCirculanteTotal = liqCrudos.activo_circulante || 0;
   const cxc = rotCrudos.cuentas_por_cobrar || 0;
   const inventario = rotCrudos.inventario || 0;
-  
+
   let otrosActivos = aCirculanteTotal - (cxc + inventario);
-  if (otrosActivos < 0) otrosActivos = 0; 
-  
+  if (otrosActivos < 0) otrosActivos = 0;
+
   const items = [
     { label: "Cuentas por Cobrar", value: cxc, color: "#1e293b" },
     { label: "Inventarios", value: inventario, color: "#299de0" },
-    { label: "Efectivo y Otros", value: otrosActivos, color: "#507c95" }
-  ].filter(i => i.value > 0);
+    { label: "Efectivo y Otros", value: otrosActivos, color: "#507c95" },
+  ].filter((i) => i.value > 0);
 
-  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1; 
-  
+  const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+
   let currentOffset = 0;
-  const segments = items.map(item => {
-    const pct = (item.value / totalCálculo) * 100;
+  const segments = items.map((item) => {
+    const pct = (item.value / totalCalculo) * 100;
     const dasharray = `${pct} 100`;
     const dashoffset = -currentOffset;
     currentOffset += pct;
-    return { ...item, pct: pct.toFixed(1), dasharray, dashoffset };
+
+    return {
+      ...item,
+      pct: pct.toFixed(1),
+      dasharray,
+      dashoffset,
+    };
   });
 
   return {
-    total: aCirculanteTotal >= 1000000 ? `$${(aCirculanteTotal/1000000).toFixed(1)}M` : currencyFmt.format(aCirculanteTotal),
-    segments
+    total:
+      aCirculanteTotal >= 1000000
+        ? `$${(aCirculanteTotal / 1000000).toFixed(1)}M`
+        : currencyFmt.format(aCirculanteTotal),
+    segments,
   };
 });
 
 const activosTotales = computed(() => {
   if (!lastPeriodData.value) return { total: "$0", segments: [] };
-  
+
   const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
   const liqCrudos = lastPeriodData.value.liquidez?.datos_crudos || {};
 
   const activoTotal = rotCrudos.activo_total || 0;
   const activoCirculanteVal = liqCrudos.activo_circulante || 0;
-  
+
   let activoNoCirculante = activoTotal - activoCirculanteVal;
   if (activoNoCirculante < 0) activoNoCirculante = 0;
 
   const items = [
     { label: "Activo Circulante", value: activoCirculanteVal, color: "#e11d48" },
-    { label: "Activo No Circulante", value: activoNoCirculante, color: "#fb923c" }
-  ].filter(i => i.value > 0);
+    { label: "Activo No Circulante", value: activoNoCirculante, color: "#fb923c" },
+  ].filter((i) => i.value > 0);
 
-  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
-  
+  const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+
   let currentOffset = 0;
-  const segments = items.map(item => {
-    const pct = (item.value / totalCálculo) * 100;
+  const segments = items.map((item) => {
+    const pct = (item.value / totalCalculo) * 100;
     const dasharray = `${pct} 100`;
     const dashoffset = -currentOffset;
     currentOffset += pct;
-    return { ...item, pct: pct.toFixed(1), dasharray, dashoffset };
+
+    return {
+      ...item,
+      pct: pct.toFixed(1),
+      dasharray,
+      dashoffset,
+    };
   });
 
   return {
-    total: activoTotal >= 1000000 ? `$${(activoTotal/1000000).toFixed(1)}M` : currencyFmt.format(activoTotal),
-    segments
+    total:
+      activoTotal >= 1000000
+        ? `$${(activoTotal / 1000000).toFixed(1)}M`
+        : currencyFmt.format(activoTotal),
+    segments,
   };
 });
 
-// --- IA LOCAL DE INTERPRETACIÓN ---
+// --- FALLBACK LOCAL DE INTERPRETACIÓN ---
 const analysisText = computed(() => {
   if (!selectedKpi.value) return "";
+
   const val = parseVal(selectedKpi.value.kpiValue);
   const deltaStr = selectedKpi.value.deltaValue;
-  const isWorsening = deltaStr.includes("+") && selectedKpi.value.key === "recaudo" || deltaStr.includes("-") && selectedKpi.value.key !== "recaudo";
+
+  const isWorsening =
+    (deltaStr.includes("+") && selectedKpi.value.key === "recaudo") ||
+    (deltaStr.includes("-") && selectedKpi.value.key !== "recaudo");
 
   if (selectedKpi.value.key === "cobrar") {
-    return isWorsening 
-        ? "La rotación de cuentas por cobrar muestra una desaceleración. La empresa está tardando más en convertir sus ventas a crédito en efectivo, tensionando el flujo operativo."
-        : "La recuperación de cartera es eficiente. La empresa convierte rápidamente sus ventas a crédito en liquidez real.";
+    return isWorsening
+      ? "La rotación de cuentas por cobrar muestra una desaceleración. La empresa está tardando más en convertir sus ventas a crédito en efectivo, tensionando el flujo operativo."
+      : "La recuperación de cartera es eficiente. La empresa convierte rápidamente sus ventas a crédito en liquidez real.";
   }
 
   if (selectedKpi.value.key === "recaudo") {
-    return val > 60 
-        ? `Alerta: El periodo promedio de recaudo es de ${val} días. La empresa está tardando demasiado en recuperar su dinero, lo que afecta la liquidez inmediata.`
-        : `Saludable: La empresa cobra en promedio cada ${val} días, lo cual es un periodo de recaudo eficiente.`;
+    return val > 60
+      ? `Alerta: El periodo promedio de recaudo es de ${val} días. La empresa está tardando demasiado en recuperar su dinero, lo que afecta la liquidez inmediata.`
+      : `Saludable: La empresa cobra en promedio cada ${val} días, lo cual es un periodo de recaudo eficiente.`;
   }
 
   if (selectedKpi.value.key === "inventarios") {
     return isWorsening
-        ? "La rotación de inventarios ha disminuido. Riesgo de sobre stock, obsolescencia o ventas más lentas de lo proyectado."
-        : "Buena gestión de inventarios. La mercancía entra y sale con rapidez, evitando capital estancado en el almacén.";
+      ? "La rotación de inventarios ha disminuido. Riesgo de sobre stock, obsolescencia o ventas más lentas de lo proyectado."
+      : "Buena gestión de inventarios. La mercancía entra y sale con rapidez, evitando capital estancado en el almacén.";
   }
 
   if (selectedKpi.value.key === "fijos") {
-    return val < 1.0 
-        ? "Baja eficiencia en activos fijos. La infraestructura actual (maquinaria, edificios) no está generando las ventas esperadas."
-        : "Excelente aprovechamiento de la infraestructura productiva. Los activos a largo plazo están generando un alto volumen de ventas.";
+    return val < 1.0
+      ? "Baja eficiencia en activos fijos. La infraestructura actual no está generando las ventas esperadas."
+      : "Excelente aprovechamiento de la infraestructura productiva. Los activos a largo plazo están generando un alto volumen de ventas.";
   }
 
-  return val >= 1.0 
+  return val >= 1.0
     ? "Alta eficiencia operativa global. La empresa genera más en ventas de lo que tiene invertido en activos totales."
     : "Baja rotación de activos totales. Se requiere mayor volumen de ventas para justificar la inversión total en la empresa.";
 });
 
 const recommendationList = computed(() => {
   if (!selectedKpi.value) return [];
+
   const val = parseVal(selectedKpi.value.kpiValue);
 
   if (selectedKpi.value.key === "cobrar" || selectedKpi.value.key === "recaudo") {
-    return val > 60 || selectedKpi.value.key === "cobrar" ? [
-      "Revisar y endurecer las políticas de crédito otorgadas a clientes.",
-      "Implementar recordatorios de pago automáticos antes del vencimiento.",
-      "Ofrecer descuentos por pronto pago para acelerar la entrada de efectivo.",
-    ] : [
-      "Mantener las actuales políticas de crédito que están dando buenos resultados.",
-      "Considerar ampliar líneas de crédito a clientes VIP para fomentar más ventas."
-    ];
+    return val > 60 || selectedKpi.value.key === "cobrar"
+      ? [
+          "Revisar y endurecer las políticas de crédito otorgadas a clientes.",
+          "Implementar recordatorios de pago automáticos antes del vencimiento.",
+          "Ofrecer descuentos por pronto pago para acelerar la entrada de efectivo.",
+        ]
+      : [
+          "Mantener las actuales políticas de crédito que están dando buenos resultados.",
+          "Considerar ampliar líneas de crédito a clientes VIP para fomentar más ventas.",
+        ];
   }
 
   if (selectedKpi.value.key === "inventarios") {
     return [
       "Cruzar datos de inventario con ventas para identificar productos estrella y rezagados.",
-      "Negociar entregas fraccionadas (Just-in-Time) con proveedores para no saturar almacenes.",
-      "Liquidar stock obsoleto mediante promociones para liberar capital."
+      "Negociar entregas fraccionadas con proveedores para no saturar almacenes.",
+      "Liquidar stock obsoleto mediante promociones para liberar capital.",
     ];
   }
 
   if (selectedKpi.value.key === "fijos") {
-    return val < 1.0 ? [
-      "Evaluar la venta de maquinaria o vehículos ociosos.",
-      "Frenar la adquisición de nuevos activos fijos hasta aumentar las ventas.",
-    ] : [
-      "Planificar mantenimientos preventivos para no detener la alta producción.",
-      "Evaluar si la alta rotación amerita expandir la capacidad instalada."
-    ];
+    return val < 1.0
+      ? [
+          "Evaluar la venta de maquinaria o vehículos ociosos.",
+          "Frenar la adquisición de nuevos activos fijos hasta aumentar las ventas.",
+        ]
+      : [
+          "Planificar mantenimientos preventivos para no detener la alta producción.",
+          "Evaluar si la alta rotación amerita expandir la capacidad instalada.",
+        ];
   }
 
   return [
-    "Monitorear qué activos (circulantes o fijos) están frenando la rotación global.",
+    "Monitorear qué activos están frenando la rotación global.",
     "Enfocar los esfuerzos comerciales en desplazar inventario más rápido.",
   ];
 });
 
-
+const finalAnalysisText = computed(() => {
+  return interpretationText.value || analysisText.value;
+});
 
 onMounted(() => {
+  loadAiResult();
   fetchDashboardData();
 });
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="wrap" v-if="!loading && metrics.length > 0">
     <div class="title">
       <div class="title-row">
         <h1>Rotación de Activos</h1>
@@ -571,6 +719,7 @@ onMounted(() => {
                 stroke-width="4"
               ></circle>
             </svg>
+
             <div class="donut-center">
               <span class="donut-kicker">Total C.</span>
               <span class="donut-total">{{ activoCirculante.total }}</span>
@@ -579,7 +728,11 @@ onMounted(() => {
         </div>
 
         <div class="legend-grid two-cols">
-          <div class="legend-row" v-for="(seg, idx) in activoCirculante.segments" :key="`leg-a-${idx}`">
+          <div
+            class="legend-row"
+            v-for="(seg, idx) in activoCirculante.segments"
+            :key="`leg-a-${idx}`"
+          >
             <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
             <span class="truncate">{{ seg.label }} ({{ seg.pct }}%)</span>
           </div>
@@ -607,6 +760,7 @@ onMounted(() => {
                 stroke-width="4"
               ></circle>
             </svg>
+
             <div class="donut-center">
               <span class="donut-kicker">Activo</span>
               <span class="donut-total">{{ activosTotales.total }}</span>
@@ -615,7 +769,11 @@ onMounted(() => {
         </div>
 
         <div class="legend-grid">
-          <div class="legend-row" v-for="(seg, idx) in activosTotales.segments" :key="`leg-t-${idx}`">
+          <div
+            class="legend-row"
+            v-for="(seg, idx) in activosTotales.segments"
+            :key="`leg-t-${idx}`"
+          >
             <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
             <span class="truncate">{{ seg.label }} ({{ seg.pct }}%)</span>
           </div>
@@ -640,6 +798,7 @@ onMounted(() => {
               <th class="right">Periodo Cobro</th>
             </tr>
           </thead>
+
           <tbody>
             <tr v-for="r in tableRows" :key="r.period" :class="{ highlight: r.highlight }">
               <td class="strong" :class="{ primary: r.highlight }">{{ r.period }}</td>
@@ -669,7 +828,43 @@ onMounted(() => {
         </div>
 
         <h3>Análisis de tendencia</h3>
-        <p>{{ analysisText }}</p>
+
+        <p v-if="aiBlockLoading">
+          Cargando interpretación automática...
+        </p>
+
+        <p v-else-if="aiBlockError">
+          No se pudo cargar la interpretación automática. Se muestra una interpretación base.
+        </p>
+
+        <p v-else>
+          {{ finalAnalysisText }}
+        </p>
+
+        <ul
+          v-if="!aiBlockLoading && !aiBlockError && mainFindings.length"
+          class="list findings-list"
+        >
+          <li v-for="(finding, idx) in mainFindings" :key="`finding-${idx}`">
+            <span class="material-symbols-outlined">info</span>
+            <span>{{ finding }}</span>
+          </li>
+        </ul>
+
+        <div
+          v-if="!aiBlockLoading && !aiBlockError && alertItems.length"
+          class="ai-alerts"
+        >
+          <div
+            v-for="(alert, idx) in alertItems"
+            :key="`alert-${idx}`"
+            class="ai-alert"
+          >
+            <strong>{{ alert.title }}</strong>
+            <p>{{ alert.message }}</p>
+            <small>{{ alert.evidence }}</small>
+          </div>
+        </div>
       </article>
 
       <article class="note note-ok">
@@ -681,10 +876,31 @@ onMounted(() => {
         </div>
 
         <ul class="list">
-          <li v-for="(item, idx) in recommendationList" :key="idx">
-            <span class="material-symbols-outlined">check_circle</span>
-            <span>{{ item }}</span>
+          <li v-if="aiBlockLoading">
+            <span class="material-symbols-outlined">hourglass_empty</span>
+            <span>Cargando recomendaciones...</span>
           </li>
+
+          <li v-else-if="aiBlockError">
+            <span class="material-symbols-outlined">info</span>
+            <span>No se pudieron cargar las recomendaciones automáticas.</span>
+          </li>
+
+          <template v-else-if="recommendationItems.length">
+            <li v-for="(item, idx) in recommendationItems" :key="`ai-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>
+                <strong>{{ item.title }}:</strong> {{ item.description }}
+              </span>
+            </li>
+          </template>
+
+          <template v-else>
+            <li v-for="(item, idx) in recommendationList" :key="`fallback-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>{{ item }}</span>
+            </li>
+          </template>
         </ul>
       </article>
     </section>
@@ -695,6 +911,10 @@ onMounted(() => {
         Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
       </p>
     </footer>
+  </div>
+
+  <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">
+    Cargando análisis multiperiodo de rotación de activos...
   </div>
 </template>
 
@@ -835,6 +1055,15 @@ onMounted(() => {
 .kpi-dot.warn {
   background: #facc15;
   box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+
+.kpi-dot.alert {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.kpi-dot.gray {
+  background: #9ca3af;
 }
 
 .kpi-value {
@@ -1199,6 +1428,10 @@ onMounted(() => {
   gap: 12px;
 }
 
+.findings-list {
+  margin-top: 14px;
+}
+
 .list li {
   display: flex;
   align-items: flex-start;
@@ -1213,6 +1446,42 @@ onMounted(() => {
   font-size: 18px;
   margin-top: 2px;
   flex-shrink: 0;
+}
+
+.ai-alerts {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ai-alert {
+  border: 1px solid #fee2e2;
+  background: #fff7f7;
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-alert strong {
+  display: block;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.ai-alert p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ai-alert small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 /* Footer */
