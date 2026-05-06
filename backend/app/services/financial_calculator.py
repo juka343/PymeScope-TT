@@ -1,5 +1,10 @@
 import re
+import logging
+from decimal import Decimal, InvalidOperation
 from typing import List, Dict, Any, Optional
+
+# Configuración básica de logging para trazabilidad FinTech
+logger = logging.getLogger(__name__)
 
 class FinancialCalculator:
     """
@@ -155,7 +160,7 @@ class FinancialCalculator:
     # -------------------------------------------------------------------------
     # Parsing de números
     # -------------------------------------------------------------------------
-    def _clean_number(self, text: str) -> Optional[float]:
+    def _clean_number(self, text: str) -> Optional[Decimal]:
         if text is None:
             return None
         raw = str(text).strip()
@@ -171,6 +176,18 @@ class FinancialCalculator:
         s = s.replace(" ", "").replace("$", "").replace("mxn", "").replace("usd", "")
         s = s.replace("(", "").replace(")", "")
         s = re.sub(r"[^0-9,\.]", "", s)
+
+        # Si hay más de un punto (ej. 6.200.47) o cualquier formato anómalo detectado:
+        if s.count(".") > 1:
+            s = s.replace(",", "") # Remover comas primero para evitar conflictos
+            parts = s.split(".")
+            s = "".join(parts[:-1]) + "." + parts[-1]
+            try:
+                val = Decimal(s)
+                return -abs(val) if is_negative else val
+            except (InvalidOperation, ValueError):
+                logger.warning(f"Error de conversión en OCR: no se pudo parsear el valor '{s}' (proveniente de '{raw}')")
+                return None
 
         if "," in s and "." in s:
             last_comma = s.rfind(",")
@@ -190,15 +207,16 @@ class FinancialCalculator:
                 s = "".join(parts[:-1]) + "." + parts[-1]
 
         try:
-            val = float(s)
+            val = Decimal(s)
             return -abs(val) if is_negative else val
-        except ValueError:
+        except (InvalidOperation, ValueError):
+            logger.warning(f"Error de conversión en OCR: no se pudo parsear el valor '{s}' (proveniente de '{raw}')")
             return None
 
     # -------------------------------------------------------------------------
     # Búsqueda de valores en tablas OCR (Proximidad Inteligente)
     # -------------------------------------------------------------------------
-    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False) -> float:
+    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False) -> Decimal:
         for table in reversed(tables_data):
             rows: Dict[int, List[Dict[str, Any]]] = {}
             for cell in table:

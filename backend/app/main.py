@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import documents
+from app.api.routes import documents, projections
 
 app = FastAPI(
     title="PymeScope API",
@@ -22,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(documents.router, prefix="/api", tags=["Documentos"])
+app.include_router(projections.router, prefix="/api", tags=["Proyecciones"])
 
 @app.get("/health")
 def health_check():

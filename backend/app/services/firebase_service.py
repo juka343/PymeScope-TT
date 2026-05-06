@@ -108,6 +108,24 @@ class FirebaseDBManager:
         except KeyError as exc:
             raise ValueError("UUID does not exist in Firestore.") from exc
 
+    # Flujo: Proyecciones -> Firestore (guardar escenario proforma)
+    def guardar_proyeccion(self, uuid_proyecto: str, proyeccion_data: Dict[str, Any], collection_name: str = "proyecciones") -> str:
+        try:
+            db = self._get_db()
+            # Acceder al documento del proyecto principal (Colección consistente con el Frontend)
+            doc_ref = db.collection("proyectos").document(uuid_proyecto)
+            
+            # Crear una subcolección específica y un nuevo documento con ID autogenerado
+            new_proy_ref = doc_ref.collection(collection_name).document()
+            
+            # Guardar el contenido con timestamp del servidor
+            proyeccion_data["created_at"] = firestore.SERVER_TIMESTAMP
+            new_proy_ref.set(proyeccion_data)
+            
+            return new_proy_ref.id
+        except Exception as exc:
+            raise ValueError(f"Error guardando proyección en Firestore: {str(exc)}")
+
     # Flujo: Frontend -> Firestore (consulta completa)
     def obtener_documento(self, uuid: str) -> Dict[str, Any]:
         try:
