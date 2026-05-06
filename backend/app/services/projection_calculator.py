@@ -100,6 +100,55 @@ class ProjectionCalculator(FinancialCalculator):
             ],
         }
 
+    def _clean_number(self, text: str) -> float | None:
+        """
+        Sobreescritura local para limpiar números sucios del OCR (ej. 6.200.47)
+        específica para el motor de proyecciones, evitando conflictos con
+        las modificaciones de multiperiodo de la clase padre FinancialCalculator.
+        """
+        if text is None: return None
+        raw = str(text).strip()
+        if not raw: return None
+
+        is_negative = False
+        if raw.startswith("-") or (raw.startswith("(") and raw.endswith(")")):
+            is_negative = True
+
+        s = raw.replace("$", "").replace(" ", "")
+        s = s.replace("(", "").replace(")", "")
+        s = re.sub(r"[^0-9,\.]", "", s)
+
+        # Bugfix: Múltiples puntos del OCR
+        if s.count(".") > 1:
+            s = s.replace(",", "")
+            parts = s.split(".")
+            s = "".join(parts[:-1]) + "." + parts[-1]
+            try:
+                val = float(s)
+                return -abs(val) if is_negative else val
+            except ValueError:
+                return None
+
+        if "," in s and "." in s:
+            last_comma = s.rfind(",")
+            last_dot = s.rfind(".")
+            if last_comma > last_dot:
+                s = s.replace(".", "").replace(",", ".")
+            else:
+                s = s.replace(",", "")
+        elif "," in s and "." not in s:
+            parts = s.split(",")
+            if len(parts[-1]) != 2:
+                s = s.replace(",", "")
+            else:
+                s = "".join(parts[:-1]) + "." + parts[-1]
+
+        try:
+            val = float(s)
+            return -abs(val) if is_negative else val
+        except ValueError:
+            return None
+
     def _preprocess_ocr_data(self, ocr_data: Dict[str, Any]) -> None:
         """
         Pre-procesa la data cruda del OCR para normalizar nombres sucios o variantes
