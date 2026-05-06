@@ -3,9 +3,20 @@ import { computed, ref, onMounted } from "vue";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { useRouter, useRoute } from "vue-router";
+import { useFinancialAiBlock } from "@/composables/useFinancialAiBlock";
 
 const router = useRouter();
 const route = useRoute();
+
+const {
+  loadAiResult,
+  interpretationText,
+  mainFindings,
+  recommendationItems,
+  alertItems,
+  aiBlockLoading,
+  aiBlockError,
+} = useFinancialAiBlock("rentabilidad");
 
 const centroDeAprendizaje = () => {
   const routeData = router.resolve({ name: "teoriaRentabilidad" });
@@ -58,16 +69,15 @@ const fetchDashboardData = async () => {
       }
     });
 
-    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    loaded.sort((a, b) => String(a.periodDate).localeCompare(String(b.periodDate)));
     rawPeriods.value = loaded;
 
-    // ====== LOG PARA DEMOSTRAR LOS DATOS HISTÓRICOS A LA IA ======
-    const kpisParaIA = loaded.map(p => ({
+    const kpisParaIA = loaded.map((p) => ({
       periodo: p.label,
-      kpis: p.rentabilidad.kpis
+      kpis: p.rentabilidad.kpis,
     }));
+
     console.log("📊 KPIs DE RENTABILIDAD (MULTIPERIODO):", kpisParaIA);
-    // =============================================================
 
     if (loaded.length > 0) {
       generateDashboardData();
@@ -93,7 +103,9 @@ const generateDashboardData = () => {
 
   const getKpiStatus = (kpis, keyword) => {
     if (!kpis) return "warn";
-    const item = kpis.find((k) => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
     return item ? item.status : "warn";
   };
 
@@ -144,12 +156,9 @@ const generateDashboardData = () => {
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     const delta = lastVal - prevVal;
 
-    // === USAMOS EL STATUS QUE CALCULÓ PYTHON ===
-    let status = backendStatus;
-
     return {
       kpiValue: `${lastVal.toFixed(2)}%`,
-      status,
+      status: backendStatus,
       deltaType: delta >= 0 ? "up" : "down",
       deltaValue: `${delta > 0 ? "+" : ""}${delta.toFixed(2)}%`,
       deltaNote:
@@ -301,6 +310,10 @@ const recommendationList = computed(() => {
   ];
 });
 
+const finalAnalysisText = computed(() => {
+  return interpretationText.value || analysisText.value;
+});
+
 const lastPeriodData = computed(() =>
   rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null
 );
@@ -402,6 +415,7 @@ const margenesBreakdown = computed(() => {
 });
 
 onMounted(() => {
+  loadAiResult();
   fetchDashboardData();
 });
 </script>
@@ -697,7 +711,43 @@ onMounted(() => {
         </div>
 
         <h3>Análisis de tendencia</h3>
-        <p>{{ analysisText }}</p>
+
+        <p v-if="aiBlockLoading">
+          Cargando interpretación automática...
+        </p>
+
+        <p v-else-if="aiBlockError">
+          No se pudo cargar la interpretación automática. Se muestra una interpretación base.
+        </p>
+
+        <p v-else>
+          {{ finalAnalysisText }}
+        </p>
+
+        <ul
+          v-if="!aiBlockLoading && !aiBlockError && mainFindings.length"
+          class="list findings-list"
+        >
+          <li v-for="(finding, idx) in mainFindings" :key="`finding-${idx}`">
+            <span class="material-symbols-outlined">info</span>
+            <span>{{ finding }}</span>
+          </li>
+        </ul>
+
+        <div
+          v-if="!aiBlockLoading && !aiBlockError && alertItems.length"
+          class="ai-alerts"
+        >
+          <div
+            v-for="(alert, idx) in alertItems"
+            :key="`alert-${idx}`"
+            class="ai-alert"
+          >
+            <strong>{{ alert.title }}</strong>
+            <p>{{ alert.message }}</p>
+            <small>{{ alert.evidence }}</small>
+          </div>
+        </div>
       </article>
 
       <article class="note note-ok">
@@ -709,16 +759,40 @@ onMounted(() => {
         </div>
 
         <ul class="list">
-          <li v-for="(item, idx) in recommendationList" :key="idx">
-            <span class="material-symbols-outlined">check_circle</span>
-            <span>{{ item }}</span>
+          <li v-if="aiBlockLoading">
+            <span class="material-symbols-outlined">hourglass_empty</span>
+            <span>Cargando recomendaciones...</span>
           </li>
+
+          <li v-else-if="aiBlockError">
+            <span class="material-symbols-outlined">info</span>
+            <span>No se pudieron cargar las recomendaciones automáticas.</span>
+          </li>
+
+          <template v-else-if="recommendationItems.length">
+            <li v-for="(item, idx) in recommendationItems" :key="`ai-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>
+                <strong>{{ item.title }}:</strong> {{ item.description }}
+              </span>
+            </li>
+          </template>
+
+          <template v-else>
+            <li v-for="(item, idx) in recommendationList" :key="`fallback-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>{{ item }}</span>
+            </li>
+          </template>
         </ul>
       </article>
     </section>
 
     <footer class="foot">
-      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.</p>
+      <p>
+        Todos los datos son confidenciales.<br />
+        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
+      </p>
     </footer>
   </div>
 
@@ -859,6 +933,15 @@ onMounted(() => {
 .kpi-dot.warn {
   background: #facc15;
   box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+
+.kpi-dot.alert {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.kpi-dot.gray {
+  background: #9ca3af;
 }
 
 .kpi-value {
@@ -1222,6 +1305,10 @@ onMounted(() => {
   gap: 12px;
 }
 
+.findings-list {
+  margin-top: 14px;
+}
+
 .list li {
   display: flex;
   align-items: flex-start;
@@ -1235,6 +1322,42 @@ onMounted(() => {
   color: #299de0;
   font-size: 18px;
   margin-top: 2px;
+}
+
+.ai-alerts {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ai-alert {
+  border: 1px solid #fee2e2;
+  background: #fff7f7;
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-alert strong {
+  display: block;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.ai-alert p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ai-alert small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 /* Footer */

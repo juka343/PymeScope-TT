@@ -1,12 +1,25 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { db } from "@/firebase/config";
 import { collection, getDocs } from "firebase/firestore";
 import { useRoute, useRouter } from "vue-router";
+import { useFinancialAiBlock } from "@/composables/useFinancialAiBlock";
 
 const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id_proyecto;
+
+const {
+  loadAiResult,
+  hasBlockData,
+  interpretationTitle,
+  interpretationParagraphs,
+  indicatorsExplained,
+  recommendationItems,
+  alertItems,
+  aiBlockLoading,
+  aiBlockError,
+} = useFinancialAiBlock("liquidez");
 
 const centroDeAprendizaje = () => {
   const routeData = router.resolve({ name: "teoriaLiquidez" });
@@ -17,20 +30,69 @@ const kpis = ref([]);
 const periodRows = ref([]);
 const isLoading = ref(true);
 
-const recommendations = ref([
-  "Optimizar rotación de inventarios",
-  "Mejorar gestión de cuentas por cobrar",
-  "Negociar extensión de plazos con proveedores",
-]);
+const fallbackInterpretationTitle = "Lectura de liquidez";
+const fallbackInterpretationParagraphs = [
+  "Los indicadores de liquidez muestran la capacidad de la empresa para cubrir compromisos de corto plazo con sus activos circulantes.",
+  "En una empresa de servicios, una liquidez adecuada ayuda a sostener nómina, proveedores, gastos operativos y continuidad del servicio sin depender de financiamiento urgente.",
+];
 
-const interpretation = ref(
-  "Los indicadores de liquidez muestran la capacidad operativa a corto plazo. Revisa la prueba ácida para entender la dependencia del inventario."
-);
+const fallbackRecommendations = [
+  {
+    title: "Mejorar gestión de cuentas por cobrar",
+    description:
+      "Reducir los tiempos de cobro para convertir ventas pendientes en efectivo disponible.",
+    reason:
+      "En servicios, el flujo de efectivo suele depender más de la cobranza que del inventario.",
+    priority: "media",
+  },
+  {
+    title: "Mantener una reserva operativa",
+    description:
+      "Conservar efectivo suficiente para cubrir gastos fijos de corto plazo.",
+    reason:
+      "La nómina, renta, software, servicios y proveedores pueden presionar la operación si el efectivo se retrasa.",
+    priority: "media",
+  },
+  {
+    title: "Negociar plazos con proveedores",
+    description:
+      "Buscar condiciones de pago que empaten mejor con los ciclos de cobro del negocio.",
+    reason:
+      "Esto reduce presión sobre el capital de trabajo sin afectar la continuidad operativa.",
+    priority: "media",
+  },
+];
 
-// Función auxiliar para formato moneda ($1,500,000.00)
+const displayInterpretationTitle = computed(() => {
+  return hasBlockData.value ? interpretationTitle.value : fallbackInterpretationTitle;
+});
+
+const displayInterpretationParagraphs = computed(() => {
+  return interpretationParagraphs.value.length > 0
+    ? interpretationParagraphs.value
+    : fallbackInterpretationParagraphs;
+});
+
+const displayRecommendations = computed(() => {
+  return recommendationItems.value.length > 0
+    ? recommendationItems.value
+    : fallbackRecommendations;
+});
+
+const displayAlerts = computed(() => {
+  return alertItems.value || [];
+});
+
+// Función auxiliar para formato moneda
 const formatCurrency = (value) => {
-  if (value === undefined || value === null) return "$0";
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+  const numeric = Number(value || 0);
+
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric);
 };
 
 const fetchDashboardData = async () => {
@@ -40,43 +102,49 @@ const fetchDashboardData = async () => {
     const periodosRef = collection(db, "proyectos", projectId, "periodos");
     const snapshot = await getDocs(periodosRef);
 
-    const rowsTemp = [];
-    let ultimosKpis = null;
+    const loadedPeriods = [];
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      
-      // Buscamos específicamente la etiqueta de liquidez que guardó tu nuevo backend
-      if (data.analisis_liquidez) {
-        const analisis = data.analisis_liquidez;
-        const crudos = analisis.datos_crudos;
 
-        // Guardamos las 3 tarjetas blancas superiores
-        ultimosKpis = analisis.kpis;
+      const analisis =
+        data.analisis_liquidez ||
+        data.liquidez ||
+        null;
 
-        // ====== LOG PARA DEMOSTRAR LOS DATOS MONOPERIODO A LA IA ======
-        console.log("📊 KPIs DE LIQUIDEZ (MONOPERIODO):", analisis.kpis);
-        // =============================================================
+      if (!analisis) return;
 
-        // Armamos la fila mapeando exactamente a lo que pide tu HTML (r.activo, r.pasivo, r.capital)
-        rowsTemp.push({
+      const crudos = analisis.datos_crudos || {};
+
+      loadedPeriods.push({
+        id: docSnap.id,
+        label: data.label || docSnap.id,
+        periodDate: data.periodDate || data.label || docSnap.id,
+        kpis: analisis.kpis || [],
+        row: {
           period: data.label || docSnap.id,
-          activo: formatCurrency(crudos.activo_circulante),
-          pasivo: formatCurrency(crudos.pasivo_circulante),
-          // El capital de trabajo es la resta directa entre activo circulante y pasivo circulante
-          capital: formatCurrency(crudos.activo_circulante - crudos.pasivo_circulante)
-        });
-      }
+          activo: formatCurrency(crudos.activo_circulante || 0),
+          pasivo: formatCurrency(crudos.pasivo_circulante || 0),
+          capital: formatCurrency(
+            (crudos.activo_circulante || 0) - (crudos.pasivo_circulante || 0)
+          ),
+        },
+      });
     });
 
-    // Ordenar por nombre de periodo
-    rowsTemp.sort((a, b) => a.period.localeCompare(b.period));
+    loadedPeriods.sort((a, b) =>
+      String(a.periodDate).localeCompare(String(b.periodDate))
+    );
 
-    if (ultimosKpis) {
-      kpis.value = ultimosKpis;
+    periodRows.value = loadedPeriods.map((p) => p.row);
+
+    const latest = loadedPeriods[loadedPeriods.length - 1];
+
+    if (latest) {
+      kpis.value = latest.kpis;
+
+      console.log("📊 KPIs DE LIQUIDEZ (MONOPERIODO):", latest.kpis);
     }
-    periodRows.value = rowsTemp;
-
   } catch (error) {
     console.error("Error al cargar los datos de liquidez:", error);
   } finally {
@@ -85,6 +153,7 @@ const fetchDashboardData = async () => {
 };
 
 onMounted(() => {
+  loadAiResult();
   fetchDashboardData();
 });
 </script>
@@ -99,6 +168,7 @@ onMounted(() => {
           <span>Ir a centro de aprendizaje</span>
         </button>
       </div>
+
       <div class="subtitle">
         <p>Capacidad de la empresa para cumplir con sus obligaciones a corto plazo</p>
         <span class="dot" aria-hidden="true">•</span>
@@ -106,100 +176,190 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- KPI CARDS -->
-    <section class="kpis">
-      <article v-for="k in kpis" :key="k.label" class="kpi">
-        <div class="kpi-top">
-          <p class="kpi-label">{{ k.label }}</p>
-          <span class="kpi-dot" :class="k.status" aria-hidden="true"></span>
-        </div>
-        <div class="kpi-value">{{ k.value }}</div>
-      </article>
-    </section>
-
-    <!-- TABLA -->
-    <section class="panel">
-      <div class="panel-head">
-        <h3>Detalle del Periodo</h3>
-      </div>
-
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>PERIODO</th>
-              <th>ACTIVO CIRCULANTE</th>
-              <th>PASIVO CIRCULANTE</th>
-              <th>CAPITAL DE TRABAJO</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in periodRows" :key="r.period">
-              <td class="strong">{{ r.period }}</td>
-              <td class="muted">{{ r.activo }}</td>
-              <td class="muted">{{ r.pasivo }}</td>
-              <td>
-                <span class="pill">{{ r.capital }}</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <div class="info">
-      <span class="material-symbols-outlined">info</span>
-      <p>
-        Para visualizar gráficas de evolución y comparativas detalladas, añade más periodos a tu
-        análisis.
-      </p>
+    <div v-if="isLoading" class="loading">
+      Cargando análisis de liquidez...
     </div>
 
-    <!-- INTERPRETACIÓN -->
-    <section class="grid-2">
-      <article class="note note-warn">
-        <div class="note-bg" aria-hidden="true">
-          <span class="material-symbols-outlined">warning</span>
+    <template v-else>
+      <!-- KPI CARDS -->
+      <section class="kpis">
+        <article v-for="k in kpis" :key="k.label" class="kpi">
+          <div class="kpi-top">
+            <p class="kpi-label">{{ k.label }}</p>
+            <span class="kpi-dot" :class="k.status" aria-hidden="true"></span>
+          </div>
+
+          <div class="kpi-value">{{ k.value }}</div>
+        </article>
+      </section>
+
+      <!-- TABLA -->
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Detalle del Periodo</h3>
         </div>
 
-        <div class="note-head">
-          <span class="tag tag-blue">
-            <span class="material-symbols-outlined">insights</span>
-          </span>
-          <h3>Interpretación y alertas</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Periodo</th>
+                <th>Activo Circulante</th>
+                <th>Pasivo Circulante</th>
+                <th>Capital de Trabajo</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr v-for="r in periodRows" :key="r.period">
+                <td class="strong">{{ r.period }}</td>
+                <td class="muted">{{ r.activo }}</td>
+                <td class="muted">{{ r.pasivo }}</td>
+                <td>
+                  <span class="pill">{{ r.capital }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+      </section>
 
-        <p class="note-text">{{ interpretation }}</p>
-      </article>
+      <div class="info">
+        <span class="material-symbols-outlined">info</span>
+        <p>
+          Para visualizar gráficas de evolución y comparativas detalladas, añade más periodos a tu análisis.
+        </p>
+      </div>
 
-      <article class="note note-ok">
-        <div class="note-head">
-          <span class="tag tag-green">
-            <span class="material-symbols-outlined">checklist</span>
-          </span>
-          <h3>Recomendaciones</h3>
-        </div>
+      <!-- INTERPRETACIÓN + RECOMENDACIONES -->
+      <section class="grid-2">
+        <article class="note note-warn">
+          <div class="note-bg" aria-hidden="true">
+            <span class="material-symbols-outlined">warning</span>
+          </div>
 
-        <ul class="list">
-          <li v-for="(item, idx) in recommendations" :key="idx">
-            <span class="material-symbols-outlined">check_circle</span>
-            <span>{{ item }}</span>
-          </li>
-        </ul>
-      </article>
-    </section>
+          <div class="note-head">
+            <span class="tag tag-blue">
+              <span class="material-symbols-outlined">insights</span>
+            </span>
+            <h3>Interpretación y alertas</h3>
+          </div>
 
-    <footer class="foot">
-      <p>
-        Todos los datos son confidenciales.<br />
-        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
-      </p>
-    </footer>
+          <p v-if="aiBlockLoading" class="note-text">
+            Generando interpretación automática...
+          </p>
+
+          <p v-else-if="aiBlockError" class="note-text">
+            No se pudo cargar la interpretación automática. Se muestra una lectura base del sistema.
+          </p>
+
+          <div v-else class="ai-content">
+            <h4 class="ai-title">{{ displayInterpretationTitle }}</h4>
+
+            <p
+              v-for="(paragraph, idx) in displayInterpretationParagraphs"
+              :key="`paragraph-${idx}`"
+              class="ai-paragraph"
+            >
+              {{ paragraph }}
+            </p>
+
+            <div v-if="indicatorsExplained.length" class="ai-section">
+              <h4 class="ai-section-title">Indicadores explicados</h4>
+
+              <div
+                v-for="(item, idx) in indicatorsExplained"
+                :key="`indicator-${idx}`"
+                class="ai-finding"
+              >
+                <p class="ai-finding-title">
+                  {{ item.label }}
+                  <span v-if="item.value"> · {{ item.value }}</span>
+                </p>
+
+                <p v-if="item.reading" class="ai-finding-meta">
+                  {{ item.reading }}
+                </p>
+
+                <p v-if="item.meaning" class="ai-finding-text">
+                  {{ item.meaning }}
+                </p>
+
+                <p v-if="item.serviceBusinessImplication" class="ai-impact">
+                  {{ item.serviceBusinessImplication }}
+                </p>
+
+                <p v-if="item.possibleImpact" class="ai-impact">
+                  {{ item.possibleImpact }}
+                </p>
+              </div>
+            </div>
+
+            <div v-if="displayAlerts.length" class="ai-section">
+              <h4 class="ai-section-title">Alertas del bloque</h4>
+
+              <div
+                v-for="(alert, idx) in displayAlerts"
+                :key="`alert-${idx}`"
+                class="ai-alert"
+                :class="`severity-${alert.severity}`"
+              >
+                <p class="ai-finding-title">{{ alert.title }}</p>
+
+                <p v-if="alert.message" class="ai-finding-text">
+                  {{ alert.message }}
+                </p>
+
+                <p v-if="alert.implication" class="ai-impact">
+                  {{ alert.implication }}
+                </p>
+
+                <p v-if="alert.evidence" class="ai-evidence">
+                  {{ alert.evidence }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="note note-ok">
+          <div class="note-head">
+            <span class="tag tag-green">
+              <span class="material-symbols-outlined">checklist</span>
+            </span>
+            <h3>Recomendaciones</h3>
+          </div>
+
+          <ul class="list">
+            <li v-if="aiBlockLoading">
+              <span class="material-symbols-outlined">hourglass_empty</span>
+              <span>Generando recomendaciones...</span>
+            </li>
+
+            <li v-else v-for="(item, idx) in displayRecommendations" :key="idx">
+              <span class="material-symbols-outlined">check_circle</span>
+
+              <span class="recommendation-content">
+                <strong>{{ item.title }}</strong>
+                <small v-if="item.description">{{ item.description }}</small>
+                <em v-if="item.reason">{{ item.reason }}</em>
+              </span>
+            </li>
+          </ul>
+        </article>
+      </section>
+
+      <footer class="foot">
+        <p>
+          Todos los datos son confidenciales.<br />
+          Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
+        </p>
+      </footer>
+    </template>
   </div>
 </template>
 
 <style scoped>
-
 .title-row {
   display: flex;
   align-items: center;
@@ -264,6 +424,13 @@ onMounted(() => {
   color: #d1d5db;
 }
 
+.loading {
+  padding: 40px;
+  text-align: center;
+  color: #507c95;
+  font-weight: 800;
+}
+
 /* KPIs */
 .kpis {
   display: grid;
@@ -313,6 +480,12 @@ onMounted(() => {
 .kpi-dot.warn {
   background: #facc15;
   box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+
+.kpi-dot.danger,
+.kpi-dot.alert {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
 }
 
 .kpi-value {
@@ -425,6 +598,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 14px;
+  align-items: start;
 }
 
 .note {
@@ -432,9 +606,15 @@ onMounted(() => {
   background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
   border: 1px solid #dbeafe;
   border-radius: 14px;
-  padding: 16px;
+  padding: 18px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   overflow: hidden;
+}
+
+.note-ok {
+  background: #ffffff;
+  border-color: #e8eff3;
+  align-self: start;
 }
 
 .note-bg {
@@ -464,6 +644,7 @@ onMounted(() => {
   border-radius: 10px;
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
 }
 
 .tag-blue {
@@ -497,6 +678,103 @@ onMounted(() => {
   z-index: 1;
 }
 
+/* IA */
+.ai-content {
+  display: grid;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.ai-paragraph {
+  margin: 0;
+  color: #0e161b;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.ai-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.ai-section-title {
+  margin: 0;
+  color: #507c95;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ai-finding,
+.ai-alert {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid #dbeafe;
+}
+
+.ai-finding-title {
+  margin: 0 0 4px;
+  color: #0e161b;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.ai-finding-meta {
+  margin: 0 0 6px;
+  color: #507c95;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ai-finding-text,
+.ai-impact,
+.ai-evidence {
+  margin: 0;
+  color: #0e161b;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.ai-impact {
+  margin-top: 6px;
+  color: #334155;
+}
+
+.ai-evidence {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ai-alert.severity-alta {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.ai-alert.severity-media {
+  border-color: #fde68a;
+  background: #fffdf2;
+}
+
+.ai-alert.severity-baja {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+/* Recomendaciones */
 .list {
   margin: 8px 0 0;
   padding: 0;
@@ -518,6 +796,33 @@ onMounted(() => {
   color: #299de0;
   font-size: 18px;
   margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.recommendation-content {
+  display: grid;
+  gap: 3px;
+}
+
+.recommendation-content strong {
+  font-size: 13px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.recommendation-content small {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.recommendation-content em {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  font-style: normal;
+  line-height: 1.4;
 }
 
 /* Footer */
@@ -540,9 +845,11 @@ onMounted(() => {
     align-items: baseline;
     gap: 10px;
   }
+
   .dot {
     display: inline;
   }
+
   .kpis {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -552,6 +859,7 @@ onMounted(() => {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
   }
+
   .grid-2 {
     grid-template-columns: repeat(2, 1fr);
   }

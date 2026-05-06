@@ -1,7 +1,14 @@
 <script setup>
 import { ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { useToast } from "@/composables/useToast";
 
@@ -9,14 +16,64 @@ const router = useRouter();
 const route = useRoute();
 const { toast } = useToast();
 
-const loading = ref(true);
-const recommendations = ref([
-  "Control de costos operativos",
-  "Revisión de estrategia de precios",
-  "Optimización de procesos internos",
-]);
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
+const AI_ANALYSIS_COLLECTION = "ai_analysis";
+const AI_LATEST_DOC_ID = "resumen_monoperiodo_latest";
+const AI_PROMPT_VERSION = "1.2.1";
+
+const getAiPeriodDocId = (basePeriodDate) => {
+  return `resumen_monoperiodo_${basePeriodDate || "actual"}`;
+};
+
+const loading = ref(true);
 const projectId = ref(null);
+const rawPeriod = ref(null);
+
+const aiLoading = ref(false);
+const aiError = ref(null);
+const aiResult = ref(null);
+
+const fallbackInterpretation =
+  "La empresa presenta información financiera suficiente para generar una lectura general del periodo. Conviene revisar la rentabilidad, liquidez, endeudamiento, rotación de activos y estructura financiera de forma conjunta.";
+
+const interpretation = ref(fallbackInterpretation);
+
+const executiveSummary = ref({
+  title: "Interpretación general",
+  paragraphs: [fallbackInterpretation],
+});
+
+const keyImplications = ref([]);
+const aiAlerts = ref([]);
+
+const recommendations = ref([
+  {
+    title: "Control de costos operativos",
+    description:
+      "Revisar gastos recurrentes para proteger el margen de utilidad.",
+    reason:
+      "En empresas de servicios, una estructura de gastos pesada puede reducir rápidamente la rentabilidad aunque las ventas se mantengan.",
+    priority: "media",
+  },
+  {
+    title: "Revisión de estrategia de precios",
+    description:
+      "Evaluar si los precios actuales cubren costos, gastos y margen esperado.",
+    reason:
+      "Un precio mal calculado puede sostener ventas, pero deteriorar la utilidad neta.",
+    priority: "media",
+  },
+  {
+    title: "Optimización de procesos internos",
+    description:
+      "Identificar actividades que consumen tiempo o recursos sin generar valor directo.",
+    reason:
+      "La eficiencia operativa es clave en servicios porque el costo principal suele estar ligado a personal, tiempo y capacidad instalada.",
+    priority: "media",
+  },
+]);
 
 // Formateadores
 const currencyFmt = new Intl.NumberFormat("es-MX", {
@@ -41,15 +98,39 @@ const kpis = ref([
 ]);
 
 const cards = ref([
-  { title: "Rentabilidad", icon: "trending_up", detailRoute: "rentabilidad", items: [] },
-  { title: "Liquidez", icon: "attach_money", detailRoute: "liquidez", items: [] },
-  { title: "Endeudamiento", icon: "account_balance_wallet", detailRoute: "endeudamiento", items: [] },
-  { title: "Rotación de Activos", icon: "sync_alt", detailRoute: "rotacion", items: [] },
-  { title: "Estructura Financiera", icon: "layers", detailRoute: "estructura", items: [] },
+  {
+    title: "Rentabilidad",
+    icon: "trending_up",
+    detailRoute: "rentabilidad",
+    items: [],
+  },
+  {
+    title: "Liquidez",
+    icon: "attach_money",
+    detailRoute: "liquidez",
+    items: [],
+  },
+  {
+    title: "Endeudamiento",
+    icon: "account_balance_wallet",
+    detailRoute: "endeudamiento",
+    items: [],
+  },
+  {
+    title: "Rotación de Activos",
+    icon: "sync_alt",
+    detailRoute: "rotacion",
+    items: [],
+  },
+  {
+    title: "Estructura Financiera",
+    icon: "layers",
+    detailRoute: "estructura",
+    items: [],
+  },
 ]);
 
 const periodLabel = ref("");
-const interpretation = ref("Cargando datos...");
 const resultadosPdfUrl = ref(null);
 
 // ===== ESTRUCTURA DEL RESULTADO =====
@@ -57,6 +138,694 @@ const estructuraResultado = ref({
   period: "",
   rows: [],
 });
+
+// =====================
+// HELPERS IA
+// =====================
+const BLOCK_LABELS = {
+  rentabilidad: "Rentabilidad",
+  liquidez: "Liquidez",
+  endeudamiento: "Endeudamiento",
+  rotacion: "Rotación de activos",
+  estructura: "Estructura financiera",
+};
+
+const cleanAiText = (text) => {
+  if (text === null || text === undefined) return "";
+
+  return String(text)
+    .replace(/\bok\b/gi, "nivel saludable")
+    .replace(/\bwarn\b/gi, "nivel de atención")
+    .replace(/\bdanger\b/gi, "riesgo elevado")
+    .replace(/\bstatus\b/gi, "estado");
+};
+
+const cleanAiArray = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => cleanAiText(item)).filter(Boolean);
+};
+
+const normalizeSeverityKey = (value) => {
+  const text = cleanAiText(value).toLowerCase();
+
+  if (text.includes("alta")) return "alta";
+  if (text.includes("baja")) return "baja";
+  return "media";
+};
+
+const normalizeAiRecommendation = (item) => {
+  if (typeof item === "string") {
+    return {
+      title: cleanAiText(item),
+      description: "",
+      reason: "",
+      priority: "media",
+    };
+  }
+
+  return {
+    block_key: item?.block_key || null,
+    title: cleanAiText(item?.title || "Recomendación"),
+    description: cleanAiText(item?.description || item?.message || ""),
+    reason: cleanAiText(item?.reason || ""),
+    priority: cleanAiText(item?.priority || "media"),
+  };
+};
+
+const parseAiValue = (value, unit) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "N/A" ||
+    value === "Sin Inventario" ||
+    value === "Sin Deuda LP"
+  ) {
+    return null;
+  }
+
+  const clean = String(value)
+    .replace(/\$/g, "")
+    .replace(/,/g, "")
+    .replace(/%/g, "")
+    .replace(/días/g, "")
+    .replace(/día/g, "")
+    .trim();
+
+  if (!clean) return null;
+
+  const number = Number(clean);
+
+  if (Number.isNaN(number)) return null;
+
+  if (unit === "percentage") return number / 100;
+
+  return number;
+};
+
+// =====================
+// JSON LIMPIO PARA IA
+// =====================
+const AI_KPI_CATALOG = {
+  "Margen de Rentabilidad": {
+    key: "net_margin",
+    category: "rentabilidad",
+    unit: "percentage",
+    higherIsBetter: true,
+    threshold: { ok: ">= 10%", warn: "< 10%" },
+  },
+  "Rendimiento sobre Activos Totales (RAT)": {
+    key: "roa",
+    category: "rentabilidad",
+    unit: "percentage",
+    higherIsBetter: true,
+    threshold: { ok: ">= 10%", warn: "< 10%" },
+  },
+  "Rendimiento sobre el Patrimonio": {
+    key: "roe",
+    category: "rentabilidad",
+    unit: "percentage",
+    higherIsBetter: true,
+    threshold: { ok: ">= 10%", warn: "< 10%" },
+  },
+  "Razón de Liquidez": {
+    key: "current_ratio",
+    category: "liquidez",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: ">= 1.0", warn: "< 1.0" },
+  },
+  "Prueba del Ácido": {
+    key: "acid_test",
+    category: "liquidez",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: ">= 0.8", warn: "< 0.8" },
+  },
+  "Capital de Trabajo": {
+    key: "working_capital",
+    category: "liquidez",
+    unit: "currency",
+    higherIsBetter: true,
+    threshold: { ok: "> 0", warn: "<= 0" },
+  },
+  Apalancamiento: {
+    key: "debt_ratio",
+    category: "endeudamiento",
+    unit: "ratio",
+    higherIsBetter: false,
+    threshold: { ok: "<= 0.5", warn: "> 0.5" },
+  },
+  "Razón de Cobertura de Intereses": {
+    key: "interest_coverage",
+    category: "endeudamiento",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: ">= 1.5", warn: "< 1.5" },
+  },
+  "Estabilidad Financiera": {
+    key: "financial_stability",
+    category: "endeudamiento",
+    unit: "ratio",
+    higherIsBetter: false,
+    threshold: { ok: "<= 1.0", warn: "> 1.0" },
+  },
+  "Rotación de la Cartera": {
+    key: "receivables_turnover",
+    category: "rotacion",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: "> 0", warn: "<= 0" },
+  },
+  "Periodo Promedio de Recaudo": {
+    key: "average_collection_period",
+    category: "rotacion",
+    unit: "days",
+    higherIsBetter: false,
+    threshold: { ok: "<= 60 días", warn: "> 60 días" },
+  },
+  "Rotación de Inventarios": {
+    key: "inventory_turnover",
+    category: "rotacion",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: "> 0", warn: "<= 0" },
+  },
+  "Rotación de Activos Fijos": {
+    key: "fixed_asset_turnover",
+    category: "rotacion",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: ">= 1.0", warn: "< 1.0" },
+  },
+  "Rotación de Activos Totales": {
+    key: "total_asset_turnover",
+    category: "rotacion",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: ">= 1.0", warn: "< 1.0" },
+  },
+  "Solvencia General": {
+    key: "general_solvency",
+    category: "estructura",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: "> 1.0", warn: "<= 1.0" },
+  },
+  "Seguridad a largo plazo": {
+    key: "long_term_security",
+    category: "estructura",
+    unit: "ratio",
+    higherIsBetter: true,
+    threshold: { ok: ">= 1.0", warn: "< 1.0" },
+  },
+  "Inmovilización de Cap. Social": {
+    key: "fixed_assets_to_capital_stock",
+    category: "estructura",
+    unit: "ratio",
+    higherIsBetter: false,
+    threshold: { ok: "<= 1.0", warn: "> 1.0" },
+  },
+  "Inmovilización de Cap. Contable": {
+    key: "fixed_assets_to_equity",
+    category: "estructura",
+    unit: "ratio",
+    higherIsBetter: false,
+    threshold: { ok: "<= 1.0", warn: "> 1.0" },
+  },
+};
+
+const AI_BLOCKS = [
+  "rentabilidad",
+  "liquidez",
+  "endeudamiento",
+  "rotacion",
+  "estructura",
+];
+
+const normalizeAiKpi = (kpi, blockKey) => {
+  const meta = AI_KPI_CATALOG[kpi?.label];
+
+  if (!meta) {
+    return {
+      key: null,
+      label: kpi?.label || "KPI sin etiqueta",
+      category: blockKey,
+      value: null,
+      displayValue: kpi?.value || null,
+      unit: "unknown",
+      status: kpi?.status || "unknown",
+      threshold: null,
+      higherIsBetter: null,
+      note: "KPI no encontrado en el catálogo interno",
+    };
+  }
+
+  return {
+    key: meta.key,
+    label: kpi.label,
+    category: meta.category,
+    value: parseAiValue(kpi.value, meta.unit),
+    displayValue: kpi.value,
+    unit: meta.unit,
+    status: kpi.status || "unknown",
+    threshold: meta.threshold,
+    higherIsBetter: meta.higherIsBetter,
+  };
+};
+
+const normalizeAiRawData = (rawData = {}) => {
+  return { ...rawData };
+};
+
+const normalizeAiPeriod = (period) => {
+  const cleanPeriod = {
+    id: period.id,
+    label: period.label,
+    periodDate: period.periodDate,
+    financial_blocks: {},
+  };
+
+  AI_BLOCKS.forEach((blockKey) => {
+    const block = period[blockKey];
+
+    if (!block) return;
+
+    cleanPeriod.financial_blocks[blockKey] = {
+      key: blockKey,
+      label: blockKey,
+      raw_data: normalizeAiRawData(block.datos_crudos || {}),
+      kpis: (block.kpis || []).map((kpi) => normalizeAiKpi(kpi, blockKey)),
+    };
+  });
+
+  return cleanPeriod;
+};
+
+const buildAiPayload = (periods, options = {}) => {
+  const basePeriodDate =
+    options.basePeriodDate || periods?.[periods.length - 1]?.periodDate || null;
+
+  const normalizedPeriods = periods.map(normalizeAiPeriod);
+
+  const basePeriod = normalizedPeriods.find(
+    (p) => p.periodDate === basePeriodDate
+  );
+
+  return {
+    prompt_version: AI_PROMPT_VERSION,
+    analysis_mode: "monoperiodo",
+    language: "es-MX",
+    business_context: {
+      company_type: "PyME",
+      country: "México",
+      sector: options.sector || "servicios",
+      currency: "MXN",
+      periodicity: options.periodicity || "anual",
+    },
+    base_period: {
+      id: basePeriod?.id || null,
+      label: basePeriod?.label || null,
+      periodDate: basePeriod?.periodDate || basePeriodDate,
+    },
+    periods: normalizedPeriods,
+    comparative_kpis: [],
+    instructions: {
+      do_not_recalculate: true,
+      do_not_invent_missing_data: true,
+      use_only_provided_data: true,
+      interpret_thresholds: true,
+      interpret_trends: false,
+      business_sector_focus: "servicios",
+      explain_indicator_meaning: true,
+      explain_operational_implications: true,
+      avoid_internal_status_words: true,
+      required_block_keys: [
+        "rentabilidad",
+        "liquidez",
+        "endeudamiento",
+        "rotacion",
+        "estructura",
+      ],
+    },
+    requested_output: {
+      format: "json",
+      language: "es-MX",
+      style: {
+        tone: "profesional, claro, directo, no alarmista",
+        sector_focus: "servicios",
+        avoid_internal_status_words: true,
+        avoid_words: ["ok", "warn", "danger", "status"],
+        paragraph_style: "párrafos breves, separados por sección",
+      },
+      sections: {
+        executive_summary: {
+          required: true,
+          format: {
+            title: "string",
+            paragraphs: ["string", "string"],
+          },
+        },
+        key_implications: {
+          required: true,
+          max_items: 4,
+          item_format: {
+            title: "string",
+            indicator: "string",
+            value: "string",
+            reading: "string",
+            implication: "string",
+            possible_impact: "string",
+          },
+        },
+        block_interpretations: {
+          required: true,
+          exact_items: 5,
+          required_block_keys: [
+            "rentabilidad",
+            "liquidez",
+            "endeudamiento",
+            "rotacion",
+            "estructura",
+          ],
+          item_format: {
+            block_key: "string",
+            title: "string",
+            paragraphs: ["string"],
+            indicators_explained: [
+              {
+                label: "string",
+                value: "string",
+                reading: "string",
+                meaning: "string",
+                service_business_implication: "string",
+                possible_impact: "string",
+              },
+            ],
+          },
+        },
+        alerts: {
+          required: true,
+          purpose:
+            "Alertas generales más importantes del análisis completo. No deben ser una lista exhaustiva por bloque.",
+          max_items: 5,
+          item_format: {
+            block_key:
+              "rentabilidad | liquidez | endeudamiento | rotacion | estructura",
+            severity: "baja | media | alta",
+            title: "string",
+            message: "string",
+            implication: "string",
+          },
+        },
+        alerts_by_block: {
+          required: true,
+          exact_items: 5,
+          required_block_keys: [
+            "rentabilidad",
+            "liquidez",
+            "endeudamiento",
+            "rotacion",
+            "estructura",
+          ],
+          rule:
+            "Debe existir exactamente un objeto por cada block_key. Si no hay alerta relevante en un bloque, indicarlo como nivel bajo y explicar que el bloque no presenta presión significativa.",
+          item_format: {
+            block_key:
+              "rentabilidad | liquidez | endeudamiento | rotacion | estructura",
+            severity: "baja | media | alta",
+            title: "string",
+            message: "string",
+            implication: "string",
+          },
+        },
+        recommendations: {
+          required: true,
+          purpose:
+            "Recomendaciones generales del negocio completo. No deben estar agrupadas por bloque. Deben priorizar acciones transversales para la empresa completa.",
+          max_general_recommendations: 5,
+          rule:
+            "No repetir literalmente las recomendaciones de recommendations_by_block. Estas recomendaciones deben integrar el diagnóstico completo y priorizar acciones generales.",
+          item_format: {
+            block_key:
+              "rentabilidad | liquidez | endeudamiento | rotacion | estructura",
+            title: "string",
+            description: "string",
+            reason: "string",
+            priority: "baja | media | alta",
+          },
+        },
+        recommendations_by_block: {
+          required: true,
+          exact_items: 5,
+          required_block_keys: [
+            "rentabilidad",
+            "liquidez",
+            "endeudamiento",
+            "rotacion",
+            "estructura",
+          ],
+          recommendations_per_block: 4,
+          rule:
+            "Debe existir exactamente un objeto por cada block_key. Cada bloque debe incluir cuatro recomendaciones accionables específicas para su pantalla individual, incluso si sus indicadores son saludables.",
+          item_format: {
+            block_key:
+              "rentabilidad | liquidez | endeudamiento | rotacion | estructura",
+            title: "string",
+            recommendations: [
+              {
+                title: "string",
+                description: "string",
+                reason: "string",
+                priority: "baja | media | alta",
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+};
+
+// =====================
+// IA: APLICAR, GUARDAR Y CARGAR
+// =====================
+const applyAiResultToView = (result) => {
+  aiResult.value = result;
+
+  const summary = result?.executive_summary || {};
+  const summaryParagraphs =
+    Array.isArray(summary?.paragraphs) && summary.paragraphs.length > 0
+      ? summary.paragraphs
+      : summary?.summary
+        ? [summary.summary]
+        : [fallbackInterpretation];
+
+  executiveSummary.value = {
+    title: cleanAiText(
+      summary?.title || "Lectura general del desempeño financiero"
+    ),
+    paragraphs: cleanAiArray(summaryParagraphs),
+  };
+
+  keyImplications.value = Array.isArray(result?.key_implications)
+    ? result.key_implications.slice(0, 4).map((item) => ({
+        title: cleanAiText(item?.title || "Implicación relevante"),
+        indicator: cleanAiText(item?.indicator || ""),
+        value: cleanAiText(item?.value || ""),
+        reading: cleanAiText(item?.reading || ""),
+        implication: cleanAiText(item?.implication || ""),
+        possible_impact: cleanAiText(item?.possible_impact || ""),
+      }))
+    : [];
+
+  // En el resumen general usamos alertas generales.
+  // alerts_by_block se reserva para pantallas específicas.
+  const generalAlerts = Array.isArray(result?.alerts) ? result.alerts : [];
+
+  aiAlerts.value = generalAlerts.slice(0, 5).map((alert) => {
+    const severity = cleanAiText(alert?.severity || "media");
+    const blockKey = alert?.block_key || null;
+
+    return {
+      block_key: blockKey,
+      block_name: BLOCK_LABELS[blockKey] || cleanAiText(alert?.block_name || ""),
+      severity,
+      severityKey: normalizeSeverityKey(severity),
+      title: cleanAiText(alert?.title || "Alerta relevante"),
+      message: cleanAiText(alert?.message || alert?.evidence || ""),
+      implication: cleanAiText(alert?.implication || ""),
+    };
+  });
+
+  // IMPORTANTE:
+  // En el resumen general SOLO usamos result.recommendations.
+  // recommendations_by_block se usa en las pantallas individuales.
+  const generalRecommendations = Array.isArray(result?.recommendations)
+    ? result.recommendations
+    : [];
+
+  recommendations.value =
+    generalRecommendations.length > 0
+      ? generalRecommendations.slice(0, 5).map(normalizeAiRecommendation)
+      : [
+          {
+            title: "Sin recomendaciones automáticas",
+            description:
+              "No se generaron recomendaciones automáticas con la información disponible.",
+            reason:
+              "La información recibida no fue suficiente para priorizar acciones generales.",
+            priority: "media",
+          },
+        ];
+
+  interpretation.value = executiveSummary.value.paragraphs.join(" ");
+};
+
+const saveAiAnalysisToFirestore = async (aiPayload, apiResponse) => {
+  if (!projectId.value || !apiResponse?.ai_result) return;
+
+  const basePeriod = aiPayload?.base_period || null;
+  const basePeriodDate = basePeriod?.periodDate || "actual";
+
+  const periodsIncluded =
+    aiPayload?.periods?.map((period) => ({
+      id: period.id || null,
+      label: period.label || null,
+      periodDate: period.periodDate || null,
+    })) || [];
+
+  const docData = {
+    promptVersion: aiPayload?.prompt_version || AI_PROMPT_VERSION,
+    analysisMode: aiPayload?.analysis_mode || "monoperiodo",
+    basePeriod,
+    periodsIncluded,
+    model: apiResponse.model || null,
+    status: "completed",
+    result: apiResponse.ai_result,
+    updatedAt: serverTimestamp(),
+  };
+
+  const latestRef = doc(
+    db,
+    "proyectos",
+    projectId.value,
+    AI_ANALYSIS_COLLECTION,
+    AI_LATEST_DOC_ID
+  );
+
+  const periodRef = doc(
+    db,
+    "proyectos",
+    projectId.value,
+    AI_ANALYSIS_COLLECTION,
+    getAiPeriodDocId(basePeriodDate)
+  );
+
+  await Promise.all([
+    setDoc(latestRef, docData, { merge: true }),
+    setDoc(periodRef, docData, { merge: true }),
+  ]);
+
+  console.log("✅ Análisis IA monoperiodo guardado en Firestore:", {
+    latestPath: `proyectos/${projectId.value}/${AI_ANALYSIS_COLLECTION}/${AI_LATEST_DOC_ID}`,
+    periodPath: `proyectos/${projectId.value}/${AI_ANALYSIS_COLLECTION}/${getAiPeriodDocId(
+      basePeriodDate
+    )}`,
+  });
+};
+
+const loadSavedAiAnalysisFromFirestore = async (aiPayload) => {
+  if (!projectId.value) return false;
+
+  const latestRef = doc(
+    db,
+    "proyectos",
+    projectId.value,
+    AI_ANALYSIS_COLLECTION,
+    AI_LATEST_DOC_ID
+  );
+
+  const snap = await getDoc(latestRef);
+
+  if (!snap.exists()) return false;
+
+  const saved = snap.data();
+
+  const savedBasePeriodDate = saved?.basePeriod?.periodDate;
+  const currentBasePeriodDate = aiPayload?.base_period?.periodDate;
+
+  const savedBasePeriodId = saved?.basePeriod?.id;
+  const currentBasePeriodId = aiPayload?.base_period?.id;
+
+  const savedPeriodsCount = saved?.periodsIncluded?.length || 0;
+  const currentPeriodsCount = aiPayload?.periods?.length || 0;
+
+  const isSamePromptVersion = saved?.promptVersion === aiPayload?.prompt_version;
+
+  const isSameAnalysisContext =
+    isSamePromptVersion &&
+    savedBasePeriodDate === currentBasePeriodDate &&
+    savedBasePeriodId === currentBasePeriodId &&
+    savedPeriodsCount === currentPeriodsCount &&
+    saved?.analysisMode === "monoperiodo" &&
+    saved?.status === "completed" &&
+    saved?.result;
+
+  if (!isSameAnalysisContext) return false;
+
+  applyAiResultToView(saved.result);
+
+  console.log("✅ Análisis IA monoperiodo cargado desde Firestore:", saved);
+
+  return true;
+};
+
+const generateAiAnalysis = async (aiPayload) => {
+  try {
+    aiLoading.value = true;
+    aiError.value = null;
+
+    const response = await fetch(
+      `${API_BASE_URL}/documents/financial-ai-analysis`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          project_id: projectId.value,
+          analysis_payload: aiPayload,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(
+        errorData?.detail || "No se pudo generar el análisis con IA"
+      );
+    }
+
+    const data = await response.json();
+
+    applyAiResultToView(data.ai_result);
+
+    await saveAiAnalysisToFirestore(aiPayload, data);
+
+    console.log("✅ Resultado IA Gemini monoperiodo:", data);
+  } catch (error) {
+    console.error("Error generando análisis monoperiodo con Gemini:", error);
+
+    aiError.value = error.message;
+
+    toast({
+      message: error.message || "No se pudo generar la interpretación con IA.",
+      type: "warning",
+    });
+  } finally {
+    aiLoading.value = false;
+  }
+};
 
 // ===== LÓGICA DE CARGA DE DATOS =====
 const fetchDashboardData = async () => {
@@ -71,54 +840,98 @@ const fetchDashboardData = async () => {
     const periodosRef = collection(db, "proyectos", projectId.value, "periodos");
     const snapshot = await getDocs(periodosRef);
 
-    let data_list = [];
+    let dataList = [];
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
+
       if (data.rentabilidad || data.analisis_rentabilidad) {
-        data_list.push({
+        dataList.push({
           id: docSnap.id,
           label: data.label || docSnap.id,
-          data: data,
+          periodDate: data.periodDate || data.label || docSnap.id,
+          data,
         });
       }
     });
 
-    if (data_list.length > 0) {
-      data_list.sort((a, b) => a.label.localeCompare(b.label));
-      const latest = data_list[data_list.length - 1];
+    if (dataList.length > 0) {
+      dataList.sort((a, b) =>
+        String(a.periodDate).localeCompare(String(b.periodDate))
+      );
+
+      const latest = dataList[dataList.length - 1];
       const d = latest.data;
 
       const dashboardData = {
-        rentabilidad: d.rentabilidad || d.analisis_rentabilidad || {},
-        liquidez: d.liquidez || d.analisis_liquidez || {},
-        endeudamiento: d.endeudamiento || d.analisis_endeudamiento || {},
-        estructura: d.estructura || d.analisis_estructura || {},
-        rotacion: d.rotacion || d.analisis_rotacion || {},
+        id: latest.id,
+        label: latest.label,
+        periodDate: latest.periodDate,
         periodo: latest.label,
+        resultados_url: d.resultsFile?.url || d.resultados_url || null,
+        rentabilidad:
+          d.rentabilidad ||
+          d.analisis_rentabilidad || { datos_crudos: {}, kpis: [] },
+        liquidez:
+          d.liquidez ||
+          d.analisis_liquidez || { datos_crudos: {}, kpis: [] },
+        endeudamiento:
+          d.endeudamiento ||
+          d.analisis_endeudamiento || { datos_crudos: {}, kpis: [] },
+        estructura:
+          d.estructura ||
+          d.analisis_estructura || { datos_crudos: {}, kpis: [] },
+        rotacion:
+          d.rotacion ||
+          d.analisis_rotacion || { datos_crudos: {}, kpis: [] },
       };
 
-      // Capturar la URL del PDF del estado de resultados
-      resultadosPdfUrl.value = d.resultsFile?.url || d.resultados_url || null;
+      rawPeriod.value = dashboardData;
+      resultadosPdfUrl.value = dashboardData.resultados_url;
 
-      // ====== LOG PARA DEMOSTRAR LOS DATOS MONOPERIODO A LA IA ======
       console.log("📊 KPIs DE TODOS LOS MÓDULOS (MONOPERIODO):", {
         rentabilidad: dashboardData.rentabilidad.kpis,
         liquidez: dashboardData.liquidez.kpis,
         endeudamiento: dashboardData.endeudamiento.kpis,
         estructura: dashboardData.estructura.kpis,
-        rotacion: dashboardData.rotacion.kpis
+        rotacion: dashboardData.rotacion.kpis,
       });
-      // =============================================================
+
+      const aiPayload = buildAiPayload([dashboardData], {
+        basePeriodDate: dashboardData.periodDate,
+        sector: "servicios",
+        periodicity: "anual",
+      });
+
+      console.log(
+        "🤖 JSON LIMPIO PARA IA (MONOPERIODO):",
+        JSON.parse(JSON.stringify(aiPayload))
+      );
 
       mapDataToDashboard(dashboardData);
-      periodLabel.value = dashboardData.periodo ? `Periodo: ${dashboardData.periodo}` : "Periodo Actual";
+
+      periodLabel.value = dashboardData.periodo
+        ? `Periodo: ${dashboardData.periodo}`
+        : "Periodo Actual";
+
+      const hasSavedAiAnalysis = await loadSavedAiAnalysisFromFirestore(
+        aiPayload
+      );
+
+      if (!hasSavedAiAnalysis) {
+        await generateAiAnalysis(aiPayload);
+      }
     } else {
       interpretation.value = "No hay análisis disponibles.";
     }
   } catch (error) {
     console.error("Error cargando dashboard:", error);
     interpretation.value = "Error de conexión.";
+
+    toast({
+      message: "No se pudo cargar el resumen monoperiodo.",
+      type: "warning",
+    });
   } finally {
     loading.value = false;
   }
@@ -133,9 +946,9 @@ const mapDataToDashboard = (data) => {
   const rot = data.rotacion || { datos_crudos: {}, kpis: [] };
 
   const ventas = rent.datos_crudos?.ventas_netas || 0;
-  const ut_neta = rent.datos_crudos?.utilidad_neta || 0;
+  const utNeta = rent.datos_crudos?.utilidad_neta || 0;
   const costo = rot.datos_crudos?.costo_ventas || 0;
-  const ut_operacion = end.datos_crudos?.utilidad_operacion || 0;
+  const utOperacion = end.datos_crudos?.utilidad_operacion || 0;
 
   kpis.value = [
     {
@@ -145,13 +958,13 @@ const mapDataToDashboard = (data) => {
     },
     {
       label: "Utilidad Neta",
-      value: currencyFmt.format(ut_neta),
-      status: ut_neta > 0 ? "ok" : "warn",
+      value: currencyFmt.format(utNeta),
+      status: utNeta > 0 ? "ok" : "warn",
     },
     {
       label: "Margen Neto",
-      value: percentFmt.format(ventas ? ut_neta / ventas : 0),
-      status: ventas && ut_neta / ventas > 0.1 ? "ok" : "warn",
+      value: percentFmt.format(ventas ? utNeta / ventas : 0),
+      status: ventas && utNeta / ventas > 0.1 ? "ok" : "warn",
     },
     {
       label: "Liquidez General",
@@ -160,7 +973,6 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
-  // A) Rentabilidad
   cards.value[0].items = [
     {
       label: "ROE",
@@ -176,7 +988,6 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
-  // B) Liquidez
   cards.value[1].items = [
     {
       label: "Prueba Ácida",
@@ -192,7 +1003,6 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
-  // C) Endeudamiento
   cards.value[2].items = [
     {
       label: "Nivel Deuda",
@@ -208,11 +1018,14 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
-  // D) Rotación de activos
-  const rawRotInv = rot.kpis?.find(k => k.label.toLowerCase().includes("inventarios"));
-  const rotInvValue = (!rawRotInv || rawRotInv.value === "N/A") 
-    ? "N/A" 
-    : (findKpiValue(rot.kpis, "Inventarios") || "-");
+  const rawRotInv = rot.kpis?.find((k) =>
+    k.label.toLowerCase().includes("inventarios")
+  );
+
+  const rotInvValue =
+    !rawRotInv || rawRotInv.value === "N/A"
+      ? "N/A"
+      : findKpiValue(rot.kpis, "Inventarios") || "-";
 
   cards.value[3].items = [
     {
@@ -229,7 +1042,6 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
-  // E) Estructura
   cards.value[4].items = [
     {
       label: "Solvencia",
@@ -245,24 +1057,50 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
-  // F) Resumen del Resultado
-  const calcPct = (val, total) => total ? `${((val / total) * 100).toFixed(1)}%` : "0%";
-  const gastos = ventas - costo - ut_operacion;
-  const impuestos = ut_operacion - ut_neta;
+  const calcPct = (val, total) =>
+    total ? `${((val / total) * 100).toFixed(1)}%` : "0%";
+
+  const gastos = ventas - costo - utOperacion;
+  const impuestos = utOperacion - utNeta;
 
   estructuraResultado.value = {
     period: data.periodo || "Periodo actual",
     rows: [
-      { concept: "Ingresos", value: currencyFmt.format(ventas), pct: "100%", tone: "income" },
-      { concept: "Costos", value: `(${currencyFmt.format(costo)})`, pct: calcPct(costo, ventas), tone: "negative" },
-      { concept: "Gastos", value: `(${currencyFmt.format(gastos > 0 ? gastos : 0)})`, pct: calcPct(gastos > 0 ? gastos : 0, ventas), tone: "negative" },
-      { concept: "Impuestos y Otros", value: `(${currencyFmt.format(impuestos > 0 ? impuestos : 0)})`, pct: calcPct(impuestos > 0 ? impuestos : 0, ventas), tone: "negative" },
-      { concept: "Total (Utilidad Neta)", value: currencyFmt.format(ut_neta), pct: calcPct(ut_neta, ventas), tone: "total" },
+      {
+        concept: "Ingresos",
+        value: currencyFmt.format(ventas),
+        pct: "100%",
+        tone: "income",
+      },
+      {
+        concept: "Costos",
+        value: `(${currencyFmt.format(costo)})`,
+        pct: calcPct(costo, ventas),
+        tone: "negative",
+      },
+      {
+        concept: "Gastos",
+        value: `(${currencyFmt.format(gastos > 0 ? gastos : 0)})`,
+        pct: calcPct(gastos > 0 ? gastos : 0, ventas),
+        tone: "negative",
+      },
+      {
+        concept: "Impuestos y Otros",
+        value: `(${currencyFmt.format(impuestos > 0 ? impuestos : 0)})`,
+        pct: calcPct(impuestos > 0 ? impuestos : 0, ventas),
+        tone: "negative",
+      },
+      {
+        concept: "Total (Utilidad Neta)",
+        value: currencyFmt.format(utNeta),
+        pct: calcPct(utNeta, ventas),
+        tone: "total",
+      },
     ],
   };
 
   interpretation.value =
-    ut_neta > 0
+    utNeta > 0
       ? "La empresa genera utilidades netas positivas."
       : "La empresa reporta pérdidas o faltan datos.";
 };
@@ -270,14 +1108,25 @@ const mapDataToDashboard = (data) => {
 // ===== FUNCIONES AUXILIARES =====
 const findKpiValue = (list, labelPart) => {
   if (!list) return null;
-  const item = list.find((k) => k.label.toLowerCase().includes(labelPart.toLowerCase()));
+
+  const item = list.find((k) =>
+    k.label.toLowerCase().includes(labelPart.toLowerCase())
+  );
+
   return item ? item.value : null;
 };
 
 const getDotColor = (list, labelPart) => {
   if (!list) return "gray";
-  const item = list.find((k) => k.label.toLowerCase().includes(labelPart.toLowerCase()));
+
+  const item = list.find((k) =>
+    k.label.toLowerCase().includes(labelPart.toLowerCase())
+  );
+
   if (!item) return "gray";
+
+  if (item.status === "danger" || item.status === "alert") return "alert";
+
   return item.status === "ok" ? "ok" : "warn";
 };
 
@@ -294,7 +1143,10 @@ function goToIncomeStatementDetail() {
   if (resultadosPdfUrl.value) {
     window.open(resultadosPdfUrl.value, "_blank");
   } else {
-    toast({ message: "No se encontró el documento PDF para este periodo.", type: "warning" });
+    toast({
+      message: "No se encontró el documento PDF para este periodo.",
+      type: "warning",
+    });
   }
 }
 
@@ -316,17 +1168,21 @@ onMounted(() => {
       </article>
     </section>
 
-        <!-- Info -->
+    <!-- Info -->
     <div class="info">
       <span class="material-symbols-outlined">info</span>
-      <p>Para visualizar gráficas de evolución y comparativas detalladas, añade más periodos a tu análisis.</p>
+      <p>
+        Para visualizar gráficas de evolución y comparativas detalladas, añade más periodos a tu análisis.
+      </p>
     </div>
 
     <!-- Cards -->
     <section class="cards-grid">
       <article v-for="c in cards" :key="c.title" class="card">
         <div class="card-head">
-          <span class="material-symbols-outlined card-ico" aria-hidden="true">{{ c.icon }}</span>
+          <span class="material-symbols-outlined card-ico" aria-hidden="true">
+            {{ c.icon }}
+          </span>
           <h4>{{ c.title }}</h4>
         </div>
 
@@ -347,12 +1203,14 @@ onMounted(() => {
         </div>
 
         <div class="card-foot">
-          <button class="link-btn" type="button" @click="goDetail(c.detailRoute)">Ver detalle</button>
+          <button class="link-btn" type="button" @click="goDetail(c.detailRoute)">
+            Ver detalle
+          </button>
         </div>
       </article>
     </section>
 
-    <!-- Estructura del resultado nueva -->
+    <!-- Resumen del resultado -->
     <section class="result-card">
       <div class="result-head">
         <div class="result-title">
@@ -405,7 +1263,76 @@ onMounted(() => {
           <h3>Interpretación y alertas</h3>
         </div>
 
-        <p class="note-text">{{ interpretation }}</p>
+        <p v-if="aiLoading" class="note-text">
+          Generando interpretación automática...
+        </p>
+
+        <p v-else-if="aiError" class="note-text">
+          No se pudo generar la interpretación automática. Se muestra información base del sistema.
+        </p>
+
+        <div v-else class="ai-content">
+          <h4 class="ai-title">{{ executiveSummary.title }}</h4>
+
+          <p
+            v-for="(paragraph, idx) in executiveSummary.paragraphs"
+            :key="`summary-${idx}`"
+            class="ai-paragraph"
+          >
+            {{ paragraph }}
+          </p>
+
+          <div v-if="keyImplications.length" class="ai-section">
+            <h4 class="ai-section-title">Implicaciones principales</h4>
+
+            <div
+              v-for="(item, idx) in keyImplications"
+              :key="`implication-${idx}`"
+              class="ai-finding"
+            >
+              <p class="ai-finding-title">{{ item.title }}</p>
+
+              <p v-if="item.indicator || item.value || item.reading" class="ai-finding-meta">
+                <span v-if="item.indicator">{{ item.indicator }}</span>
+                <span v-if="item.value"> · {{ item.value }}</span>
+                <span v-if="item.reading"> · {{ item.reading }}</span>
+              </p>
+
+              <p v-if="item.implication" class="ai-finding-text">
+                {{ item.implication }}
+              </p>
+
+              <p v-if="item.possible_impact" class="ai-impact">
+                {{ item.possible_impact }}
+              </p>
+            </div>
+          </div>
+
+          <div v-if="aiAlerts.length" class="ai-section">
+            <h4 class="ai-section-title">Alertas relevantes</h4>
+
+            <div
+              v-for="(alert, idx) in aiAlerts"
+              :key="`alert-${idx}`"
+              class="ai-alert"
+              :class="`severity-${alert.severityKey}`"
+            >
+              <p v-if="alert.block_name" class="ai-block-name">
+                {{ alert.block_name }}
+              </p>
+
+              <p class="ai-finding-title">{{ alert.title }}</p>
+
+              <p v-if="alert.message" class="ai-finding-text">
+                {{ alert.message }}
+              </p>
+
+              <p v-if="alert.implication" class="ai-impact">
+                {{ alert.implication }}
+              </p>
+            </div>
+          </div>
+        </div>
       </article>
 
       <article class="note note-white">
@@ -413,19 +1340,27 @@ onMounted(() => {
           <div class="tag tag-green">
             <span class="material-symbols-outlined">checklist</span>
           </div>
-          <h3>Recomendaciones</h3>
+          <h3>Recomendaciones generales</h3>
         </div>
 
         <ul class="list">
-          <li v-for="(item, idx) in recommendations" :key="idx">
+          <li v-if="aiLoading">
+            <span class="material-symbols-outlined">hourglass_empty</span>
+            <span>Generando recomendaciones...</span>
+          </li>
+
+          <li v-else v-for="(item, idx) in recommendations" :key="idx">
             <span class="material-symbols-outlined">check_circle</span>
-            <span>{{ item }}</span>
+
+            <span class="recommendation-content">
+              <strong>{{ item.title }}</strong>
+              <small v-if="item.description">{{ item.description }}</small>
+              <em v-if="item.reason">{{ item.reason }}</em>
+            </span>
           </li>
         </ul>
       </article>
     </section>
-
-
 
     <footer class="foot">
       <p>
@@ -505,14 +1440,6 @@ onMounted(() => {
 
 .kpi-dot.gray {
   background: #9ca3af;
-}
-
-.mini-dot.gray {
-  background: #9ca3af;
-}
-
-.mini-dot.alert {
-  background: #ef4444;
 }
 
 .kpi-value {
@@ -610,6 +1537,14 @@ onMounted(() => {
   background: #facc15;
 }
 
+.mini-dot.alert {
+  background: #ef4444;
+}
+
+.mini-dot.gray {
+  background: #9ca3af;
+}
+
 .sep {
   height: 1px;
   background: #f1f5f9;
@@ -624,7 +1559,7 @@ onMounted(() => {
   text-align: center;
 }
 
-/* ===== Nueva estructura del resultado ===== */
+/* ===== Resultado ===== */
 .result-card {
   background: #fff;
   border: 1px solid #e8eff3;
@@ -765,6 +1700,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
+  align-items: start;
 }
 
 .note {
@@ -772,7 +1708,7 @@ onMounted(() => {
   border-radius: 16px;
   border: 1px solid #dbeafe;
   background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
-  padding: 16px;
+  padding: 20px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   overflow: hidden;
 }
@@ -836,12 +1772,111 @@ onMounted(() => {
   z-index: 1;
 }
 
+.ai-content {
+  display: grid;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.ai-paragraph {
+  margin: 0;
+  color: #0e161b;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.ai-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.ai-section-title {
+  margin: 0;
+  color: #507c95;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ai-finding,
+.ai-alert {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #dbeafe;
+}
+
+.ai-block-name {
+  margin: 0 0 6px;
+  color: #299de0;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ai-finding-title {
+  margin: 0 0 4px;
+  color: #0e161b;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.ai-finding-meta {
+  margin: 0 0 6px;
+  color: #507c95;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ai-finding-text,
+.ai-impact {
+  margin: 0;
+  color: #0e161b;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.ai-impact {
+  margin-top: 6px;
+  color: #334155;
+}
+
+.ai-alert.severity-alta {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.ai-alert.severity-media {
+  border-color: #fde68a;
+  background: #fffdf2;
+}
+
+.ai-alert.severity-baja {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
 .list {
   margin: 8px 0 0;
   padding: 0;
   list-style: none;
   display: grid;
   gap: 10px;
+  position: relative;
+  z-index: 1;
 }
 
 .list li {
@@ -856,6 +1891,32 @@ onMounted(() => {
   color: #299de0;
   font-size: 18px;
   margin-top: 2px;
+}
+
+.recommendation-content {
+  display: grid;
+  gap: 3px;
+}
+
+.recommendation-content strong {
+  font-size: 13px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.recommendation-content small {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.recommendation-content em {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  font-style: normal;
+  line-height: 1.4;
 }
 
 /* ===== Info + footer ===== */
