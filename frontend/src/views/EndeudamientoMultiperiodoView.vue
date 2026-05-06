@@ -1,11 +1,28 @@
 <script setup>
 import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useRoute, useRouter } from "vue-router";
+import { useFinancialAiBlock } from "@/composables/useFinancialAiBlock";
 
 const route = useRoute();
+const router = useRouter();
 const projectId = route.params.id_proyecto;
+
+const {
+  loadAiResult,
+  interpretationText,
+  mainFindings,
+  recommendationItems,
+  alertItems,
+  aiBlockLoading,
+  aiBlockError,
+} = useFinancialAiBlock("endeudamiento");
+
+const centroDeAprendizaje = () => {
+  const routeData = router.resolve({ name: "teoriaEndeudamiento" });
+  window.open(routeData.href, "_blank");
+};
 
 const loading = ref(true);
 const rawPeriods = ref([]);
@@ -16,17 +33,17 @@ const tableRows = ref([]);
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 const parseVal = (val) => {
   if (!val) return 0;
-  if (typeof val === 'number') return val;
-  return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+  if (typeof val === "number") return val;
+  return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
 };
 
-const fetchPeriods = async () => {
+const fetchDashboardData = async () => {
   try {
     if (!projectId) return;
 
@@ -34,24 +51,44 @@ const fetchPeriods = async () => {
     const snapshot = await getDocs(periodosRef);
 
     let loaded = [];
+
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.analisis_endeudamiento) {
+      const data = docSnap.data();
+
+      if (data.analisis_endeudamiento || data.endeudamiento) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          endeudamiento: d.analisis_endeudamiento || { datos_crudos: {}, kpis: [] },
-          liquidez: d.analisis_liquidez || { datos_crudos: {} },
-          estructura: d.analisis_estructura || { datos_crudos: {} },
-          rentabilidad: d.analisis_rentabilidad || { datos_crudos: {} },
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          endeudamiento:
+            data.analisis_endeudamiento ||
+            data.endeudamiento || { datos_crudos: {}, kpis: [] },
+          liquidez:
+            data.analisis_liquidez ||
+            data.liquidez || { datos_crudos: {} },
+          estructura:
+            data.analisis_estructura ||
+            data.estructura || { datos_crudos: {} },
+          rentabilidad:
+            data.analisis_rentabilidad ||
+            data.rentabilidad || { datos_crudos: {} },
         });
       }
     });
 
-    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    loaded.sort((a, b) =>
+      String(a.periodDate).localeCompare(String(b.periodDate))
+    );
+
     rawPeriods.value = loaded;
-    
+
+    const kpisParaIA = loaded.map((p) => ({
+      periodo: p.label,
+      kpis: p.endeudamiento.kpis,
+    }));
+
+    console.log("📊 KPIs DE ENDEUDAMIENTO (MULTIPERIODO):", kpisParaIA);
+
     if (loaded.length > 0) {
       generateDashboardData();
     }
@@ -64,19 +101,42 @@ const fetchPeriods = async () => {
 
 const generateDashboardData = () => {
   const periods = rawPeriods.value;
-  const labels = periods.map(p => p.label);
+  const labels = periods.map((p) => p.label);
 
   const findKpi = (kpis, keyword) => {
     if (!kpis) return 0;
-    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
     return item ? parseVal(item.value) : 0;
   };
 
-  const dataApalancamiento = periods.map(p => findKpi(p.endeudamiento.kpis, "apalancamiento"));
-  const dataCobertura = periods.map(p => findKpi(p.endeudamiento.kpis, "cobertura"));
-  const dataEstabilidad = periods.map(p => findKpi(p.endeudamiento.kpis, "estabilidad"));
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    return item ? item.status : "warn";
+  };
 
-  function buildChart(values, title, subtitle, legendLabel, type = "ratio") {
+  const dataApalancamiento = periods.map((p) =>
+    findKpi(p.endeudamiento.kpis, "apalancamiento")
+  );
+  const dataCobertura = periods.map((p) =>
+    findKpi(p.endeudamiento.kpis, "cobertura")
+  );
+  const dataEstabilidad = periods.map((p) =>
+    findKpi(p.endeudamiento.kpis, "estabilidad")
+  );
+
+  function buildChart(
+    values,
+    title,
+    subtitle,
+    legendLabel,
+    type = "ratio",
+    backendStatus = "warn"
+  ) {
     const maxFallback = type === "cobertura" ? 2 : 0.2;
     const maxVal = Math.max(...values, maxFallback);
     let minVal = Math.min(...values, 0);
@@ -117,24 +177,31 @@ const generateDashboardData = () => {
     const points = values.map((val, i) => {
       const x = values.length > 1 ? 120 + i * xStep : 400;
       const y = 230 - ((val - yMin) / finalRange) * 180;
-      return { x, y, label: labels[i], bold: i === values.length - 1, value: val, type };
+
+      return {
+        x,
+        y,
+        label: labels[i],
+        bold: i === values.length - 1,
+        value: val,
+        type,
+      };
     });
 
     const lastVal = values[values.length - 1];
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     const delta = lastVal - prevVal;
 
-    let status = "warn";
-    if (type === "apalancamiento") status = lastVal <= 0.6 ? "ok" : "warn";
-    else if (type === "cobertura") status = lastVal >= 3 ? "ok" : "warn";
-    else if (type === "estabilidad") status = lastVal <= 1.0 ? "ok" : "warn";
-
     return {
       kpiValue: type === "cobertura" ? `${lastVal.toFixed(2)}x` : lastVal.toFixed(2),
-      status,
+      status: backendStatus,
       deltaType: delta >= 0 ? "up" : "down",
-      deltaValue: type === "cobertura" ? `${delta > 0 ? "+" : ""}${delta.toFixed(2)}x` : `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`,
-      deltaNote: values.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      deltaValue:
+        type === "cobertura"
+          ? `${delta > 0 ? "+" : ""}${delta.toFixed(2)}x`
+          : `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`,
+      deltaNote:
+        values.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
       chartTitle: title,
       chartSubtitle: subtitle,
       legendLabel,
@@ -144,26 +211,57 @@ const generateDashboardData = () => {
     };
   }
 
+  const lastP = periods[periods.length - 1];
+
   metrics.value = [
-    { key: "apalancamiento", label: "Apalancamiento (deuda / activo)", ...buildChart(dataApalancamiento, "Evolución Apalancamiento", "Nivel de deuda respecto al activo total", "Apalancamiento", "apalancamiento") },
-    { key: "cobertura", label: "Cobertura de intereses", ...buildChart(dataCobertura, "Evolución Cobertura de Intereses", "Capacidad para cubrir gastos financieros", "Cobertura", "cobertura") },
-    { key: "estabilidad", label: "Estabilidad financiera", ...buildChart(dataEstabilidad, "Evolución Estabilidad Financiera", "Equilibrio entre recursos ajenos y propios", "Estabilidad", "estabilidad") },
+    {
+      key: "apalancamiento",
+      label: "Apalancamiento (deuda / activo)",
+      ...buildChart(
+        dataApalancamiento,
+        "Evolución Apalancamiento",
+        "Nivel de deuda respecto al activo total",
+        "Apalancamiento",
+        "apalancamiento",
+        getKpiStatus(lastP.endeudamiento.kpis, "apalancamiento")
+      ),
+    },
+    {
+      key: "cobertura",
+      label: "Cobertura de intereses",
+      ...buildChart(
+        dataCobertura,
+        "Evolución Cobertura de Intereses",
+        "Capacidad para cubrir gastos financieros",
+        "Cobertura",
+        "cobertura",
+        getKpiStatus(lastP.endeudamiento.kpis, "cobertura")
+      ),
+    },
+    {
+      key: "estabilidad",
+      label: "Estabilidad financiera",
+      ...buildChart(
+        dataEstabilidad,
+        "Evolución Estabilidad Financiera",
+        "Equilibrio entre recursos ajenos y propios",
+        "Estabilidad",
+        "estabilidad",
+        getKpiStatus(lastP.endeudamiento.kpis, "estabilidad")
+      ),
+    },
   ];
 
-  // Construir Tabla (Orden Ascendente)
   tableRows.value = periods.map((p, i) => {
     const crudos = p.endeudamiento.datos_crudos || {};
-    const varTrimestral = i > 0 ? (dataApalancamiento[i] - dataApalancamiento[i-1]).toFixed(2) : "0.00";
-    
+
     return {
       period: p.label,
       pasivo: currencyFmt.format(crudos.pasivo_total || 0),
       activo: currencyFmt.format(crudos.activo_total || 0),
       apalancamiento: dataApalancamiento[i].toFixed(2),
       cobertura: `${dataCobertura[i].toFixed(2)}x`,
-      variacion: varTrimestral > 0 ? `+${varTrimestral}` : varTrimestral,
       highlight: i === periods.length - 1,
-      variationClass: varTrimestral > 0 ? "up" : (varTrimestral < 0 ? "down" : ""),
     };
   });
 };
@@ -173,19 +271,31 @@ const selectedKpi = computed(() => {
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(key) { activeKpi.value = key; }
+function setActive(key) {
+  activeKpi.value = key;
+}
 
 const hoveredPoint = ref(null);
-function showTooltip(point) { hoveredPoint.value = point; }
-function hideTooltip() { hoveredPoint.value = null; }
+
+function showTooltip(point) {
+  hoveredPoint.value = point;
+}
+
+function hideTooltip() {
+  hoveredPoint.value = null;
+}
 
 const baselineY = 230;
+
 const linePath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
   if (!pts.length) return "";
-  return pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ");
+  return pts
+    .map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`))
+    .join(" ");
 });
+
 const areaPath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
@@ -197,11 +307,13 @@ const areaPath = computed(() => {
 });
 
 // --- LÓGICA DE DONUTS (Último periodo) ---
-const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
+const lastPeriodData = computed(() =>
+  rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null
+);
 
 const pasivosTotales = computed(() => {
   if (!lastPeriodData.value) return { total: "$0", segments: [] };
-  
+
   const endCrudos = lastPeriodData.value.endeudamiento?.datos_crudos || {};
   const liqCrudos = lastPeriodData.value.liquidez?.datos_crudos || {};
   const estCrudos = lastPeriodData.value.estructura?.datos_crudos || {};
@@ -209,22 +321,21 @@ const pasivosTotales = computed(() => {
   const pTotal = endCrudos.pasivo_total || 0;
   const pCirculante = liqCrudos.pasivo_circulante || 0;
   const pLargoPlazo = estCrudos.pasivo_largo_plazo || 0;
-  
-  // Calculamos la diferencia para "Otros Pasivos"
+
   let otrosPasivos = pTotal - (pCirculante + pLargoPlazo);
-  if (otrosPasivos < 0) otrosPasivos = 0; // Evitar negativos por descuadres contables
-  
+  if (otrosPasivos < 0) otrosPasivos = 0;
+
   const items = [
     { label: "Pasivo Circulante", value: pCirculante, color: "#e11d48" },
     { label: "Deuda a Largo Plazo", value: pLargoPlazo, color: "#fb923c" },
-    { label: "Otros Pasivos", value: otrosPasivos, color: "#fcd34d" }
-  ].filter(i => i.value > 0);
+    { label: "Otros Pasivos", value: otrosPasivos, color: "#fcd34d" },
+  ].filter((i) => i.value > 0);
 
-  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1; // Evitar división por cero
-  
+  const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+
   let currentOffset = 0;
-  const segments = items.map(item => {
-    const pct = (item.value / totalCálculo) * 100;
+  const segments = items.map((item) => {
+    const pct = (item.value / totalCalculo) * 100;
     const dasharray = `${pct} 100`;
     const dashoffset = -currentOffset;
     currentOffset += pct;
@@ -232,33 +343,33 @@ const pasivosTotales = computed(() => {
   });
 
   return {
-    total: pTotal >= 1000000 ? `$${(pTotal/1000000).toFixed(1)}M` : currencyFmt.format(pTotal),
-    segments
+    total:
+      pTotal >= 1000000 ? `$${(pTotal / 1000000).toFixed(1)}M` : currencyFmt.format(pTotal),
+    segments,
   };
 });
 
 const financiamiento = computed(() => {
   if (!lastPeriodData.value) return { total: "$0", segments: [] };
-  
+
   const endCrudos = lastPeriodData.value.endeudamiento?.datos_crudos || {};
   const estCrudos = lastPeriodData.value.estructura?.datos_crudos || {};
   const rentCrudos = lastPeriodData.value.rentabilidad?.datos_crudos || {};
 
   const pTotal = endCrudos.pasivo_total || 0;
-  // Buscamos el capital en Estructura, y si no, en Rentabilidad
-  const capPropio = estCrudos.capital_contable || rentCrudos.capital_contable || 0; 
-  const activoTotal = endCrudos.activo_total || (pTotal + capPropio);
+  const capPropio = estCrudos.capital_contable || rentCrudos.capital_contable || 0;
+  const activoTotal = endCrudos.activo_total || pTotal + capPropio;
 
   const items = [
     { label: "Financiamiento Externo / Pasivo", value: pTotal, color: "#299de0" },
-    { label: "Capital Propio / Patrimonio", value: capPropio, color: "#1e293b" }
-  ].filter(i => i.value > 0);
+    { label: "Capital Propio / Patrimonio", value: capPropio, color: "#1e293b" },
+  ].filter((i) => i.value > 0);
 
-  const totalCálculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
-  
+  const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
+
   let currentOffset = 0;
-  const segments = items.map(item => {
-    const pct = (item.value / totalCálculo) * 100;
+  const segments = items.map((item) => {
+    const pct = (item.value / totalCalculo) * 100;
     const dasharray = `${pct} 100`;
     const dashoffset = -currentOffset;
     currentOffset += pct;
@@ -266,65 +377,86 @@ const financiamiento = computed(() => {
   });
 
   return {
-    total: activoTotal >= 1000000 ? `$${(activoTotal/1000000).toFixed(1)}M` : currencyFmt.format(activoTotal),
-    segments
+    total:
+      activoTotal >= 1000000
+        ? `$${(activoTotal / 1000000).toFixed(1)}M`
+        : currencyFmt.format(activoTotal),
+    segments,
   };
 });
 
-// --- IA LOCAL DE INTERPRETACIÓN ---
+// --- FALLBACK LOCAL DE INTERPRETACIÓN ---
 const analysisText = computed(() => {
   if (!selectedKpi.value) return "";
+
   const val = parseVal(selectedKpi.value.kpiValue);
 
   if (selectedKpi.value.key === "apalancamiento") {
-    if (val > 0.6) return "El nivel de apalancamiento es alto (mayor a 0.60). La empresa depende fuertemente del financiamiento externo, lo que incrementa el riesgo financiero ante posibles caídas en ventas.";
+    if (val > 0.6) {
+      return "El nivel de apalancamiento es alto. La empresa depende fuertemente del financiamiento externo, lo que incrementa el riesgo financiero ante posibles caídas en ventas.";
+    }
+
     return "La empresa mantiene una estructura de endeudamiento saludable. El nivel de apalancamiento se mantiene controlado, mostrando independencia financiera.";
   }
 
   if (selectedKpi.value.key === "cobertura") {
-    if (val < 1.5) return "ALERTA: La cobertura de intereses es crítica. La utilidad operativa apenas alcanza para cubrir los gastos financieros. Existe un alto riesgo de impago.";
-    return "La cobertura de intereses es sólida. La utilidad operativa es suficiente para absorber holgadamente el costo financiero de la deuda.";
+    if (val < 1.5) {
+      return "La cobertura de intereses es crítica. La utilidad operativa apenas alcanza para cubrir los gastos financieros. Existe riesgo de presión financiera.";
+    }
+
+    return "La cobertura de intereses es sólida. La utilidad operativa es suficiente para absorber el costo financiero de la deuda.";
   }
 
-  if (val > 1.0) return "La estabilidad financiera está comprometida, ya que las deudas superan al capital aportado por los socios.";
+  if (val > 1.0) {
+    return "La estabilidad financiera está comprometida, ya que las deudas superan al capital aportado por los socios.";
+  }
+
   return "La estabilidad financiera es positiva. Existe un buen equilibrio entre los recursos propios y la deuda adquirida.";
 });
 
 const recommendationList = computed(() => {
   if (!selectedKpi.value) return [];
+
   const val = parseVal(selectedKpi.value.kpiValue);
 
   if (selectedKpi.value.key === "apalancamiento") {
-    return val > 0.6 ? [
-      "Frenar la adquisición de nueva deuda a corto plazo.",
-      "Explorar inyecciones de capital de socios para equilibrar la balanza.",
-      "Vender activos improductivos para liquidar pasivos costosos."
-    ] : [
-      "Mantener el ratio de apalancamiento por debajo de 0.60.",
-      "Aprovechar el margen de crédito disponible solo si hay proyectos de alta rentabilidad.",
-    ];
+    return val > 0.6
+      ? [
+          "Frenar la adquisición de nueva deuda a corto plazo.",
+          "Explorar inyecciones de capital de socios para equilibrar la estructura financiera.",
+          "Vender activos improductivos para liquidar pasivos costosos.",
+        ]
+      : [
+          "Mantener el ratio de apalancamiento por debajo de 0.60.",
+          "Aprovechar el margen de crédito disponible solo si hay proyectos de alta rentabilidad.",
+        ];
   }
 
   if (selectedKpi.value.key === "cobertura") {
-    return val < 1.5 ? [
-      "Reestructurar deuda actual para buscar tasas de interés más bajas.",
-      "Implementar un plan urgente de reducción de costos operativos.",
-    ] : [
-      "Mantener el control de gastos operativos para no mermar la utilidad.",
-      "Evaluar si conviene adelantar pagos a capital de las deudas vigentes."
-    ];
+    return val < 1.5
+      ? [
+          "Reestructurar deuda actual para buscar tasas de interés más bajas.",
+          "Implementar un plan urgente de reducción de costos operativos.",
+        ]
+      : [
+          "Mantener el control de gastos operativos para no reducir la utilidad operativa.",
+          "Evaluar si conviene adelantar pagos a capital de las deudas vigentes.",
+        ];
   }
 
   return [
-    "Reforzar el capital propio mediante la no distribución de dividendos.",
+    "Reforzar el capital propio mediante la retención de utilidades.",
     "Mantener una mezcla sana entre recursos ajenos y patrimonio.",
   ];
 });
 
-function learnMore() { /* Placeholder */ }
+const finalAnalysisText = computed(() => {
+  return interpretationText.value || analysisText.value;
+});
 
 onMounted(() => {
-  fetchPeriods();
+  loadAiResult();
+  fetchDashboardData();
 });
 </script>
 
@@ -333,7 +465,7 @@ onMounted(() => {
     <div class="title">
       <div class="title-row">
         <h1>Endeudamiento</h1>
-        <button class="btn-learn" type="button" @click="learnMore">
+        <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
         </button>
@@ -382,6 +514,7 @@ onMounted(() => {
           <h3>{{ selectedKpi.chartTitle }}</h3>
           <p class="panel-sub">{{ selectedKpi.chartSubtitle }}</p>
         </div>
+
         <div class="legend">
           <div class="legend-item">
             <span class="legend-dot" aria-hidden="true"></span>
@@ -405,7 +538,13 @@ onMounted(() => {
           <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230"></line>
 
           <path :d="areaPath" fill="url(#gradient-deuda)"></path>
-          <path :d="linePath" fill="none" stroke="#299de0" stroke-linecap="round" stroke-width="3"></path>
+          <path
+            :d="linePath"
+            fill="none"
+            stroke="#299de0"
+            stroke-linecap="round"
+            stroke-width="3"
+          ></path>
 
           <circle
             v-for="(p, idx) in selectedKpi.points"
@@ -474,7 +613,17 @@ onMounted(() => {
           </text>
 
           <g>
-            <text v-for="(lab, i) in selectedKpi.yAxisLabels" :key="`yl-${i}`" x="45" :y="55 + i * 60" text-anchor="end" fill="#507c95" font-family="Inter" font-size="11" font-weight="600">
+            <text
+              v-for="(lab, i) in selectedKpi.yAxisLabels"
+              :key="`yl-${i}`"
+              x="45"
+              :y="55 + i * 60"
+              text-anchor="end"
+              fill="#507c95"
+              font-family="Inter"
+              font-size="11"
+              font-weight="600"
+            >
               {{ lab }}
             </text>
           </g>
@@ -494,7 +643,10 @@ onMounted(() => {
               <circle
                 v-for="(seg, idx) in pasivosTotales.segments"
                 :key="idx"
-                cx="18" cy="18" fill="none" r="16"
+                cx="18"
+                cy="18"
+                fill="none"
+                r="16"
                 :stroke="seg.color"
                 :stroke-dasharray="seg.dasharray"
                 :stroke-dashoffset="seg.dashoffset"
@@ -502,6 +654,7 @@ onMounted(() => {
                 style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
               ></circle>
             </svg>
+
             <div class="donut-center">
               <span class="donut-kicker">Total</span>
               <span class="donut-total">{{ pasivosTotales.total }}</span>
@@ -510,7 +663,11 @@ onMounted(() => {
         </div>
 
         <div class="legend-grid">
-          <div class="legend-row" v-for="(seg, idx) in pasivosTotales.segments" :key="`leg-p-${idx}`">
+          <div
+            class="legend-row"
+            v-for="(seg, idx) in pasivosTotales.segments"
+            :key="`leg-p-${idx}`"
+          >
             <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
             <span class="truncate">{{ seg.label }} ({{ seg.pct }}%)</span>
           </div>
@@ -528,7 +685,10 @@ onMounted(() => {
               <circle
                 v-for="(seg, idx) in financiamiento.segments"
                 :key="idx"
-                cx="18" cy="18" fill="none" r="16"
+                cx="18"
+                cy="18"
+                fill="none"
+                r="16"
                 :stroke="seg.color"
                 :stroke-dasharray="seg.dasharray"
                 :stroke-dashoffset="seg.dashoffset"
@@ -536,6 +696,7 @@ onMounted(() => {
                 style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
               ></circle>
             </svg>
+
             <div class="donut-center">
               <span class="donut-kicker">Activo</span>
               <span class="donut-total">{{ financiamiento.total }}</span>
@@ -544,7 +705,11 @@ onMounted(() => {
         </div>
 
         <div class="legend-grid">
-          <div class="legend-row" v-for="(seg, idx) in financiamiento.segments" :key="`leg-f-${idx}`">
+          <div
+            class="legend-row"
+            v-for="(seg, idx) in financiamiento.segments"
+            :key="`leg-f-${idx}`"
+          >
             <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
             <span class="truncate">{{ seg.label }} ({{ seg.pct }}%)</span>
           </div>
@@ -556,6 +721,7 @@ onMounted(() => {
       <div class="panel-head">
         <h3>Comparativa por periodo</h3>
       </div>
+
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -565,17 +731,24 @@ onMounted(() => {
               <th class="right">Activo Total</th>
               <th class="center" style="text-align: center;">Apalancamiento</th>
               <th class="center" style="text-align: center;">Cobertura Intereses</th>
-              <th class="right">Var. trimestral</th>
             </tr>
           </thead>
+
           <tbody>
-            <tr v-for="r in tableRows" :key="r.period" :class="{ highlight: r.highlight }">
+            <tr
+              v-for="r in tableRows"
+              :key="r.period"
+              :class="{ highlight: r.highlight }"
+            >
               <td class="strong" :class="{ primary: r.highlight }">{{ r.period }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.pasivo }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.activo }}</td>
-              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.apalancamiento }}</td>
-              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.cobertura }}</td>
-              <td class="right" :class="[r.variationClass, { strong: r.highlight }]">{{ r.variacion }}</td>
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
+                {{ r.apalancamiento }}
+              </td>
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
+                {{ r.cobertura }}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -587,12 +760,50 @@ onMounted(() => {
         <div class="note-bg" aria-hidden="true">
           <span class="material-symbols-outlined">warning</span>
         </div>
+
         <div class="note-mini">
           <span class="material-symbols-outlined">info</span>
           <span>Interpretación Automática</span>
         </div>
+
         <h3>Análisis de tendencia</h3>
-        <p>{{ analysisText }}</p>
+
+        <p v-if="aiBlockLoading">
+          Cargando interpretación automática...
+        </p>
+
+        <p v-else-if="aiBlockError">
+          No se pudo cargar la interpretación automática. Se muestra una interpretación base.
+        </p>
+
+        <p v-else>
+          {{ finalAnalysisText }}
+        </p>
+
+        <ul
+          v-if="!aiBlockLoading && !aiBlockError && mainFindings.length"
+          class="list findings-list"
+        >
+          <li v-for="(finding, idx) in mainFindings" :key="`finding-${idx}`">
+            <span class="material-symbols-outlined">info</span>
+            <span>{{ finding }}</span>
+          </li>
+        </ul>
+
+        <div
+          v-if="!aiBlockLoading && !aiBlockError && alertItems.length"
+          class="ai-alerts"
+        >
+          <div
+            v-for="(alert, idx) in alertItems"
+            :key="`alert-${idx}`"
+            class="ai-alert"
+          >
+            <strong>{{ alert.title }}</strong>
+            <p>{{ alert.message }}</p>
+            <small>{{ alert.evidence }}</small>
+          </div>
+        </div>
       </article>
 
       <article class="note note-ok">
@@ -602,21 +813,47 @@ onMounted(() => {
           </span>
           <h3>Recomendaciones</h3>
         </div>
+
         <ul class="list">
-          <li v-for="(item, idx) in recommendationList" :key="idx">
-            <span class="material-symbols-outlined">check_circle</span>
-            <span>{{ item }}</span>
+          <li v-if="aiBlockLoading">
+            <span class="material-symbols-outlined">hourglass_empty</span>
+            <span>Cargando recomendaciones...</span>
           </li>
+
+          <li v-else-if="aiBlockError">
+            <span class="material-symbols-outlined">info</span>
+            <span>No se pudieron cargar las recomendaciones automáticas.</span>
+          </li>
+
+          <template v-else-if="recommendationItems.length">
+            <li v-for="(item, idx) in recommendationItems" :key="`ai-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>
+                <strong>{{ item.title }}:</strong> {{ item.description }}
+              </span>
+            </li>
+          </template>
+
+          <template v-else>
+            <li v-for="(item, idx) in recommendationList" :key="`fallback-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>{{ item }}</span>
+            </li>
+          </template>
         </ul>
       </article>
     </section>
 
     <footer class="foot">
-      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
+      <p>
+        Todos los datos son confidenciales.<br />
+        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
+      </p>
     </footer>
   </div>
+
   <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">
-      Cargando análisis multiperiodo de endeudamiento...
+    Cargando análisis multiperiodo de endeudamiento...
   </div>
 </template>
 
@@ -624,14 +861,14 @@ onMounted(() => {
 .truncate {
   line-height: 1.3;
 }
+
 .legend-grid {
   display: grid;
-  grid-template-columns: 1fr; 
+  grid-template-columns: 1fr;
   gap: 10px 12px;
   margin-top: 8px;
 }
 
-/* --- PEGA AQUÍ EL RESTO DE TU CSS ORIGINAL INTACTO --- */
 .wrap {
   width: min(1200px, 100%);
   margin: 0 auto;
@@ -763,6 +1000,15 @@ onMounted(() => {
 .kpi-dot.warn {
   background: #facc15;
   box-shadow: 0 0 8px rgba(250,204,21,0.4);
+}
+
+.kpi-dot.alert {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.kpi-dot.gray {
+  background: #9ca3af;
 }
 
 .kpi-value {
@@ -1012,11 +1258,11 @@ onMounted(() => {
 }
 
 .up {
-  color: #ef4444; /* Apalancamiento alto = malo = rojo */
+  color: #ef4444;
 }
 
 .down {
-  color: #16a34a; /* Apalancamiento bajo = bueno = verde */
+  color: #16a34a;
 }
 
 /* Notes */
@@ -1110,6 +1356,10 @@ onMounted(() => {
   gap: 12px;
 }
 
+.findings-list {
+  margin-top: 14px;
+}
+
 .list li {
   display: flex;
   align-items: flex-start;
@@ -1123,6 +1373,42 @@ onMounted(() => {
   color: #299de0;
   font-size: 18px;
   margin-top: 2px;
+}
+
+.ai-alerts {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ai-alert {
+  border: 1px solid #fee2e2;
+  background: #fff7f7;
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-alert strong {
+  display: block;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.ai-alert p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ai-alert small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 /* Footer */
@@ -1145,9 +1431,11 @@ onMounted(() => {
     align-items: baseline;
     gap: 10px;
   }
+
   .dot {
     display: inline;
   }
+
   .kpis {
     grid-template-columns: repeat(2, 1fr);
   }

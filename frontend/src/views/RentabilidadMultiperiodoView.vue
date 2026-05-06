@@ -1,10 +1,28 @@
 <script setup>
 import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useRouter, useRoute } from "vue-router";
+import { useFinancialAiBlock } from "@/composables/useFinancialAiBlock";
 
+const router = useRouter();
 const route = useRoute();
+
+const {
+  loadAiResult,
+  interpretationText,
+  mainFindings,
+  recommendationItems,
+  alertItems,
+  aiBlockLoading,
+  aiBlockError,
+} = useFinancialAiBlock("rentabilidad");
+
+const centroDeAprendizaje = () => {
+  const routeData = router.resolve({ name: "teoriaRentabilidad" });
+  window.open(routeData.href, "_blank");
+};
+
 const projectId = route.params.id_proyecto;
 
 const loading = ref(true);
@@ -27,7 +45,7 @@ const parseVal = (val) => {
   return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
 };
 
-const fetchPeriods = async () => {
+const fetchDashboardData = async () => {
   try {
     if (!projectId) return;
 
@@ -36,22 +54,30 @@ const fetchPeriods = async () => {
 
     let loaded = [];
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.rentabilidad || d.analisis_rentabilidad) {
-        // Extraemos todo el contexto financiero para armar las donas cruzadas
+      const data = docSnap.data();
+      if (data.rentabilidad || data.analisis_rentabilidad) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          rentabilidad: d.analisis_rentabilidad || d.rentabilidad || { datos_crudos: {}, kpis: [] },
-          rotacion: d.analisis_rotacion || { datos_crudos: {} },
-          endeudamiento: d.analisis_endeudamiento || { datos_crudos: {} }
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          rentabilidad:
+            data.analisis_rentabilidad ||
+            data.rentabilidad || { datos_crudos: {}, kpis: [] },
+          rotacion: data.analisis_rotacion || { datos_crudos: {} },
+          endeudamiento: data.analisis_endeudamiento || { datos_crudos: {} },
         });
       }
     });
 
-    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    loaded.sort((a, b) => String(a.periodDate).localeCompare(String(b.periodDate)));
     rawPeriods.value = loaded;
+
+    const kpisParaIA = loaded.map((p) => ({
+      periodo: p.label,
+      kpis: p.rentabilidad.kpis,
+    }));
+
+    console.log("📊 KPIs DE RENTABILIDAD (MULTIPERIODO):", kpisParaIA);
 
     if (loaded.length > 0) {
       generateDashboardData();
@@ -75,11 +101,19 @@ const generateDashboardData = () => {
     return item ? parseVal(item.value) : 0;
   };
 
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    return item ? item.status : "warn";
+  };
+
   const dataMargen = periods.map((p) => findKpi(p.rentabilidad.kpis, "margen"));
   const dataRat = periods.map((p) => findKpi(p.rentabilidad.kpis, "activos"));
   const dataRoe = periods.map((p) => findKpi(p.rentabilidad.kpis, "patrimonio"));
 
-  const buildChart = (values, title, subtitle, legendLabel, type) => {
+  const buildChart = (values, title, subtitle, legendLabel, type, backendStatus = "warn") => {
     const maxVal = Math.max(...values, type === "margen" ? 10 : 5);
     let minVal = Math.min(...values, 0);
     if (minVal > 0) minVal = 0;
@@ -104,30 +138,31 @@ const generateDashboardData = () => {
       fmtLabel(yMin),
     ];
 
-    // Ajuste visual para separar del eje Y
     const xStep = periods.length > 1 ? 600 / (periods.length - 1) : 0;
 
     const points = values.map((val, i) => {
       const x = periods.length > 1 ? 100 + i * xStep : 400;
       const y = 230 - ((val - yMin) / finalRange) * 180;
-      return { x, y, label: labels[i], bold: i === values.length - 1, value: val };
+      return {
+        x,
+        y,
+        label: labels[i],
+        bold: i === values.length - 1,
+        value: val,
+      };
     });
 
     const lastVal = values[values.length - 1];
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
     const delta = lastVal - prevVal;
 
-    let status = "warn";
-    if (type === "margen") status = lastVal >= 10 ? "ok" : "warn";
-    if (type === "rat") status = lastVal >= 5 ? "ok" : "warn";
-    if (type === "roe") status = lastVal >= 10 ? "ok" : "warn";
-
     return {
       kpiValue: `${lastVal.toFixed(2)}%`,
-      status,
+      status: backendStatus,
       deltaType: delta >= 0 ? "up" : "down",
       deltaValue: `${delta > 0 ? "+" : ""}${delta.toFixed(2)}%`,
-      deltaNote: periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      deltaNote:
+        periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
       chartTitle: title,
       chartSubtitle: subtitle,
       legendLabel,
@@ -136,13 +171,47 @@ const generateDashboardData = () => {
     };
   };
 
+  const lastP = periods[periods.length - 1];
+
   metrics.value = [
-    { key: "margen", label: "Margen de Rentabilidad", ...buildChart(dataMargen, "Evolución Margen de Rentabilidad", "Tendencia histórica por periodo", "Margen Neto", "margen") },
-    { key: "rat", label: "Rendimiento sobre Activos Totales (RAT)", ...buildChart(dataRat, "Evolución RAT", "Capacidad de los activos para generar utilidad", "RAT", "rat") },
-    { key: "roe", label: "Rendimiento sobre el Patrimonio (ROE)", ...buildChart(dataRoe, "Evolución ROE", "Rentabilidad generada sobre el capital propio", "ROE", "roe") },
+    {
+      key: "margen",
+      label: "Margen de Rentabilidad",
+      ...buildChart(
+        dataMargen,
+        "Evolución Margen de Rentabilidad",
+        "Tendencia histórica por periodo",
+        "Margen Neto",
+        "margen",
+        getKpiStatus(lastP.rentabilidad.kpis, "margen")
+      ),
+    },
+    {
+      key: "rat",
+      label: "Rendimiento sobre Activos Totales (RAT)",
+      ...buildChart(
+        dataRat,
+        "Evolución RAT",
+        "Capacidad de los activos para generar utilidad",
+        "RAT",
+        "rat",
+        getKpiStatus(lastP.rentabilidad.kpis, "activos")
+      ),
+    },
+    {
+      key: "roe",
+      label: "Rendimiento sobre el Patrimonio (ROE)",
+      ...buildChart(
+        dataRoe,
+        "Evolución ROE",
+        "Rentabilidad generada sobre el capital propio",
+        "ROE",
+        "roe",
+        getKpiStatus(lastP.rentabilidad.kpis, "patrimonio")
+      ),
+    },
   ];
 
-  // Invertir tabla para ver primero el mes más reciente
   const reversedPeriods = [...periods].reverse();
   const reversedMargen = [...dataMargen].reverse();
   const reversedRat = [...dataRat].reverse();
@@ -164,9 +233,17 @@ const selectedKpi = computed(() => {
   return metrics.value.find((m) => m.key === activeKpi.value) || metrics.value[0];
 });
 
-function setActive(k) { activeKpi.value = k; }
-function showTooltip(p) { hoveredPoint.value = p; }
-function hideTooltip() { hoveredPoint.value = null; }
+function setActive(k) {
+  activeKpi.value = k;
+}
+
+function showTooltip(p) {
+  hoveredPoint.value = p;
+}
+
+function hideTooltip() {
+  hoveredPoint.value = null;
+}
 
 const baselineY = 230;
 
@@ -233,10 +310,13 @@ const recommendationList = computed(() => {
   ];
 });
 
-function learnMore() {}
+const finalAnalysisText = computed(() => {
+  return interpretationText.value || analysisText.value;
+});
 
-// --- LÓGICA DE DONAS (Dinámica) ---
-const lastPeriodData = computed(() => rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null);
+const lastPeriodData = computed(() =>
+  rawPeriods.value.length > 0 ? rawPeriods.value[rawPeriods.value.length - 1] : null
+);
 
 const rentabilidadBreakdown = computed(() => {
   if (!lastPeriodData.value) return { total: "$0", segments: [] };
@@ -244,14 +324,12 @@ const rentabilidadBreakdown = computed(() => {
   const rentCrudos = lastPeriodData.value.rentabilidad?.datos_crudos || {};
   const rotCrudos = lastPeriodData.value.rotacion?.datos_crudos || {};
 
-  const ventas = rentCrudos.ventas_netas || 1; // Evitar divisiones por cero
+  const ventas = rentCrudos.ventas_netas || 1;
   const utilidad = rentCrudos.utilidad_neta || 0;
   let costoVentas = rotCrudos.costo_ventas || 0;
 
-  // Calculamos los gastos por diferencia
   let gastos = ventas - costoVentas - utilidad;
 
-  // Respaldo de seguridad en caso de que el módulo de rotación no se haya extraído
   if (gastos < 0) {
     gastos = ventas - utilidad;
     costoVentas = 0;
@@ -260,20 +338,27 @@ const rentabilidadBreakdown = computed(() => {
   const items = [
     { label: "Costo de Ventas", value: costoVentas, color: "#1e293b" },
     { label: "Gastos y Otros", value: gastos, color: "#299de0" },
-    { label: "Utilidad Neta", value: utilidad, color: "#507c95" }
-  ].filter(i => i.value > 0);
+    { label: "Utilidad Neta", value: utilidad, color: "#507c95" },
+  ].filter((i) => i.value > 0);
 
   const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
 
   let currentOffset = 0;
-  const segments = items.map(item => {
+  const segments = items.map((item) => {
     const pct = (item.value / totalCalculo) * 100;
-    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+    const dashoffset = -currentOffset;
+    currentOffset += pct;
+    return {
+      ...item,
+      pct: pct.toFixed(1),
+      dasharray: `${pct} 100`,
+      dashoffset,
+    };
   });
 
   return {
-    total: ventas >= 1000000 ? `$${(ventas/1000000).toFixed(1)}M` : currencyFmt.format(ventas),
-    segments
+    total: ventas >= 1000000 ? `$${(ventas / 1000000).toFixed(1)}M` : currencyFmt.format(ventas),
+    segments,
   };
 });
 
@@ -286,13 +371,12 @@ const margenesBreakdown = computed(() => {
 
   const ventas = rentCrudos.ventas_netas || 1;
   const utilidad = rentCrudos.utilidad_neta || 0;
-  
-  // Rescate inteligente para buscar los costos si no están directos
+
   let costoVentas = rotCrudos.costo_ventas || 0;
   if (costoVentas === 0 && ventas > 0 && endCrudos.utilidad_operacion) {
-      costoVentas = ventas - endCrudos.utilidad_operacion;
+    costoVentas = ventas - endCrudos.utilidad_operacion;
   } else if (costoVentas === 0) {
-      costoVentas = (ventas - utilidad) * 0.5; // Rescate visual
+    costoVentas = (ventas - utilidad) * 0.5;
   }
 
   let utilidadBruta = ventas - costoVentas;
@@ -301,31 +385,38 @@ const margenesBreakdown = computed(() => {
   const margenBruto = (utilidadBruta / ventas) * 100;
   const margenNeto = (utilidad / ventas) * 100;
 
-  // Calculamos la "merma" (lo que se va en gastos e impuestos entre el m. bruto y el m. neto)
   let merma = margenBruto - margenNeto;
   if (merma < 0) merma = 0;
 
   const items = [
     { label: "Gastos Operativos (Absorbidos)", value: merma, color: "#fb923c" },
-    { label: "Margen Neto Final", value: margenNeto, color: "#fcd34d" }
-  ].filter(i => i.value > 0);
+    { label: "Margen Neto Final", value: margenNeto, color: "#fcd34d" },
+  ].filter((i) => i.value > 0);
 
   const totalCalculo = items.reduce((acc, curr) => acc + curr.value, 0) || 1;
 
   let currentOffset = 0;
-  const segments = items.map(item => {
+  const segments = items.map((item) => {
     const pct = (item.value / totalCalculo) * 100;
-    return { ...item, pct: pct.toFixed(1), dasharray: `${pct} 100`, dashoffset: -(currentOffset += pct) + pct };
+    const dashoffset = -currentOffset;
+    currentOffset += pct;
+    return {
+      ...item,
+      pct: pct.toFixed(1),
+      dasharray: `${pct} 100`,
+      dashoffset,
+    };
   });
 
   return {
     total: `${margenBruto.toFixed(1)}%`,
-    segments
+    segments,
   };
 });
 
 onMounted(() => {
-  fetchPeriods();
+  loadAiResult();
+  fetchDashboardData();
 });
 </script>
 
@@ -334,7 +425,7 @@ onMounted(() => {
     <div class="title">
       <div class="title-row">
         <h1>Rentabilidad</h1>
-        <button class="btn-learn" type="button" @click="learnMore">
+        <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
         </button>
@@ -620,7 +711,43 @@ onMounted(() => {
         </div>
 
         <h3>Análisis de tendencia</h3>
-        <p>{{ analysisText }}</p>
+
+        <p v-if="aiBlockLoading">
+          Cargando interpretación automática...
+        </p>
+
+        <p v-else-if="aiBlockError">
+          No se pudo cargar la interpretación automática. Se muestra una interpretación base.
+        </p>
+
+        <p v-else>
+          {{ finalAnalysisText }}
+        </p>
+
+        <ul
+          v-if="!aiBlockLoading && !aiBlockError && mainFindings.length"
+          class="list findings-list"
+        >
+          <li v-for="(finding, idx) in mainFindings" :key="`finding-${idx}`">
+            <span class="material-symbols-outlined">info</span>
+            <span>{{ finding }}</span>
+          </li>
+        </ul>
+
+        <div
+          v-if="!aiBlockLoading && !aiBlockError && alertItems.length"
+          class="ai-alerts"
+        >
+          <div
+            v-for="(alert, idx) in alertItems"
+            :key="`alert-${idx}`"
+            class="ai-alert"
+          >
+            <strong>{{ alert.title }}</strong>
+            <p>{{ alert.message }}</p>
+            <small>{{ alert.evidence }}</small>
+          </div>
+        </div>
       </article>
 
       <article class="note note-ok">
@@ -632,16 +759,40 @@ onMounted(() => {
         </div>
 
         <ul class="list">
-          <li v-for="(item, idx) in recommendationList" :key="idx">
-            <span class="material-symbols-outlined">check_circle</span>
-            <span>{{ item }}</span>
+          <li v-if="aiBlockLoading">
+            <span class="material-symbols-outlined">hourglass_empty</span>
+            <span>Cargando recomendaciones...</span>
           </li>
+
+          <li v-else-if="aiBlockError">
+            <span class="material-symbols-outlined">info</span>
+            <span>No se pudieron cargar las recomendaciones automáticas.</span>
+          </li>
+
+          <template v-else-if="recommendationItems.length">
+            <li v-for="(item, idx) in recommendationItems" :key="`ai-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>
+                <strong>{{ item.title }}:</strong> {{ item.description }}
+              </span>
+            </li>
+          </template>
+
+          <template v-else>
+            <li v-for="(item, idx) in recommendationList" :key="`fallback-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>{{ item }}</span>
+            </li>
+          </template>
         </ul>
       </article>
     </section>
 
     <footer class="foot">
-      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
+      <p>
+        Todos los datos son confidenciales.<br />
+        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
+      </p>
     </footer>
   </div>
 
@@ -782,6 +933,15 @@ onMounted(() => {
 .kpi-dot.warn {
   background: #facc15;
   box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+
+.kpi-dot.alert {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.kpi-dot.gray {
+  background: #9ca3af;
 }
 
 .kpi-value {
@@ -1145,6 +1305,10 @@ onMounted(() => {
   gap: 12px;
 }
 
+.findings-list {
+  margin-top: 14px;
+}
+
 .list li {
   display: flex;
   align-items: flex-start;
@@ -1158,6 +1322,42 @@ onMounted(() => {
   color: #299de0;
   font-size: 18px;
   margin-top: 2px;
+}
+
+.ai-alerts {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ai-alert {
+  border: 1px solid #fee2e2;
+  background: #fff7f7;
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-alert strong {
+  display: block;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.ai-alert p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ai-alert small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 /* Footer */

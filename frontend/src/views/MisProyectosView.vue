@@ -2,6 +2,8 @@
 import { onBeforeUnmount, onMounted, ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { ref as storageRef, deleteObject } from "firebase/storage";
+import { useConfirm } from "@/composables/useConfirm";
+import { useToast } from "@/composables/useToast";
 
 import { auth, db, storage } from "@/firebase/config";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -18,6 +20,8 @@ import {
 } from "firebase/firestore";
 
 const router = useRouter();
+const { confirm } = useConfirm();
+const { toast } = useToast();
 
 // ====== AUTH UI ======
 const user = ref(null);
@@ -33,17 +37,128 @@ const userDisplayName = computed(() => {
 
 const userEmail = computed(() => (user.value?.email ? user.value.email : ""));
 const userRole = computed(() => "Usuario");
-const userPhotoURL = computed(() => user.value?.photoURL || ""); // si alguien ve esto, las fotos solo funcioan con google xdddd
+const userPhotoURL = computed(() => user.value?.photoURL || "");
+
+// ====== ONBOARDING ======
+const showOnboarding = ref(false);
+const onboardingStep = ref(0);
+const onboardingChecking = ref(true);
+
+const onboardingSlides = [
+  {
+    title: "Bienvenido a PymeScope",
+  text: `Estamos felices de tenerte aquí :)
+Tus datos están seguros en todo momento.
+PymeScope puede cometer errores, así que consulta a un profesional calificado para obtener asesoramiento financiero.`,    icon: "waving_hand",
+  },
+  {
+    title: "Sube tus archivos",
+    text: "Sube tus archivos de Balance General y Estado de Resultados. Nuestro sistema extraerá los datos automáticamente para generar tu dashboard financiero.",
+    icon: "cloud_upload",
+  },
+{
+    title: "Formato de Archivos",
+    icon: "description",
+    bullets: [
+      "Evita usar abreviaturas en los nombres de las cuentas.",
+      "Incluye sumas totales para cada categoría.",
+      "Mantén una estructura clara y consistente.",
+    ],
+  },
+  {
+    title: "Estructura ideal de datos",
+    text: "Para que el motor analítico funcione correctamente, asegúrate de que tus archivos tengan encabezados claros en la primera fila.",
+    icon: "table_view",
+  },
+  {
+    title: "¡Todo listo!",
+    text: "Ahora puedes comenzar a analizar la salud financiera de tu empresa con PymeScope.",
+    icon: "rocket_launch",
+  },
+];
+
+async function checkOnboarding(uid) {
+  onboardingChecking.value = true;
+
+  try {
+    const onboardingRef = doc(db, "user_onboarding", uid);
+    const onboardingSnap = await getDoc(onboardingRef);
+
+    if (!onboardingSnap.exists()) {
+      showOnboarding.value = true;
+      onboardingStep.value = 0;
+      return;
+    }
+
+    const data = onboardingSnap.data();
+    showOnboarding.value = data?.misProyectosIntroCompleted !== true;
+    onboardingStep.value = 0;
+  } catch (error) {
+    console.error("Error verificando onboarding:", error);
+    showOnboarding.value = true;
+    onboardingStep.value = 0;
+  } finally {
+    onboardingChecking.value = false;
+  }
+}
+
+async function finishOnboarding() {
+  const currentUser = auth.currentUser;
+  if (!currentUser) return;
+
+  try {
+    const onboardingRef = doc(db, "user_onboarding", currentUser.uid);
+
+    await setDoc(
+      onboardingRef,
+      {
+        misProyectosIntroCompleted: true,
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    showOnboarding.value = false;
+    onboardingStep.value = 0;
+  } catch (error) {
+    console.error("Error guardando onboarding:", error);
+    toast({
+      message: "No se pudo guardar el estado del onboarding.",
+      type: "error",
+    });
+  }
+}
+
+function nextOnboardingStep() {
+  if (onboardingStep.value < onboardingSlides.length - 1) {
+    onboardingStep.value += 1;
+    return;
+  }
+  finishOnboarding();
+}
+
+function prevOnboardingStep() {
+  if (onboardingStep.value > 0) {
+    onboardingStep.value -= 1;
+  }
+}
+
+function skipOnboarding() {
+  finishOnboarding();
+}
 
 onMounted(() => {
   authUnsub.value = onAuthStateChanged(auth, async (u) => {
     user.value = u;
 
     if (!u) {
-      router.replace("/"); // sin sesión, fuera
-    } else {
-      await loadUserProjects();
+      router.replace("/");
+      return;
     }
+
+    await checkOnboarding(u.uid);
+    await loadUserProjects();
   });
 
   window.addEventListener("keydown", onKeydown);
@@ -57,22 +172,52 @@ onBeforeUnmount(() => {
 async function handleLogout() {
   try {
     await signOut(auth);
-    router.replace("/"); // landing
+    router.replace("/");
   } catch (e) {
     console.error("Error al cerrar sesión:", e);
   }
 }
 
-//  MODAL
+// ====== MODAL NUEVO PROYECTO ======
 const isModalOpen = ref(false);
 
-// Form (solo UI)
+// Form
 const projectName = ref("");
 const periodicity = ref("mensual");
 const companyName = ref("");
 const notes = ref("");
 
+// ===== Validaciones =====
+const touched = ref({
+  projectName: false,
+  companyName: false,
+});
+const submitAttempted = ref(false);
+
+function markTouched(field) {
+  touched.value[field] = true;
+}
+
+const projectNameError = computed(() => {
+  if (!projectName.value.trim()) return "Este campo es obligatorio.";
+  return "";
+});
+
+const companyNameError = computed(() => {
+  if (!companyName.value.trim()) return "Este campo es obligatorio.";
+  return "";
+});
+
+function showError(field) {
+  return touched.value[field] || submitAttempted.value;
+}
+
+const isFormValid = computed(() => {
+  return !projectNameError.value && !companyNameError.value;
+});
+
 function openModal() {
+  resetForm();
   isModalOpen.value = true;
 }
 function closeModal() {
@@ -83,6 +228,8 @@ function resetForm() {
   periodicity.value = "mensual";
   companyName.value = "";
   notes.value = "";
+  touched.value = { projectName: false, companyName: false };
+  submitAttempted.value = false;
 }
 function handleCancel() {
   closeModal();
@@ -92,14 +239,26 @@ const creating = ref(false);
 async function handleCreate() {
   const currentUser = auth.currentUser;
   if (!currentUser) {
-    alert("Debes iniciar sesión para crear un proyecto");
+    toast({
+      message: "Debes iniciar sesión para crear un proyecto.",
+      type: "warning",
+    });
     return;
   }
 
-  if (!projectName.value.trim()) {
-    alert("El nombre del proyecto es obligatorio");
-    return;
-  }
+submitAttempted.value = true;
+
+if (!projectName.value.trim()) {
+  toast({
+    message: "El nombre del proyecto es obligatorio.",
+    type: "warning",
+  });
+  return;
+}
+
+if (!isFormValid.value) {
+  return;
+}
 
   creating.value = true;
 
@@ -116,9 +275,6 @@ async function handleCreate() {
       status: "en_edicion",
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      // opcional: puedes inicializarlo, pero no es obligatorio
-      // analysis_mode: "mono",
-      // periods_count: 0,
     });
 
     const docSnap = await getDoc(projectRef);
@@ -132,7 +288,10 @@ async function handleCreate() {
     router.push(`/proyecto/${projectId}/cargar`);
   } catch (error) {
     console.error("Error creando proyecto:", error);
-    alert("Error al crear el proyecto. Intenta de nuevo.");
+    toast({
+      message: "Error al crear el proyecto. Intenta de nuevo.",
+      type: "error",
+    });
   } finally {
     creating.value = false;
   }
@@ -142,7 +301,7 @@ function onKeydown(e) {
   if (e.key === "Escape" && isModalOpen.value) closeModal();
 }
 
-//  PROYECTOS
+// ====== PROYECTOS ======
 const projects = ref([]);
 const loadingProjects = ref(true);
 
@@ -162,8 +321,6 @@ async function loadUserProjects() {
 
       const periodsCount = Number(data.periods_count || 0);
 
-      // 1) Usa analysis_mode si existe
-      // 2) si no existe, fallback con periods_count
       const analysisMode =
         data.analysis_mode || (periodsCount > 1 ? "multi" : "mono");
 
@@ -194,7 +351,6 @@ async function loadUserProjects() {
   }
 }
 
-// ✅ NUEVO: ir al dashboard correcto (mono o multi)
 function goToAnalysis(p) {
   if (!p || p.status !== "completo") return;
 
@@ -205,9 +361,14 @@ function goToAnalysis(p) {
 const deleting = ref(null);
 
 async function removeProject(id) {
-  const confirmed = confirm(
-    "¿Estás seguro de eliminar este proyecto y TODOS sus archivos?\n\nEsta acción no se puede deshacer."
-  );
+  const confirmed = await confirm({
+    title: "Eliminar proyecto",
+    message:
+      "¿Estás seguro de eliminar este proyecto y TODOS sus archivos? Esta acción no se puede deshacer.",
+    confirmText: "Sí, eliminar",
+    cancelText: "Cancelar",
+    variant: "danger",
+  });
   if (!confirmed) return;
 
   deleting.value = id;
@@ -247,7 +408,10 @@ async function removeProject(id) {
     projects.value = projects.value.filter((p) => p.id !== id);
   } catch (error) {
     console.error("Error eliminando proyecto:", error);
-    alert("Error al eliminar el proyecto. Intenta de nuevo.");
+    toast({
+      message: "Error al eliminar el proyecto. Intenta de nuevo.",
+      type: "error",
+    });
   } finally {
     deleting.value = null;
   }
@@ -363,7 +527,6 @@ async function removeProject(id) {
                 </span>
               </button>
 
-              <!-- ✅ CORREGIDO: manda a mono o multi según analysis_mode -->
               <button
                 class="link"
                 type="button"
@@ -387,7 +550,7 @@ async function removeProject(id) {
       </section>
     </main>
 
-    <!-- MODAL -->
+    <!-- MODAL NUEVO PROYECTO -->
     <div
       v-if="isModalOpen"
       class="modal-root"
@@ -422,9 +585,15 @@ async function removeProject(id) {
                 v-model.trim="projectName"
                 type="text"
                 placeholder="Ej. Análisis financiero 2024"
+                :class="{ invalid: showError('projectName') && projectNameError }"
+                @blur="markTouched('projectName')"
                 required
               />
-              <small>Este nombre te ayudará a identificar tu análisis</small>
+              <small v-if="showError('projectName') && projectNameError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ projectNameError }}
+              </small>
+              <small v-else>Este nombre te ayudará a identificar tu análisis</small>
             </div>
 
             <div class="field">
@@ -452,14 +621,21 @@ async function removeProject(id) {
 
             <div class="field">
               <label for="company-name">
-                Nombre de la empresa <span class="opt">(opcional)</span>
+                Nombre de la empresa <span class="req">*</span>
               </label>
               <input
                 id="company-name"
                 v-model.trim="companyName"
                 type="text"
                 placeholder="Ej. Pyme Comercial S.A. de C.V."
+                :class="{ invalid: showError('companyName') && companyNameError }"
+                @blur="markTouched('companyName')"
+                required
               />
+              <small v-if="showError('companyName') && companyNameError" class="field-error">
+                <span class="material-symbols-outlined">error</span>
+                {{ companyNameError }}
+              </small>
             </div>
 
             <div class="field">
@@ -489,11 +665,132 @@ async function removeProject(id) {
         </div>
       </div>
     </div>
+
+    <!-- ONBOARDING -->
+    <div
+      v-if="showOnboarding && !onboardingChecking"
+      class="onboarding-root"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-title"
+    >
+      <div class="onboarding-overlay"></div>
+
+      <div class="onboarding-wrap">
+        <div class="onboarding-modal">
+          <div class="onboarding-top">
+            <span class="onboarding-step">
+              Paso {{ onboardingStep + 1 }} de {{ onboardingSlides.length }}
+            </span>
+
+            <button class="onboarding-skip" type="button" @click="skipOnboarding">
+              Saltar intro
+            </button>
+          </div>
+
+          <div class="onboarding-body">
+            <span class="material-symbols-outlined onboarding-watermark">
+              {{ onboardingSlides[onboardingStep].icon }}
+            </span>
+
+            <div class="onboarding-icon">
+              <span class="material-symbols-outlined">
+                {{ onboardingSlides[onboardingStep].icon }}
+              </span>
+            </div>
+
+            <h2 id="onboarding-title">{{ onboardingSlides[onboardingStep].title }}</h2>
+
+            <p v-if="!onboardingSlides[onboardingStep].bullets">
+              {{ onboardingSlides[onboardingStep].text }}
+            </p>
+
+            <ul
+              v-else
+              class="onboarding-bullet-list"
+              aria-label="Recomendaciones de formato de archivos"
+            >
+              <li
+                v-for="(item, idx) in onboardingSlides[onboardingStep].bullets"
+                :key="idx"
+                class="onboarding-bullet-item"
+              >
+                <span class="material-symbols-outlined onboarding-bullet-icon">
+                  check_circle
+                </span>
+                <span>{{ item }}</span>
+              </li>
+            </ul>
+
+            <div v-if="onboardingStep === 3" class="onboarding-table-demo">
+              <div class="table-demo-badge">
+                <span class="material-symbols-outlined">check_circle</span>
+                Buen ejemplo
+              </div>
+
+              <div class="table-demo">
+                <div class="table-demo-head">
+                  <div>CUENTA</div>
+                  <div class="right">MONTO</div>
+                </div>
+                <div class="table-demo-row">
+                  <div>Caja</div>
+                  <div class="right">$10,000.00</div>
+                </div>
+                <div class="table-demo-row">
+                  <div>Bancos</div>
+                  <div class="right">$1,209,742.96</div>
+                </div>
+                <div class="table-demo-row">
+                  <div>Clientes</div>
+                  <div class="right">$1,643,223.10</div>
+                </div>
+                <div class="table-demo-total">
+                  <div>Total Activos</div>
+                  <div class="right">$2,862,966.06</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="onboarding-bottom">
+            <button
+              class="onboarding-back"
+              type="button"
+              @click="prevOnboardingStep"
+              :class="{ invisible: onboardingStep === 0 }"
+            >
+              <span class="material-symbols-outlined">arrow_back</span>
+              Atrás
+            </button>
+
+            <div class="onboarding-dots">
+              <span
+                v-for="(_, idx) in onboardingSlides"
+                :key="idx"
+                class="onboarding-dot"
+                :class="{ active: idx === onboardingStep }"
+              ></span>
+            </div>
+
+            <button class="onboarding-next" type="button" @click="nextOnboardingStep">
+              {{ onboardingStep === onboardingSlides.length - 1 ? "Comenzar ahora" : "Siguiente" }}
+              <span class="material-symbols-outlined">
+                {{
+                  onboardingStep === onboardingSlides.length - 1
+                    ? "rocket_launch"
+                    : "arrow_forward"
+                }}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* 👇 tu CSS está bien, no lo toqué */
 .page {
   --primary: #299de0;
   --bg: #f6f7f8;
@@ -597,6 +894,8 @@ async function removeProject(id) {
   color: var(--muted);
   font-weight: 800;
   background: transparent;
+  border: none;
+  cursor: pointer;
 }
 
 .logout:hover {
@@ -650,10 +949,17 @@ async function removeProject(id) {
   font-weight: 900;
   font-size: 14px;
   box-shadow: 0 10px 22px rgba(41, 157, 224, 0.2);
+  border: none;
+  cursor: pointer;
 }
 
 .btn-primary:hover {
   filter: brightness(0.95);
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .btn-primary span.material-symbols-outlined {
@@ -765,6 +1071,8 @@ async function removeProject(id) {
   border-radius: 10px;
   background: transparent;
   color: var(--muted);
+  border: none;
+  cursor: pointer;
 }
 .icon-btn:hover {
   color: var(--primary);
@@ -775,6 +1083,11 @@ async function removeProject(id) {
 
 .icon-btn.danger:hover {
   color: #ef4444;
+}
+
+.icon-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .link {
@@ -847,47 +1160,591 @@ async function removeProject(id) {
   max-width: 240px;
 }
 
-/* Modal (tu CSS completo ya estaba, lo dejé igual) */
-.modal-root { position: fixed; inset: 0; z-index: 60; }
-.overlay { position: absolute; inset: 0; background: rgba(17, 24, 39, 0.6); backdrop-filter: blur(6px); }
-.modal-wrap { position: relative; min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-.modal { width: 100%; max-width: 560px; background: white; border: 1px solid #eef2f6; border-radius: 16px; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25); padding: 18px; position: relative; }
-.modal-close { position: absolute; right: 12px; top: 12px; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: #94a3b8; background: transparent; }
-.modal-close:hover { color: #475569; }
-.modal-close span { font-size: 22px; }
-.modal-head { display: flex; gap: 12px; align-items: flex-start; padding: 6px 4px 10px; }
-.modal-icon { width: 48px; height: 48px; border-radius: 999px; background: rgba(41, 157, 224, 0.12); color: var(--primary); display: grid; place-items: center; flex: 0 0 auto; }
-.modal-icon span { font-size: 24px; }
-.modal-head h3 { margin: 0; font-size: 20px; font-weight: 900; }
-.modal-head p { margin: 6px 0 0; color: #64748b; font-size: 14px; line-height: 1.4; }
-.form { padding: 8px 4px 0; display: grid; gap: 14px; }
-.field label, .field .label { display: block; font-size: 13px; font-weight: 900; margin-bottom: 6px; }
-.req { color: #ef4444; }
-.opt { color: #94a3b8; font-weight: 700; }
-.field input, .field textarea { width: 100%; border: 1px solid #dce2e5; border-radius: 12px; padding: 10px 12px; font-size: 14px; outline: none; background: #fff; }
-.field textarea { resize: vertical; }
-.field input:focus, .field textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(41, 157, 224, 0.22); }
-.field small { display: block; margin-top: 6px; color: #94a3b8; font-size: 12px; font-weight: 600; }
-.radio-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-.radio { display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; cursor: pointer; background: #fff; font-weight: 900; color: #0f172a; }
-.radio input { accent-color: var(--primary); }
-.modal-actions { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f1f5f9; display: flex; gap: 10px; flex-direction: column; }
-.btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 16px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; font-weight: 900; font-size: 14px; }
-.btn-secondary:hover { background: #f8fafc; }
+/* Modal crear proyecto */
+.modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.6);
+  backdrop-filter: blur(6px);
+}
+.modal-wrap {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.modal {
+  width: 100%;
+  max-width: 560px;
+  background: white;
+  border: 1px solid #eef2f6;
+  border-radius: 16px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
+  padding: 18px;
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.modal-close:hover {
+  color: #475569;
+}
+.modal-close span {
+  font-size: 22px;
+}
+.modal-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 4px 10px;
+}
+.modal-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(41, 157, 224, 0.12);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.modal-icon span {
+  font-size: 24px;
+}
+.modal-head h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 900;
+}
+.modal-head p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.form {
+  padding: 8px 4px 0;
+  display: grid;
+  gap: 14px;
+}
+.field label,
+.field .label {
+  display: block;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+.req {
+  color: #ef4444;
+}
+.opt {
+  color: #94a3b8;
+  font-weight: 700;
+}
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid #dce2e5;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  background: #fff;
+}
+.field textarea {
+  resize: vertical;
+}
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(41, 157, 224, 0.22);
+}
+.field small {
+  display: block;
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+}
+.radio-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.radio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px;
+  cursor: pointer;
+  background: #fff;
+  font-weight: 900;
+  color: #0f172a;
+}
+.radio input {
+  accent-color: var(--primary);
+}
+.modal-actions {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+}
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-weight: 900;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn-secondary:hover {
+  background: #f8fafc;
+}
+
+/* Onboarding */
+.onboarding-bullet-list {
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+  max-width: 640px;
+  display: grid;
+  gap: 22px;
+  position: relative;
+  z-index: 1;
+  text-align: left;
+}
+
+.onboarding-bullet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  color: #507c95;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.onboarding-bullet-icon {
+  font-size: 24px;
+  color: #299de0;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.onboarding-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+
+.onboarding-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.48);
+  backdrop-filter: blur(8px);
+}
+
+.onboarding-wrap {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.onboarding-modal {
+  width: 100%;
+  max-width: 620px;
+  background: #ffffff;
+  border: 1px solid #e8eff3;
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  position: relative;
+}
+
+.onboarding-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid #e8eff3;
+}
+
+.onboarding-step {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #507c95;
+}
+
+.onboarding-skip {
+  background: transparent;
+  border: none;
+  color: #299de0;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.onboarding-body {
+  position: relative;
+  padding: 52px 32px 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: linear-gradient(180deg, #f0f8fd 0%, #ffffff 100%);
+  overflow: hidden;
+}
+.onboarding-body p {
+  margin: 14px 0 0;
+  max-width: 430px;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 700;
+  color: #507c95;
+  position: relative;
+  z-index: 1;
+  white-space: pre-line;
+}
+
+.onboarding-watermark {
+  position: absolute;
+  right: -12px;
+  bottom: -18px;
+  font-size: 170px;
+  color: #299de0;
+  opacity: 0.04;
+  pointer-events: none;
+}
+
+.onboarding-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  border: 1px solid #d1dee6;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  margin-bottom: 20px;
+  position: relative;
+  z-index: 1;
+}
+
+.onboarding-icon .material-symbols-outlined {
+  font-size: 42px;
+  color: #299de0;
+}
+
+.onboarding-body h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 900;
+  color: #0e161b;
+  letter-spacing: -0.02em;
+  position: relative;
+  z-index: 1;
+}
+
+
+.onboarding-table-demo {
+  width: 100%;
+  max-width: 380px;
+  margin-top: 24px;
+  background: #f8fafb;
+  border: 1px solid #e8eff3;
+  border-radius: 14px;
+  padding: 18px 16px 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.table-demo-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #bbf7d0;
+  white-space: nowrap;
+}
+
+.table-demo-badge .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.table-demo {
+  margin-top: 10px;
+  background: #ffffff;
+  border: 1px solid #d1dee6;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.table-demo-head,
+.table-demo-row,
+.table-demo-total {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.table-demo-head > div,
+.table-demo-row > div,
+.table-demo-total > div {
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.table-demo-head {
+  background: #e8eff3;
+  border-bottom: 1px solid #d1dee6;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0e161b;
+}
+
+.table-demo-row {
+  border-bottom: 1px solid #eef2f6;
+  color: #507c95;
+  font-weight: 700;
+}
+
+.table-demo-total {
+  background: #f8fafb;
+  color: #0e161b;
+  font-weight: 900;
+}
+
+.right {
+  text-align: right;
+}
+
+.onboarding-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 22px;
+  border-top: 1px solid #e8eff3;
+  background: #ffffff;
+}
+
+.onboarding-back,
+.onboarding-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 900;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.onboarding-back {
+  border: 1px solid #d1dee6;
+  background: #ffffff;
+  color: #507c95;
+}
+
+.onboarding-back:hover {
+  background: #f8fafb;
+  color: #0e161b;
+}
+
+.onboarding-next {
+  border: none;
+  background: #299de0;
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(41, 157, 224, 0.2);
+}
+
+.onboarding-next:hover {
+  filter: brightness(0.96);
+}
+
+.onboarding-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboarding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #d1dee6;
+}
+
+.onboarding-dot.active {
+  background: #299de0;
+}
+
+.invisible {
+  visibility: hidden;
+}
+
+/* Validaciones */
+.invalid {
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  background: #fef8f8 !important;
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ef4444;
+  background: #fee2e2;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 6px;
+  animation: shake 0.3s ease;
+}
+
+.field-error .material-symbols-outlined {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
 
 /* Responsive */
 @media (min-width: 640px) {
-  .grid { grid-template-columns: repeat(2, 1fr); }
-  .top { flex-direction: row; align-items: flex-end; }
-  .logout-text { display: inline; }
-  .modal-actions { flex-direction: row-reverse; justify-content: flex-start; }
-  .radio-grid { grid-template-columns: repeat(3, 1fr); }
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .top {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .logout-text {
+    display: inline;
+  }
+
+  .modal-actions {
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+  }
+
+  .radio-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
+
 @media (min-width: 768px) {
-  .user-text { display: flex; }
-  .divider { display: block; }
+  .user-text {
+    display: flex;
+  }
+
+  .divider {
+    display: block;
+  }
 }
+
 @media (min-width: 1024px) {
-  .grid { grid-template-columns: repeat(3, 1fr); }
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .onboarding-top,
+  .onboarding-bottom {
+    padding: 16px;
+  }
+
+  .onboarding-body {
+    padding: 36px 20px 28px;
+  }
+
+  .onboarding-body h2 {
+    font-size: 22px;
+  }
+
+.onboarding-body p {
+  margin: 14px 0 0;
+  max-width: 430px;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 700;
+  color: #507c95;
+  position: relative;
+  z-index: 1;
+  white-space: pre-line;
+}
+
+  .onboarding-bottom {
+    flex-wrap: wrap;
+  }
+
+  .onboarding-dots {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .table-demo-head > div,
+  .table-demo-row > div,
+  .table-demo-total > div {
+    font-size: 12px;
+    padding: 9px 10px;
+  }
 }
 </style>

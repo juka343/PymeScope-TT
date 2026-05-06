@@ -47,6 +47,7 @@ VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
+VITE_API_BASE_URL=
 ```
 
 ## Backend (FastAPI)
@@ -68,10 +69,12 @@ Crear `.env` en la raiz del repo con:
 pip install azure-ai-formrecognizer azure-core python-dotenv
 
 ```
-FIREBASE_CREDENTIALS_PATH=C:\Users\TU_USUARIO\Secrets\firebase-adminsdk.json
-FIREBASE_STORAGE_BUCKET=TU_BUCKET
+FIREBASE_CREDENTIALS_PATH=
+FIREBASE_STORAGE_BUCKET=
 AZURE_DOC_INTEL_ENDPOINT=
 AZURE_DOC_INTEL_KEY=
+GEMINI_API_KEY=
+GEMINI_MODEL=
 ```
 
 Correr el backend: uvicorn app.main:app --reload

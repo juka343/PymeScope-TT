@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import {
   collection,
@@ -14,29 +14,31 @@ import { useToast } from "@/composables/useToast";
 
 const router = useRouter();
 const route = useRoute();
+const projectId = computed(() => route.params.id_proyecto || null);
 const { toast } = useToast();
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
 const AI_ANALYSIS_COLLECTION = "ai_analysis";
-const AI_LATEST_DOC_ID = "resumen_monoperiodo_latest";
-const AI_PROMPT_VERSION = "1.2.1";
+const AI_LATEST_DOC_ID = "resumen_multiperiodo_latest";
 
 const getAiPeriodDocId = (basePeriodDate) => {
-  return `resumen_monoperiodo_${basePeriodDate || "actual"}`;
+  return `resumen_multiperiodo_${basePeriodDate || "actual"}`;
 };
 
 const loading = ref(true);
-const projectId = ref(null);
-const rawPeriod = ref(null);
+const rawPeriods = ref([]);
 
 const aiLoading = ref(false);
 const aiError = ref(null);
 const aiResult = ref(null);
 
+// =====================
+// FALLBACKS
+// =====================
 const fallbackInterpretation =
-  "La empresa presenta información financiera suficiente para generar una lectura general del periodo. Conviene revisar la rentabilidad, liquidez, endeudamiento, rotación de activos y estructura financiera de forma conjunta.";
+  "La empresa mantiene una tendencia en ingresos y utilidad neta durante los periodos analizados. Conviene monitorear capital de trabajo y compromisos de corto plazo.";
 
 const interpretation = ref(fallbackInterpretation);
 
@@ -75,12 +77,14 @@ const recommendations = ref([
   },
 ]);
 
-// Formateadores
+// =====================
+// FORMATEADORES
+// =====================
 const currencyFmt = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
 
 const percentFmt = new Intl.NumberFormat("es-MX", {
@@ -89,67 +93,15 @@ const percentFmt = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 2,
 });
 
-// ===== ESTADO REACTIVO =====
-const kpis = ref([
-  { label: "Ingresos Totales", value: "$0", status: "gray" },
-  { label: "Utilidad Neta", value: "$0", status: "gray" },
-  { label: "Margen Neto", value: "0%", status: "gray" },
-  { label: "Liquidez General", value: "0.0", status: "gray" },
-]);
-
-const cards = ref([
-  {
-    title: "Rentabilidad",
-    icon: "trending_up",
-    detailRoute: "rentabilidad",
-    items: [],
-  },
-  {
-    title: "Liquidez",
-    icon: "attach_money",
-    detailRoute: "liquidez",
-    items: [],
-  },
-  {
-    title: "Endeudamiento",
-    icon: "account_balance_wallet",
-    detailRoute: "endeudamiento",
-    items: [],
-  },
-  {
-    title: "Rotación de Activos",
-    icon: "sync_alt",
-    detailRoute: "rotacion",
-    items: [],
-  },
-  {
-    title: "Estructura Financiera",
-    icon: "layers",
-    detailRoute: "estructura",
-    items: [],
-  },
-]);
-
-const periodLabel = ref("");
-const resultadosPdfUrl = ref(null);
-
-// ===== ESTRUCTURA DEL RESULTADO =====
-const estructuraResultado = ref({
-  period: "",
-  rows: [],
-});
-
-// =====================
-// HELPERS IA
-// =====================
-const BLOCK_LABELS = {
-  rentabilidad: "Rentabilidad",
-  liquidez: "Liquidez",
-  endeudamiento: "Endeudamiento",
-  rotacion: "Rotación de activos",
-  estructura: "Estructura financiera",
+const parseVal = (val) => {
+  if (!val) return 0;
+  if (typeof val === "number") return val;
+  return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
 };
 
+// =====================
+// HELPERS IA FRONTEND
+// =====================
 const cleanAiText = (text) => {
   if (text === null || text === undefined) return "";
 
@@ -165,14 +117,6 @@ const cleanAiArray = (items) => {
   return items.map((item) => cleanAiText(item)).filter(Boolean);
 };
 
-const normalizeSeverityKey = (value) => {
-  const text = cleanAiText(value).toLowerCase();
-
-  if (text.includes("alta")) return "alta";
-  if (text.includes("baja")) return "baja";
-  return "media";
-};
-
 const normalizeAiRecommendation = (item) => {
   if (typeof item === "string") {
     return {
@@ -184,7 +128,6 @@ const normalizeAiRecommendation = (item) => {
   }
 
   return {
-    block_key: item?.block_key || null,
     title: cleanAiText(item?.title || "Recomendación"),
     description: cleanAiText(item?.description || item?.message || ""),
     reason: cleanAiText(item?.reason || ""),
@@ -192,34 +135,22 @@ const normalizeAiRecommendation = (item) => {
   };
 };
 
-const parseAiValue = (value, unit) => {
-  if (
-    value === null ||
-    value === undefined ||
-    value === "N/A" ||
-    value === "Sin Inventario" ||
-    value === "Sin Deuda LP"
-  ) {
-    return null;
-  }
+const normalizeAiAlert = (alert) => {
+  return {
+    severity: cleanAiText(alert?.severity || "media").toLowerCase(),
+    blockKey: cleanAiText(alert?.block_key || ""),
+    title: cleanAiText(alert?.title || "Alerta relevante"),
+    message: cleanAiText(alert?.message || ""),
+    implication: cleanAiText(alert?.implication || ""),
+  };
+};
 
-  const clean = String(value)
-    .replace(/\$/g, "")
-    .replace(/,/g, "")
-    .replace(/%/g, "")
-    .replace(/días/g, "")
-    .replace(/día/g, "")
-    .trim();
+const severityClass = (severity) => {
+  const value = String(severity || "").toLowerCase();
 
-  if (!clean) return null;
-
-  const number = Number(clean);
-
-  if (Number.isNaN(number)) return null;
-
-  if (unit === "percentage") return number / 100;
-
-  return number;
+  if (value.includes("alta")) return "severity-alta";
+  if (value.includes("media")) return "severity-media";
+  return "severity-baja";
 };
 
 // =====================
@@ -362,18 +293,38 @@ const AI_BLOCKS = [
   "estructura",
 ];
 
+const parseAiValue = (value, unit) => {
+  if (value === null || value === undefined || value === "N/A") return null;
+
+  const clean = String(value)
+    .replace(/\$/g, "")
+    .replace(/,/g, "")
+    .replace(/%/g, "")
+    .replace(/días/g, "")
+    .replace(/día/g, "")
+    .trim();
+
+  const number = Number(clean);
+
+  if (Number.isNaN(number)) return null;
+
+  if (unit === "percentage") return number / 100;
+
+  return number;
+};
+
 const normalizeAiKpi = (kpi, blockKey) => {
-  const meta = AI_KPI_CATALOG[kpi?.label];
+  const meta = AI_KPI_CATALOG[kpi.label];
 
   if (!meta) {
     return {
       key: null,
-      label: kpi?.label || "KPI sin etiqueta",
+      label: kpi.label,
       category: blockKey,
       value: null,
-      displayValue: kpi?.value || null,
+      displayValue: kpi.value,
       unit: "unknown",
-      status: kpi?.status || "unknown",
+      status: kpi.status || "unknown",
       threshold: null,
       higherIsBetter: null,
       note: "KPI no encontrado en el catálogo interno",
@@ -421,6 +372,119 @@ const normalizeAiPeriod = (period) => {
   return cleanPeriod;
 };
 
+const flattenAiKpis = (period) => {
+  const result = {};
+
+  Object.values(period.financial_blocks || {}).forEach((block) => {
+    (block.kpis || []).forEach((kpi) => {
+      if (!kpi.key) return;
+
+      result[kpi.key] = {
+        ...kpi,
+        period: period.periodDate,
+      };
+    });
+  });
+
+  return result;
+};
+
+const formatAiAbsoluteChange = (delta, unit) => {
+  if (delta === null || delta === undefined) return null;
+
+  if (unit === "percentage") {
+    return `${(delta * 100).toFixed(2)} pp`;
+  }
+
+  if (unit === "currency") {
+    return currencyFmt.format(delta);
+  }
+
+  if (unit === "days") {
+    return `${delta.toFixed(0)} días`;
+  }
+
+  return delta.toFixed(2);
+};
+
+const formatAiRelativeChange = (relative) => {
+  if (relative === null || relative === undefined) return null;
+  return `${(relative * 100).toFixed(2)}%`;
+};
+
+const getAiTrendDirection = (delta, higherIsBetter) => {
+  if (delta === 0) return "estable";
+
+  if (higherIsBetter === true) {
+    return delta > 0 ? "mejora" : "deterioro";
+  }
+
+  if (higherIsBetter === false) {
+    return delta < 0 ? "mejora" : "deterioro";
+  }
+
+  return delta > 0 ? "aumenta" : "disminuye";
+};
+
+const buildAiComparativeKpis = (normalizedPeriods, basePeriodDate) => {
+  const sorted = [...normalizedPeriods].sort((a, b) =>
+    String(a.periodDate).localeCompare(String(b.periodDate))
+  );
+
+  const baseIndex = sorted.findIndex((p) => p.periodDate === basePeriodDate);
+
+  if (baseIndex <= 0) return [];
+
+  const previousPeriod = sorted[baseIndex - 1];
+  const currentPeriod = sorted[baseIndex];
+
+  const previousKpis = flattenAiKpis(previousPeriod);
+  const currentKpis = flattenAiKpis(currentPeriod);
+
+  const comparative = [];
+
+  Object.keys(currentKpis).forEach((key) => {
+    const current = currentKpis[key];
+    const previous = previousKpis[key];
+
+    if (!previous || previous.value === null || current.value === null) return;
+
+    const absolute = current.value - previous.value;
+    const relative =
+      previous.value !== 0 ? absolute / Math.abs(previous.value) : null;
+
+    comparative.push({
+      key,
+      label: current.label,
+      category: current.category,
+      unit: current.unit,
+      threshold: current.threshold,
+      higherIsBetter: current.higherIsBetter,
+      previous: {
+        period: previous.period,
+        value: previous.value,
+        displayValue: previous.displayValue,
+        status: previous.status,
+      },
+      current: {
+        period: current.period,
+        value: current.value,
+        displayValue: current.displayValue,
+        status: current.status,
+      },
+      change: {
+        absolute,
+        displayAbsolute: formatAiAbsoluteChange(absolute, current.unit),
+        relative,
+        displayRelative: formatAiRelativeChange(relative),
+        direction: getAiTrendDirection(absolute, current.higherIsBetter),
+      },
+    });
+  });
+
+  return comparative;
+};
+
 const buildAiPayload = (periods, options = {}) => {
   const basePeriodDate =
     options.basePeriodDate || periods?.[periods.length - 1]?.periodDate || null;
@@ -431,16 +495,19 @@ const buildAiPayload = (periods, options = {}) => {
     (p) => p.periodDate === basePeriodDate
   );
 
+  const analysisMode =
+    normalizedPeriods.length > 1 ? "multiperiodo" : "monoperiodo";
+
   return {
-    prompt_version: AI_PROMPT_VERSION,
-    analysis_mode: "monoperiodo",
+    prompt_version: "1.2.0",
+    analysis_mode: analysisMode,
     language: "es-MX",
     business_context: {
       company_type: "PyME",
       country: "México",
       sector: options.sector || "servicios",
       currency: "MXN",
-      periodicity: options.periodicity || "anual",
+      periodicity: "anual",
     },
     base_period: {
       id: basePeriod?.id || null,
@@ -448,13 +515,16 @@ const buildAiPayload = (periods, options = {}) => {
       periodDate: basePeriod?.periodDate || basePeriodDate,
     },
     periods: normalizedPeriods,
-    comparative_kpis: [],
+    comparative_kpis:
+      analysisMode === "multiperiodo"
+        ? buildAiComparativeKpis(normalizedPeriods, basePeriodDate)
+        : [],
     instructions: {
       do_not_recalculate: true,
       do_not_invent_missing_data: true,
       use_only_provided_data: true,
       interpret_thresholds: true,
-      interpret_trends: false,
+      interpret_trends: analysisMode === "multiperiodo",
       business_sector_focus: "servicios",
       explain_indicator_meaning: true,
       explain_operational_implications: true,
@@ -525,8 +595,7 @@ const buildAiPayload = (periods, options = {}) => {
         },
         alerts: {
           required: true,
-          purpose:
-            "Alertas generales más importantes del análisis completo. No deben ser una lista exhaustiva por bloque.",
+          purpose: "Alertas generales más importantes del análisis completo",
           max_items: 5,
           item_format: {
             block_key:
@@ -560,11 +629,8 @@ const buildAiPayload = (periods, options = {}) => {
         },
         recommendations: {
           required: true,
-          purpose:
-            "Recomendaciones generales del negocio completo. No deben estar agrupadas por bloque. Deben priorizar acciones transversales para la empresa completa.",
+          purpose: "Recomendaciones generales más importantes del análisis completo",
           max_general_recommendations: 5,
-          rule:
-            "No repetir literalmente las recomendaciones de recommendations_by_block. Estas recomendaciones deben integrar el diagnóstico completo y priorizar acciones generales.",
           item_format: {
             block_key:
               "rentabilidad | liquidez | endeudamiento | rotacion | estructura",
@@ -586,7 +652,7 @@ const buildAiPayload = (periods, options = {}) => {
           ],
           recommendations_per_block: 4,
           rule:
-            "Debe existir exactamente un objeto por cada block_key. Cada bloque debe incluir cuatro recomendaciones accionables específicas para su pantalla individual, incluso si sus indicadores son saludables.",
+            "Debe existir exactamente un objeto por cada block_key. Cada bloque debe incluir cuatro recomendaciones accionables, incluso si sus indicadores son saludables.",
           item_format: {
             block_key:
               "rentabilidad | liquidez | endeudamiento | rotacion | estructura",
@@ -638,42 +704,28 @@ const applyAiResultToView = (result) => {
       }))
     : [];
 
-  // En el resumen general usamos alertas generales.
-  // alerts_by_block se reserva para pantallas específicas.
-  const generalAlerts = Array.isArray(result?.alerts) ? result.alerts : [];
+  const preferredAlerts = Array.isArray(result?.alerts_by_block)
+    ? result.alerts_by_block
+    : Array.isArray(result?.alerts)
+      ? result.alerts
+      : [];
 
-  aiAlerts.value = generalAlerts.slice(0, 5).map((alert) => {
-    const severity = cleanAiText(alert?.severity || "media");
-    const blockKey = alert?.block_key || null;
+  aiAlerts.value = preferredAlerts.slice(0, 5).map(normalizeAiAlert);
 
-    return {
-      block_key: blockKey,
-      block_name: BLOCK_LABELS[blockKey] || cleanAiText(alert?.block_name || ""),
-      severity,
-      severityKey: normalizeSeverityKey(severity),
-      title: cleanAiText(alert?.title || "Alerta relevante"),
-      message: cleanAiText(alert?.message || alert?.evidence || ""),
-      implication: cleanAiText(alert?.implication || ""),
-    };
-  });
-
-  // IMPORTANTE:
-  // En el resumen general SOLO usamos result.recommendations.
-  // recommendations_by_block se usa en las pantallas individuales.
-  const generalRecommendations = Array.isArray(result?.recommendations)
+  const aiRecommendations = Array.isArray(result?.recommendations)
     ? result.recommendations
     : [];
 
   recommendations.value =
-    generalRecommendations.length > 0
-      ? generalRecommendations.slice(0, 5).map(normalizeAiRecommendation)
+    aiRecommendations.length > 0
+      ? aiRecommendations.slice(0, 5).map(normalizeAiRecommendation)
       : [
           {
             title: "Sin recomendaciones automáticas",
             description:
               "No se generaron recomendaciones automáticas con la información disponible.",
             reason:
-              "La información recibida no fue suficiente para priorizar acciones generales.",
+              "La información recibida no fue suficiente para priorizar acciones.",
             priority: "media",
           },
         ];
@@ -695,8 +747,8 @@ const saveAiAnalysisToFirestore = async (aiPayload, apiResponse) => {
     })) || [];
 
   const docData = {
-    promptVersion: aiPayload?.prompt_version || AI_PROMPT_VERSION,
-    analysisMode: aiPayload?.analysis_mode || "monoperiodo",
+    promptVersion: aiPayload?.prompt_version || "1.2.0",
+    analysisMode: aiPayload?.analysis_mode || "multiperiodo",
     basePeriod,
     periodsIncluded,
     model: apiResponse.model || null,
@@ -726,7 +778,7 @@ const saveAiAnalysisToFirestore = async (aiPayload, apiResponse) => {
     setDoc(periodRef, docData, { merge: true }),
   ]);
 
-  console.log("✅ Análisis IA monoperiodo guardado en Firestore:", {
+  console.log("✅ Análisis IA guardado en Firestore:", {
     latestPath: `proyectos/${projectId.value}/${AI_ANALYSIS_COLLECTION}/${AI_LATEST_DOC_ID}`,
     periodPath: `proyectos/${projectId.value}/${AI_ANALYSIS_COLLECTION}/${getAiPeriodDocId(
       basePeriodDate
@@ -754,9 +806,6 @@ const loadSavedAiAnalysisFromFirestore = async (aiPayload) => {
   const savedBasePeriodDate = saved?.basePeriod?.periodDate;
   const currentBasePeriodDate = aiPayload?.base_period?.periodDate;
 
-  const savedBasePeriodId = saved?.basePeriod?.id;
-  const currentBasePeriodId = aiPayload?.base_period?.id;
-
   const savedPeriodsCount = saved?.periodsIncluded?.length || 0;
   const currentPeriodsCount = aiPayload?.periods?.length || 0;
 
@@ -765,9 +814,7 @@ const loadSavedAiAnalysisFromFirestore = async (aiPayload) => {
   const isSameAnalysisContext =
     isSamePromptVersion &&
     savedBasePeriodDate === currentBasePeriodDate &&
-    savedBasePeriodId === currentBasePeriodId &&
     savedPeriodsCount === currentPeriodsCount &&
-    saved?.analysisMode === "monoperiodo" &&
     saved?.status === "completed" &&
     saved?.result;
 
@@ -775,7 +822,7 @@ const loadSavedAiAnalysisFromFirestore = async (aiPayload) => {
 
   applyAiResultToView(saved.result);
 
-  console.log("✅ Análisis IA monoperiodo cargado desde Firestore:", saved);
+  console.log("✅ Análisis IA cargado desde Firestore:", saved);
 
   return true;
 };
@@ -812,9 +859,9 @@ const generateAiAnalysis = async (aiPayload) => {
 
     await saveAiAnalysisToFirestore(aiPayload, data);
 
-    console.log("✅ Resultado IA Gemini monoperiodo:", data);
+    console.log("✅ Resultado IA Gemini:", data);
   } catch (error) {
-    console.error("Error generando análisis monoperiodo con Gemini:", error);
+    console.error("Error generando análisis con Gemini:", error);
 
     aiError.value = error.message;
 
@@ -827,109 +874,92 @@ const generateAiAnalysis = async (aiPayload) => {
   }
 };
 
-// ===== LÓGICA DE CARGA DE DATOS =====
+// =====================
+// ESTADOS REACTIVOS
+// =====================
+const kpis = ref([]);
+const cards = ref([]);
+const chartLabels = ref([]);
+const ingresosValues = ref([]);
+const utilidadValues = ref([]);
+const estructuraResultadoOptions = ref([]);
+const selectedResultPeriod = ref("");
+
+const hoveredIngresosPoint = ref(null);
+const hoveredUtilidadPoint = ref(null);
+
+// =====================
+// CARGA DE DATOS
+// =====================
 const fetchDashboardData = async () => {
   try {
-    projectId.value = route.params.id_proyecto;
-
-    if (!projectId.value) {
-      console.error("Falta ID Proyecto");
-      return;
-    }
+    if (!projectId.value) return;
 
     const periodosRef = collection(db, "proyectos", projectId.value, "periodos");
     const snapshot = await getDocs(periodosRef);
 
-    let dataList = [];
+    let loaded = [];
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
 
-      if (data.rentabilidad || data.analisis_rentabilidad) {
-        dataList.push({
+      if (data.analisis_rentabilidad || data.rentabilidad) {
+        loaded.push({
           id: docSnap.id,
-          label: data.label || docSnap.id,
-          periodDate: data.periodDate || data.label || docSnap.id,
-          data,
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          resultados_url: data.resultsFile?.url || null,
+          rentabilidad:
+            data.analisis_rentabilidad ||
+            data.rentabilidad || { datos_crudos: {}, kpis: [] },
+          liquidez:
+            data.analisis_liquidez ||
+            data.liquidez || { datos_crudos: {}, kpis: [] },
+          endeudamiento:
+            data.analisis_endeudamiento ||
+            data.endeudamiento || { datos_crudos: {}, kpis: [] },
+          rotacion:
+            data.analisis_rotacion ||
+            data.rotacion || { datos_crudos: {}, kpis: [] },
+          estructura:
+            data.analisis_estructura ||
+            data.estructura || { datos_crudos: {}, kpis: [] },
         });
       }
     });
 
-    if (dataList.length > 0) {
-      dataList.sort((a, b) =>
-        String(a.periodDate).localeCompare(String(b.periodDate))
-      );
+    loaded.sort((a, b) =>
+      String(a.periodDate).localeCompare(String(b.periodDate))
+    );
 
-      const latest = dataList[dataList.length - 1];
-      const d = latest.data;
+    rawPeriods.value = loaded;
 
-      const dashboardData = {
-        id: latest.id,
-        label: latest.label,
-        periodDate: latest.periodDate,
-        periodo: latest.label,
-        resultados_url: d.resultsFile?.url || d.resultados_url || null,
-        rentabilidad:
-          d.rentabilidad ||
-          d.analisis_rentabilidad || { datos_crudos: {}, kpis: [] },
-        liquidez:
-          d.liquidez ||
-          d.analisis_liquidez || { datos_crudos: {}, kpis: [] },
-        endeudamiento:
-          d.endeudamiento ||
-          d.analisis_endeudamiento || { datos_crudos: {}, kpis: [] },
-        estructura:
-          d.estructura ||
-          d.analisis_estructura || { datos_crudos: {}, kpis: [] },
-        rotacion:
-          d.rotacion ||
-          d.analisis_rotacion || { datos_crudos: {}, kpis: [] },
-      };
+    console.log(
+      "📊 DATOS HISTÓRICOS COMPLETOS DE TODOS LOS MÓDULOS:",
+      JSON.parse(JSON.stringify(loaded))
+    );
 
-      rawPeriod.value = dashboardData;
-      resultadosPdfUrl.value = dashboardData.resultados_url;
+    if (loaded.length > 0) {
+      generateDashboardData();
 
-      console.log("📊 KPIs DE TODOS LOS MÓDULOS (MONOPERIODO):", {
-        rentabilidad: dashboardData.rentabilidad.kpis,
-        liquidez: dashboardData.liquidez.kpis,
-        endeudamiento: dashboardData.endeudamiento.kpis,
-        estructura: dashboardData.estructura.kpis,
-        rotacion: dashboardData.rotacion.kpis,
-      });
-
-      const aiPayload = buildAiPayload([dashboardData], {
-        basePeriodDate: dashboardData.periodDate,
+      const aiPayload = buildAiPayload(loaded, {
+        basePeriodDate: loaded[loaded.length - 1]?.periodDate,
         sector: "servicios",
-        periodicity: "anual",
       });
 
-      console.log(
-        "🤖 JSON LIMPIO PARA IA (MONOPERIODO):",
-        JSON.parse(JSON.stringify(aiPayload))
-      );
+      console.log("🤖 JSON LIMPIO PARA IA:", JSON.parse(JSON.stringify(aiPayload)));
 
-      mapDataToDashboard(dashboardData);
-
-      periodLabel.value = dashboardData.periodo
-        ? `Periodo: ${dashboardData.periodo}`
-        : "Periodo Actual";
-
-      const hasSavedAiAnalysis = await loadSavedAiAnalysisFromFirestore(
-        aiPayload
-      );
+      const hasSavedAiAnalysis = await loadSavedAiAnalysisFromFirestore(aiPayload);
 
       if (!hasSavedAiAnalysis) {
         await generateAiAnalysis(aiPayload);
       }
-    } else {
-      interpretation.value = "No hay análisis disponibles.";
     }
   } catch (error) {
-    console.error("Error cargando dashboard:", error);
-    interpretation.value = "Error de conexión.";
+    console.error("Error cargando resumen multiperiodo:", error);
 
     toast({
-      message: "No se pudo cargar el resumen monoperiodo.",
+      message: "No se pudo cargar el resumen multiperiodo.",
       type: "warning",
     });
   } finally {
@@ -937,211 +967,413 @@ const fetchDashboardData = async () => {
   }
 };
 
-// ===== MAPEO DE DATOS =====
-const mapDataToDashboard = (data) => {
-  const rent = data.rentabilidad || { datos_crudos: {}, kpis: [] };
-  const liq = data.liquidez || { datos_crudos: {}, kpis: [] };
-  const end = data.endeudamiento || { datos_crudos: {}, kpis: [] };
-  const est = data.estructura || { datos_crudos: {}, kpis: [] };
-  const rot = data.rotacion || { datos_crudos: {}, kpis: [] };
+const generateDashboardData = () => {
+  const periods = rawPeriods.value;
+  chartLabels.value = periods.map((p) => p.label);
 
-  const ventas = rent.datos_crudos?.ventas_netas || 0;
-  const utNeta = rent.datos_crudos?.utilidad_neta || 0;
-  const costo = rot.datos_crudos?.costo_ventas || 0;
-  const utOperacion = end.datos_crudos?.utilidad_operacion || 0;
+  const lastP = periods[periods.length - 1];
+  const prevP = periods.length > 1 ? periods[periods.length - 2] : lastP;
+
+  const getKpiValue = (kpis, keyword) => {
+    if (!kpis) return 0;
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    const val = item ? parseVal(item.value) : 0;
+    return isNaN(val) ? 0 : val;
+  };
+
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "gray";
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    return item?.status === "ok" ? "ok" : "warn";
+  };
+
+  ingresosValues.value = periods.map(
+    (p) => p.rentabilidad.datos_crudos?.ventas_netas || 0
+  );
+
+  utilidadValues.value = periods.map(
+    (p) => p.rentabilidad.datos_crudos?.utilidad_neta || 0
+  );
+
+  const lastIngresos = ingresosValues.value[ingresosValues.value.length - 1];
+
+  const prevIngresos =
+    ingresosValues.value.length > 1
+      ? ingresosValues.value[ingresosValues.value.length - 2]
+      : lastIngresos;
+
+  const deltaIngresos = prevIngresos
+    ? (lastIngresos - prevIngresos) / prevIngresos
+    : 0;
+
+  const lastUtilidad = utilidadValues.value[utilidadValues.value.length - 1];
+
+  const prevUtilidad =
+    utilidadValues.value.length > 1
+      ? utilidadValues.value[utilidadValues.value.length - 2]
+      : lastUtilidad;
+
+  const deltaUtilidad = prevUtilidad
+    ? (lastUtilidad - prevUtilidad) / prevUtilidad
+    : 0;
+
+  const lastMargen = lastIngresos ? lastUtilidad / lastIngresos : 0;
+  const prevMargen = prevIngresos ? prevUtilidad / prevIngresos : 0;
+  const deltaMargen = lastMargen - prevMargen;
+
+  const lastLiq = getKpiValue(lastP.liquidez.kpis, "Razón de Liquidez");
+  const prevLiq = getKpiValue(prevP.liquidez.kpis, "Razón de Liquidez");
+  const deltaLiq = lastLiq - prevLiq;
 
   kpis.value = [
     {
       label: "Ingresos Totales",
-      value: currencyFmt.format(ventas),
-      status: ventas > 0 ? "ok" : "warn",
+      value: currencyFmt.format(lastIngresos),
+      status: lastIngresos > 0 ? "ok" : "warn",
+      deltaType: deltaIngresos >= 0 ? "up" : "down",
+      deltaValue: `${deltaIngresos > 0 ? "+" : ""}${(
+        deltaIngresos * 100
+      ).toFixed(1)}%`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
     },
     {
       label: "Utilidad Neta",
-      value: currencyFmt.format(utNeta),
-      status: utNeta > 0 ? "ok" : "warn",
+      value: currencyFmt.format(lastUtilidad),
+      status: lastUtilidad > 0 ? "ok" : "warn",
+      deltaType: deltaUtilidad >= 0 ? "up" : "down",
+      deltaValue: `${deltaUtilidad > 0 ? "+" : ""}${(
+        deltaUtilidad * 100
+      ).toFixed(1)}%`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
     },
     {
       label: "Margen Neto",
-      value: percentFmt.format(ventas ? utNeta / ventas : 0),
-      status: ventas && utNeta / ventas > 0.1 ? "ok" : "warn",
+      value: percentFmt.format(lastMargen),
+      status: lastMargen > 0.1 ? "ok" : "warn",
+      deltaType: deltaMargen >= 0 ? "up" : "down",
+      deltaValue: `${deltaMargen > 0 ? "+" : ""}${(
+        deltaMargen * 100
+      ).toFixed(1)} pp`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
     },
     {
       label: "Liquidez General",
-      value: findKpiValue(liq.kpis, "Razón de Liquidez") || "0.0",
-      status: isStatusOk(liq.kpis, "Razón de Liquidez") ? "ok" : "warn",
+      value: lastLiq.toFixed(2),
+      status: lastLiq >= 1.0 ? "ok" : "warn",
+      deltaType: deltaLiq >= 0 ? "up" : "down",
+      deltaValue: `${deltaLiq > 0 ? "+" : ""}${deltaLiq.toFixed(2)}`,
+      deltaNote: periods.length > 1 ? `vs ${prevP.label}` : "Sin periodo previo",
     },
   ];
 
-  cards.value[0].items = [
+  cards.value = [
     {
-      label: "ROE",
-      target: ">10%",
-      value: findKpiValue(rent.kpis, "Patrimonio") || "-",
-      dot: getDotColor(rent.kpis, "Patrimonio"),
+      title: "Rentabilidad",
+      icon: "trending_up",
+      detailRoute: "rentabilidadMulti",
+      items: [
+        {
+          label: "ROE",
+          target: ">10%",
+          value: `${getKpiValue(lastP.rentabilidad.kpis, "Patrimonio").toFixed(
+            1
+          )}%`,
+          dot: getKpiStatus(lastP.rentabilidad.kpis, "Patrimonio"),
+        },
+        {
+          label: "Margen Neto",
+          target: ">10%",
+          value: `${getKpiValue(
+            lastP.rentabilidad.kpis,
+            "Margen de Rentabilidad"
+          ).toFixed(1)}%`,
+          dot: getKpiStatus(
+            lastP.rentabilidad.kpis,
+            "Margen de Rentabilidad"
+          ),
+        },
+      ],
     },
     {
-      label: "Margen Neto",
-      target: ">10%",
-      value: findKpiValue(rent.kpis, "Margen de Rentabilidad") || "-",
-      dot: getDotColor(rent.kpis, "Margen de Rentabilidad"),
-    },
-  ];
-
-  cards.value[1].items = [
-    {
-      label: "Prueba Ácida",
-      target: ">0.8",
-      value: findKpiValue(liq.kpis, "Prueba del Ácido") || "-",
-      dot: getDotColor(liq.kpis, "Prueba del Ácido"),
-    },
-    {
-      label: "Cap. Trabajo",
-      target: "> $0",
-      value: findKpiValue(liq.kpis, "Capital de Trabajo") || "-",
-      dot: getDotColor(liq.kpis, "Capital de Trabajo"),
-    },
-  ];
-
-  cards.value[2].items = [
-    {
-      label: "Nivel Deuda",
-      target: "<0.5",
-      value: findKpiValue(end.kpis, "Apalancamiento") || "-",
-      dot: getDotColor(end.kpis, "Apalancamiento"),
+      title: "Liquidez",
+      icon: "attach_money",
+      detailRoute: "liquidezMulti",
+      items: [
+        {
+          label: "Prueba Ácida",
+          target: ">0.8",
+          value: getKpiValue(lastP.liquidez.kpis, "Prueba del Ácido").toFixed(2),
+          dot: getKpiStatus(lastP.liquidez.kpis, "Prueba del Ácido"),
+        },
+        {
+          label: "Cap. Trabajo",
+          target: "> $0",
+          value: currencyFmt.format(
+            getKpiValue(lastP.liquidez.kpis, "Capital de Trabajo")
+          ),
+          dot: getKpiStatus(lastP.liquidez.kpis, "Capital de Trabajo"),
+        },
+      ],
     },
     {
-      label: "Cobertura Int.",
-      target: ">1.5x",
-      value: findKpiValue(end.kpis, "Cobertura de Intereses") || "-",
-      dot: getDotColor(end.kpis, "Cobertura de Intereses"),
-    },
-  ];
-
-  const rawRotInv = rot.kpis?.find((k) =>
-    k.label.toLowerCase().includes("inventarios")
-  );
-
-  const rotInvValue =
-    !rawRotInv || rawRotInv.value === "N/A"
-      ? "N/A"
-      : findKpiValue(rot.kpis, "Inventarios") || "-";
-
-  cards.value[3].items = [
-    {
-      label: "Rot. Inventario",
-      target: ">4.0x",
-      value: rotInvValue,
-      dot: getDotColor(rot.kpis, "Inventarios"),
-    },
-    {
-      label: "Periodo Cobro",
-      target: "<60 días",
-      value: findKpiValue(rot.kpis, "Recaudo") || "-",
-      dot: getDotColor(rot.kpis, "Recaudo"),
-    },
-  ];
-
-  cards.value[4].items = [
-    {
-      label: "Solvencia",
-      target: ">1.0",
-      value: findKpiValue(est.kpis, "Solvencia General") || "-",
-      dot: getDotColor(est.kpis, "Solvencia General"),
+      title: "Endeudamiento",
+      icon: "account_balance_wallet",
+      detailRoute: "endeudamientoMulti",
+      items: [
+        {
+          label: "Nivel Deuda",
+          target: "<0.5",
+          value: getKpiValue(lastP.endeudamiento.kpis, "Apalancamiento").toFixed(
+            2
+          ),
+          dot: getKpiStatus(lastP.endeudamiento.kpis, "Apalancamiento"),
+        },
+        {
+          label: "Cobertura Int.",
+          target: ">1.5x",
+          value: `${getKpiValue(
+            lastP.endeudamiento.kpis,
+            "Cobertura de Intereses"
+          ).toFixed(1)}x`,
+          dot: getKpiStatus(
+            lastP.endeudamiento.kpis,
+            "Cobertura de Intereses"
+          ),
+        },
+      ],
     },
     {
-      label: "Seguridad LP",
-      target: ">=1.0",
-      value: findKpiValue(est.kpis, "Seguridad a largo plazo") || "-",
-      dot: getDotColor(est.kpis, "Seguridad a largo plazo"),
+      title: "Rotación de Activos",
+      icon: "sync_alt",
+      detailRoute: "rotacionMulti",
+      items: [
+        {
+          label: "Rot. Inventario",
+          target: ">4.0x",
+          value: (() => {
+            const raw = lastP.rotacion.kpis?.find((k) =>
+              k.label.toLowerCase().includes("inventarios")
+            );
+            if (!raw || raw.value === "N/A") return "N/A";
+            const num = parseVal(raw.value);
+            return isNaN(num) ? "N/A" : `${num.toFixed(1)}x`;
+          })(),
+          dot: getKpiStatus(lastP.rotacion.kpis, "Inventarios"),
+        },
+        {
+          label: "Periodo Cobro",
+          target: "<60 días",
+          value: `${getKpiValue(lastP.rotacion.kpis, "Recaudo").toFixed(
+            0
+          )} días`,
+          dot: getKpiStatus(lastP.rotacion.kpis, "Recaudo"),
+        },
+      ],
+    },
+    {
+      title: "Estructura Financiera",
+      icon: "layers",
+      detailRoute: "estructuraMulti",
+      items: [
+        {
+          label: "Solvencia",
+          target: ">1.0",
+          value: getKpiValue(
+            lastP.estructura.kpis,
+            "Solvencia General"
+          ).toFixed(2),
+          dot: getKpiStatus(lastP.estructura.kpis, "Solvencia General"),
+        },
+        {
+          label: "Seguridad LP",
+          target: ">=1.0",
+          value: isNaN(
+            getKpiValue(lastP.estructura.kpis, "Seguridad a largo plazo")
+          )
+            ? "N/A"
+            : getKpiValue(
+                lastP.estructura.kpis,
+                "Seguridad a largo plazo"
+              ).toFixed(2),
+          dot: getKpiStatus(lastP.estructura.kpis, "Seguridad a largo plazo"),
+        },
+      ],
     },
   ];
 
   const calcPct = (val, total) =>
     total ? `${((val / total) * 100).toFixed(1)}%` : "0%";
 
-  const gastos = ventas - costo - utOperacion;
-  const impuestos = utOperacion - utNeta;
+  const reversedPeriods = [...periods].reverse();
 
-  estructuraResultado.value = {
-    period: data.periodo || "Periodo actual",
-    rows: [
-      {
-        concept: "Ingresos",
-        value: currencyFmt.format(ventas),
-        pct: "100%",
-        tone: "income",
-      },
-      {
-        concept: "Costos",
-        value: `(${currencyFmt.format(costo)})`,
-        pct: calcPct(costo, ventas),
-        tone: "negative",
-      },
-      {
-        concept: "Gastos",
-        value: `(${currencyFmt.format(gastos > 0 ? gastos : 0)})`,
-        pct: calcPct(gastos > 0 ? gastos : 0, ventas),
-        tone: "negative",
-      },
-      {
-        concept: "Impuestos y Otros",
-        value: `(${currencyFmt.format(impuestos > 0 ? impuestos : 0)})`,
-        pct: calcPct(impuestos > 0 ? impuestos : 0, ventas),
-        tone: "negative",
-      },
-      {
-        concept: "Total (Utilidad Neta)",
-        value: currencyFmt.format(utNeta),
-        pct: calcPct(utNeta, ventas),
-        tone: "total",
-      },
-    ],
+  estructuraResultadoOptions.value = reversedPeriods.map((p) => {
+    const rentCrudos = p.rentabilidad.datos_crudos || {};
+    const rotCrudos = p.rotacion.datos_crudos || {};
+    const endCrudos = p.endeudamiento.datos_crudos || {};
+
+    const v = rentCrudos.ventas_netas || 0;
+    const ut_neta = rentCrudos.utilidad_neta || 0;
+    const costo = rotCrudos.costo_ventas || 0;
+    const ut_op = endCrudos.utilidad_operacion || 0;
+
+    const gastos = v - costo - ut_op;
+    const impuestos = ut_op - ut_neta;
+
+    return {
+      period: p.label,
+      pdfUrl: p.resultados_url,
+      rows: [
+        {
+          concept: "Ingresos",
+          value: currencyFmt.format(v),
+          pct: "100%",
+          tone: "income",
+        },
+        {
+          concept: "Costos",
+          value: `(${currencyFmt.format(costo)})`,
+          pct: calcPct(costo, v),
+          tone: "negative",
+        },
+        {
+          concept: "Gastos",
+          value: `(${currencyFmt.format(gastos > 0 ? gastos : 0)})`,
+          pct: calcPct(gastos > 0 ? gastos : 0, v),
+          tone: "negative",
+        },
+        {
+          concept: "Impuestos y Otros",
+          value: `(${currencyFmt.format(impuestos > 0 ? impuestos : 0)})`,
+          pct: calcPct(impuestos > 0 ? impuestos : 0, v),
+          tone: "negative",
+        },
+        {
+          concept: "Total (Utilidad Neta)",
+          value: currencyFmt.format(ut_neta),
+          pct: calcPct(ut_neta, v),
+          tone: "total",
+        },
+      ],
+    };
+  });
+
+  if (estructuraResultadoOptions.value.length > 0) {
+    selectedResultPeriod.value = estructuraResultadoOptions.value[0].period;
+  }
+};
+
+const estructuraResultado = computed(() => {
+  return (
+    estructuraResultadoOptions.value.find(
+      (item) => item.period === selectedResultPeriod.value
+    ) || { rows: [], pdfUrl: null }
+  );
+});
+
+const buildChartModel = (values, labels, isCurrency = false) => {
+  if (values.length === 0) return { yAxisLabels: [], points: [] };
+
+  const maxVal = Math.max(...values, isCurrency ? 1000 : 10);
+  let minVal = Math.min(...values, 0);
+  if (minVal > 0) minVal = 0;
+
+  const rawRange = maxVal - minVal;
+  let step;
+
+  if (isCurrency) {
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawRange || 1)));
+    step = Math.max(magnitude / 2, 10000);
+  } else {
+    step = 5;
+  }
+
+  const yMin = Math.floor(minVal / step) * step;
+  const yMax = Math.ceil(maxVal / step) * step;
+  const finalRange = Math.max(yMax - yMin, isCurrency ? 10000 : 1);
+
+  const fmtLabel = (val) => {
+    if (!isCurrency) return `${val.toFixed(0)}`;
+    if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
+    if (val >= 1000) return `$${(val / 1000).toFixed(0)}k`;
+    return `$${val}`;
   };
 
-  interpretation.value =
-    utNeta > 0
-      ? "La empresa genera utilidades netas positivas."
-      : "La empresa reporta pérdidas o faltan datos.";
+  const yAxisLabels = [
+    fmtLabel(yMax),
+    fmtLabel(yMax - finalRange / 3),
+    fmtLabel(yMax - (finalRange / 3) * 2),
+    fmtLabel(yMin),
+  ];
+
+  const xStep = labels.length > 1 ? 600 / (labels.length - 1) : 0;
+
+  const points = values.map((val, i) => {
+    const x = labels.length > 1 ? 100 + i * xStep : 400;
+    const y = 230 - ((val - yMin) / finalRange) * 180;
+
+    return {
+      x,
+      y,
+      label: labels[i],
+      bold: i === values.length - 1,
+      value: val,
+      isCurrency,
+    };
+  });
+
+  return { yAxisLabels, points };
 };
 
-// ===== FUNCIONES AUXILIARES =====
-const findKpiValue = (list, labelPart) => {
-  if (!list) return null;
+const ingresosChart = computed(() =>
+  buildChartModel(ingresosValues.value, chartLabels.value, true)
+);
 
-  const item = list.find((k) =>
-    k.label.toLowerCase().includes(labelPart.toLowerCase())
-  );
+const utilidadChart = computed(() =>
+  buildChartModel(utilidadValues.value, chartLabels.value, true)
+);
 
-  return item ? item.value : null;
+const baselineY = 230;
+
+const linePathFor = (chart) =>
+  chart?.points?.length
+    ? chart.points
+        .map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`))
+        .join(" ")
+    : "";
+
+const areaPathFor = (chart) => {
+  const pts = chart?.points || [];
+  if (!pts.length) return "";
+
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const mid = pts.map((p) => `L${p.x} ${p.y}`).join(" ");
+
+  return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 };
 
-const getDotColor = (list, labelPart) => {
-  if (!list) return "gray";
-
-  const item = list.find((k) =>
-    k.label.toLowerCase().includes(labelPart.toLowerCase())
-  );
-
-  if (!item) return "gray";
-
-  if (item.status === "danger" || item.status === "alert") return "alert";
-
-  return item.status === "ok" ? "ok" : "warn";
-};
-
-const isStatusOk = (list, labelPart) => {
-  return getDotColor(list, labelPart) === "ok";
-};
-
-function goDetail(routeName) {
-  if (!projectId.value) return;
-  router.push({ name: routeName, params: { id_proyecto: projectId.value } });
+// =====================
+// NAVEGACIÓN Y ACCIONES
+// =====================
+function pushWithProject(name) {
+  if (projectId.value) {
+    router.push({ name, params: { id_proyecto: projectId.value } });
+  }
 }
 
-function goToIncomeStatementDetail() {
-  if (resultadosPdfUrl.value) {
-    window.open(resultadosPdfUrl.value, "_blank");
+function goDetail(routeName) {
+  pushWithProject(routeName);
+}
+
+function openPDF() {
+  const url = estructuraResultado.value?.pdfUrl;
+
+  if (url) {
+    window.open(url, "_blank");
   } else {
     toast({
       message: "No se encontró el documento PDF para este periodo.",
@@ -1164,17 +1396,282 @@ onMounted(() => {
           <p class="kpi-label">{{ k.label }}</p>
           <span class="kpi-dot" :class="k.status" aria-hidden="true"></span>
         </div>
+
         <div class="kpi-value">{{ k.value }}</div>
+
+        <div class="kpi-delta">
+          <span
+            class="delta-pill"
+            :class="k.deltaType === 'up' ? 'delta-up' : 'delta-down'"
+          >
+            <span class="material-symbols-outlined">
+              {{ k.deltaType === "up" ? "trending_up" : "trending_down" }}
+            </span>
+            {{ k.deltaValue }}
+          </span>
+          <span class="delta-note">{{ k.deltaNote }}</span>
+        </div>
       </article>
     </section>
 
-    <!-- Info -->
-    <div class="info">
-      <span class="material-symbols-outlined">info</span>
-      <p>
-        Para visualizar gráficas de evolución y comparativas detalladas, añade más periodos a tu análisis.
-      </p>
-    </div>
+    <!-- GRÁFICAS -->
+    <section class="chart-grid">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Evolución de ingresos</h3>
+            <p class="panel-sub">Comparativa por periodo</p>
+          </div>
+
+          <div class="legend">
+            <div class="legend-item">
+              <span class="legend-dot" aria-hidden="true"></span>
+              <span>Ingresos</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart">
+          <svg
+            class="chart-svg"
+            fill="none"
+            preserveAspectRatio="none"
+            viewBox="0 0 800 300"
+          >
+            <defs>
+              <linearGradient id="gradient-ingresos" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#299de0" stop-opacity="0.15" />
+                <stop offset="100%" stop-color="#299de0" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="50" y2="50" />
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="110" y2="110" />
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="170" y2="170" />
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230" />
+
+            <path :d="areaPathFor(ingresosChart)" fill="url(#gradient-ingresos)" />
+            <path
+              :d="linePathFor(ingresosChart)"
+              fill="none"
+              stroke="#299de0"
+              stroke-linecap="round"
+              stroke-width="3"
+            />
+
+            <circle
+              v-for="(p, idx) in ingresosChart.points"
+              :key="`ing-${idx}`"
+              :cx="p.x"
+              :cy="p.y"
+              fill="white"
+              :r="hoveredIngresosPoint === p ? 6 : 4"
+              stroke="#299de0"
+              stroke-width="2"
+              style="transition: r 0.2s ease;"
+            />
+
+            <circle
+              v-for="(p, idx) in ingresosChart.points"
+              :key="`ing-hit-${idx}`"
+              :cx="p.x"
+              :cy="p.y"
+              r="20"
+              fill="transparent"
+              style="cursor: pointer;"
+              @mouseover="hoveredIngresosPoint = p"
+              @mouseleave="hoveredIngresosPoint = null"
+            />
+
+            <g v-if="hoveredIngresosPoint" style="pointer-events: none;">
+              <rect
+                :x="hoveredIngresosPoint.x - 45"
+                :y="hoveredIngresosPoint.y - 42"
+                width="90"
+                height="26"
+                rx="6"
+                fill="#0e161b"
+                opacity="0.95"
+              />
+              <polygon
+                :points="`${hoveredIngresosPoint.x - 6},${hoveredIngresosPoint.y - 16} ${hoveredIngresosPoint.x + 6},${hoveredIngresosPoint.y - 16} ${hoveredIngresosPoint.x},${hoveredIngresosPoint.y - 10}`"
+                fill="#0e161b"
+                opacity="0.95"
+              />
+              <text
+                :x="hoveredIngresosPoint.x"
+                :y="hoveredIngresosPoint.y - 24"
+                fill="#ffffff"
+                font-size="12"
+                font-weight="bold"
+                font-family="Inter, sans-serif"
+                text-anchor="middle"
+              >
+                {{ currencyFmt.format(hoveredIngresosPoint.value) }}
+              </text>
+            </g>
+
+            <text
+              v-for="(p, idx) in ingresosChart.points"
+              :key="`ing-t-${idx}`"
+              :x="p.x"
+              y="260"
+              text-anchor="middle"
+              font-family="Inter, sans-serif"
+              font-size="12"
+              :font-weight="p.bold ? 'bold' : 'normal'"
+              :fill="p.bold ? '#0e161b' : '#507c95'"
+            >
+              {{ p.label }}
+            </text>
+
+            <g>
+              <text
+                v-for="(lab, i) in ingresosChart.yAxisLabels"
+                :key="`ing-y-${i}`"
+                x="45"
+                :y="55 + i * 60"
+                text-anchor="end"
+                fill="#507c95"
+                font-family="Inter"
+                font-size="11"
+                font-weight="600"
+              >
+                {{ lab }}
+              </text>
+            </g>
+          </svg>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Utilidad neta</h3>
+            <p class="panel-sub">Tendencia por periodo</p>
+          </div>
+
+          <div class="legend">
+            <div class="legend-item">
+              <span class="legend-dot" aria-hidden="true"></span>
+              <span>Utilidad Neta</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart">
+          <svg
+            class="chart-svg"
+            fill="none"
+            preserveAspectRatio="none"
+            viewBox="0 0 800 300"
+          >
+            <defs>
+              <linearGradient id="gradient-utilidad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#299de0" stop-opacity="0.15" />
+                <stop offset="100%" stop-color="#299de0" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="50" y2="50" />
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="110" y2="110" />
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="170" y2="170" />
+            <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230" />
+
+            <path :d="areaPathFor(utilidadChart)" fill="url(#gradient-utilidad)" />
+            <path
+              :d="linePathFor(utilidadChart)"
+              fill="none"
+              stroke="#299de0"
+              stroke-linecap="round"
+              stroke-width="3"
+            />
+
+            <circle
+              v-for="(p, idx) in utilidadChart.points"
+              :key="`util-${idx}`"
+              :cx="p.x"
+              :cy="p.y"
+              fill="white"
+              :r="hoveredUtilidadPoint === p ? 6 : 4"
+              stroke="#299de0"
+              stroke-width="2"
+              style="transition: r 0.2s ease;"
+            />
+
+            <circle
+              v-for="(p, idx) in utilidadChart.points"
+              :key="`util-hit-${idx}`"
+              :cx="p.x"
+              :cy="p.y"
+              r="20"
+              fill="transparent"
+              style="cursor: pointer;"
+              @mouseover="hoveredUtilidadPoint = p"
+              @mouseleave="hoveredUtilidadPoint = null"
+            />
+
+            <g v-if="hoveredUtilidadPoint" style="pointer-events: none;">
+              <rect
+                :x="hoveredUtilidadPoint.x - 45"
+                :y="hoveredUtilidadPoint.y - 42"
+                width="90"
+                height="26"
+                rx="6"
+                fill="#0e161b"
+                opacity="0.95"
+              />
+              <polygon
+                :points="`${hoveredUtilidadPoint.x - 6},${hoveredUtilidadPoint.y - 16} ${hoveredUtilidadPoint.x + 6},${hoveredUtilidadPoint.y - 16} ${hoveredUtilidadPoint.x},${hoveredUtilidadPoint.y - 10}`"
+                fill="#0e161b"
+                opacity="0.95"
+              />
+              <text
+                :x="hoveredUtilidadPoint.x"
+                :y="hoveredUtilidadPoint.y - 24"
+                fill="#ffffff"
+                font-size="12"
+                font-weight="bold"
+                font-family="Inter, sans-serif"
+                text-anchor="middle"
+              >
+                {{ currencyFmt.format(hoveredUtilidadPoint.value) }}
+              </text>
+            </g>
+
+            <text
+              v-for="(p, idx) in utilidadChart.points"
+              :key="`util-t-${idx}`"
+              :x="p.x"
+              y="260"
+              text-anchor="middle"
+              font-family="Inter, sans-serif"
+              font-size="12"
+              :font-weight="p.bold ? 'bold' : 'normal'"
+              :fill="p.bold ? '#0e161b' : '#507c95'"
+            >
+              {{ p.label }}
+            </text>
+
+            <g>
+              <text
+                v-for="(lab, i) in utilidadChart.yAxisLabels"
+                :key="`util-y-${i}`"
+                x="45"
+                :y="55 + i * 60"
+                text-anchor="end"
+                fill="#507c95"
+                font-family="Inter"
+                font-size="11"
+                font-weight="600"
+              >
+                {{ lab }}
+              </text>
+            </g>
+          </svg>
+        </div>
+      </article>
+    </section>
 
     <!-- Cards -->
     <section class="cards-grid">
@@ -1214,10 +1711,21 @@ onMounted(() => {
     <section class="result-card">
       <div class="result-head">
         <div class="result-title">
-          <span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>
+          <span class="material-symbols-outlined" aria-hidden="true">
+            receipt_long
+          </span>
           <h4>Resumen del Resultado</h4>
         </div>
-        <span class="result-pill">{{ estructuraResultado.period }}</span>
+
+        <select v-model="selectedResultPeriod" class="result-select">
+          <option
+            v-for="option in estructuraResultadoOptions"
+            :key="option.period"
+            :value="option.period"
+          >
+            {{ option.period }}
+          </option>
+        </select>
       </div>
 
       <div class="result-wrap">
@@ -1229,7 +1737,7 @@ onMounted(() => {
 
         <div
           v-for="row in estructuraResultado.rows"
-          :key="row.concept"
+          :key="`${estructuraResultado.period}-${row.concept}`"
           class="result-row result-grid"
           :class="[
             row.tone === 'negative' ? 'result-negative' : '',
@@ -1243,7 +1751,18 @@ onMounted(() => {
       </div>
 
       <div class="result-foot">
-        <button class="result-link" type="button" @click="goToIncomeStatementDetail">
+        <button
+          class="result-link"
+          type="button"
+          @click="openPDF"
+          :disabled="!estructuraResultado?.pdfUrl"
+        >
+          <span
+            class="material-symbols-outlined"
+            style="vertical-align: middle; font-size: 16px; margin-right: 4px;"
+          >
+            open_in_new
+          </span>
           Ver estado de resultados completo
         </button>
       </div>
@@ -1309,18 +1828,14 @@ onMounted(() => {
           </div>
 
           <div v-if="aiAlerts.length" class="ai-section">
-            <h4 class="ai-section-title">Alertas relevantes</h4>
+            <h4 class="ai-section-title">Alertas por bloque</h4>
 
             <div
               v-for="(alert, idx) in aiAlerts"
               :key="`alert-${idx}`"
               class="ai-alert"
-              :class="`severity-${alert.severityKey}`"
+              :class="severityClass(alert.severity)"
             >
-              <p v-if="alert.block_name" class="ai-block-name">
-                {{ alert.block_name }}
-              </p>
-
               <p class="ai-finding-title">{{ alert.title }}</p>
 
               <p v-if="alert.message" class="ai-finding-text">
@@ -1340,7 +1855,7 @@ onMounted(() => {
           <div class="tag tag-green">
             <span class="material-symbols-outlined">checklist</span>
           </div>
-          <h3>Recomendaciones generales</h3>
+          <h3>Recomendaciones</h3>
         </div>
 
         <ul class="list">
@@ -1395,11 +1910,12 @@ onMounted(() => {
   border-radius: 16px;
   padding: 18px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .kpi-card:hover {
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.08);
+  border-color: #b4d2e6;
 }
 
 .kpi-top {
@@ -1444,8 +1960,118 @@ onMounted(() => {
 
 .kpi-value {
   margin-top: 8px;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 900;
+  color: #0e161b;
+}
+
+.kpi-delta {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.delta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.delta-pill .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.delta-up {
+  background: #dcfce7;
+  color: #078836;
+}
+
+.delta-down {
+  background: #fee2e2;
+  color: #e73508;
+}
+
+.delta-note {
+  color: #507c95;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ===== CHART PANELS ===== */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #e8eff3;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.panel-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid #e8eff3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.panel-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.panel-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #507c95;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0e161b;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #299de0;
+}
+
+.chart {
+  padding: 16px 18px 18px;
+  position: relative;
+}
+
+.chart-svg {
+  width: 100%;
+  height: 280px;
+  display: block;
 }
 
 /* ===== Cards grid ===== */
@@ -1559,7 +2185,7 @@ onMounted(() => {
   text-align: center;
 }
 
-/* ===== Resultado ===== */
+/* ===== Resumen del resultado ===== */
 .result-card {
   background: #fff;
   border: 1px solid #e8eff3;
@@ -1594,14 +2220,22 @@ onMounted(() => {
   font-weight: 900;
 }
 
-.result-pill {
+.result-select {
+  min-width: 140px;
+  border: 1px solid #d1dee6;
+  background: #f3f4f6;
+  color: #507c95;
+  border-radius: 10px;
+  padding: 8px 36px 8px 14px;
   font-size: 12px;
   font-weight: 900;
-  color: #507c95;
-  background: #f3f4f6;
-  border-radius: 10px;
-  padding: 8px 14px;
-  white-space: nowrap;
+  outline: none;
+  cursor: pointer;
+}
+
+.result-select:focus {
+  border-color: #299de0;
+  box-shadow: 0 0 0 3px rgba(41, 157, 224, 0.12);
 }
 
 .result-wrap {
@@ -1700,7 +2334,6 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
-  align-items: start;
 }
 
 .note {
@@ -1817,15 +2450,6 @@ onMounted(() => {
   border: 1px solid #dbeafe;
 }
 
-.ai-block-name {
-  margin: 0 0 6px;
-  color: #299de0;
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
 .ai-finding-title {
   margin: 0 0 4px;
   color: #0e161b;
@@ -1875,8 +2499,6 @@ onMounted(() => {
   list-style: none;
   display: grid;
   gap: 10px;
-  position: relative;
-  z-index: 1;
 }
 
 .list li {
@@ -1919,28 +2541,7 @@ onMounted(() => {
   line-height: 1.4;
 }
 
-/* ===== Info + footer ===== */
-.info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-}
-
-.info span {
-  color: #299de0;
-}
-
-.info p {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 800;
-  color: #299de0;
-}
-
+/* ===== Botones ===== */
 .link-btn {
   color: #299de0;
   font-weight: 900;
@@ -1954,6 +2555,7 @@ onMounted(() => {
   text-decoration: underline;
 }
 
+/* ===== Footer ===== */
 .foot {
   margin: 8px 0 22px;
   text-align: center;
@@ -1986,6 +2588,10 @@ onMounted(() => {
 @media (min-width: 1024px) {
   .kpi-grid {
     grid-template-columns: repeat(4, 1fr);
+  }
+
+  .chart-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .cards-grid {
