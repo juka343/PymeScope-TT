@@ -6,6 +6,7 @@ import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from "fireba
 
 const router = useRouter();
 const route = useRoute();
+const getRouteName = (baseName) => route.path.includes('dashboard-multi') ? `${baseName}Multi` : baseName;
 
 const projectId = route.params.id_proyecto;
 const isProcessing = ref(false);
@@ -235,7 +236,7 @@ const impuestosRows = ref([
 const incluirImpuestos = ref(false);
 
 function cancelar() {
-  router.push({ name: "proyecciones" });
+  router.push({ name: getRouteName("proyecciones") });
 }
 
 function isFilaVacia(row) {
@@ -379,7 +380,7 @@ async function generarProyeccion() {
     }));
 
     router.push({ 
-      name: "ProyeccionProformaEdo",
+      name: getRouteName("ProyeccionProformaEdo"),
       query: isHistory ? { isHistory: 'true' } : {}
     });
 

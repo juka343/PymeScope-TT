@@ -8,6 +8,7 @@ import jsPDF from "jspdf";
 
 const router = useRouter();
 const route = useRoute();
+const getRouteName = (baseName) => route.path.includes('dashboard-multi') ? `${baseName}Multi` : baseName;
 const projectId = route.params.id_proyecto;
 
 // Navegar al formulario prellenado para editar supuestos
@@ -17,7 +18,7 @@ function editProjection() {
   const configRaw = localStorage.getItem(lsKeyConfig);
   const config = configRaw ? JSON.parse(configRaw) : {};
   router.push({
-    name: "FormularioEstadoDeResultados",
+    name: getRouteName("FormularioEstadoDeResultados"),
     query: {
       periodoBaseId: config.periodoBaseId || '',
       label: config.periodoBase || '',
@@ -88,7 +89,7 @@ onMounted(async () => {
 
   if (!resultsRaw) {
     console.warn("No se encontraron resultados de proyección. Regresando...");
-    router.push({ name: 'Proyecciones' });
+    router.push({ name: getRouteName('proyecciones') });
     return;
   }
 
@@ -330,7 +331,7 @@ async function continueToBalance() {
     if (existingBG) {
       console.log("[continueToBalance] Resultado encontrado en localStorage. Navegando...");
       router.push({ 
-        name: "ProyeccionProformaBalanceGeneral",
+        name: getRouteName("ProyeccionProformaBalanceGeneral"),
         query: { isHistory: 'true' }
       });
       return;
@@ -378,7 +379,7 @@ async function continueToBalance() {
             localStorage.setItem("history_balance_supuestos", JSON.stringify(bgData.supuestos));
           }
           router.push({ 
-            name: "ProyeccionProformaBalanceGeneral",
+            name: getRouteName("ProyeccionProformaBalanceGeneral"),
             query: { isHistory: 'true' }
           });
           return;
@@ -391,7 +392,7 @@ async function continueToBalance() {
     // Proyección activa (nueva): Revisar si el usuario ya calculó el BG en esta sesión actual
     const currentBgResult = localStorage.getItem('current_balance_result');
     if (currentBgResult) {
-      router.push({ name: "ProyeccionProformaBalanceGeneral" });
+      router.push({ name: getRouteName("ProyeccionProformaBalanceGeneral") });
       return;
     }
   }
@@ -399,7 +400,7 @@ async function continueToBalance() {
   // No existe BG en la sesión activa o no se encontró en historial → ir al formulario
   console.log("[continueToBalance] No se encontró BG previo. Redirigiendo al formulario...");
   router.push({ 
-    name: "FormularioBalanceGeneral",
+    name: getRouteName("FormularioBalanceGeneral"),
     query: {
       periodoBaseId: periodoBaseId,
       label: config.periodoBase || '',

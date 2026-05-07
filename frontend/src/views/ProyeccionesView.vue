@@ -8,6 +8,8 @@ const router = useRouter();
 const route = useRoute();
 const projectId = route.params.id_proyecto;
 
+const getRouteName = (baseName) => route.path.includes('dashboard-multi') ? `${baseName}Multi` : baseName;
+
 const estadoResultadosDisponible = ref(false);
 const balanceDisponible = ref(false);
 const periodoBaseLabel = ref("Cargando...");
@@ -221,12 +223,12 @@ function configurarBalance() {
 
   const savedResult = localStorage.getItem('current_balance_result');
   if (savedResult) {
-    router.push({ name: "ProyeccionProformaBalanceGeneral" });
+    router.push({ name: getRouteName("ProyeccionProformaBalanceGeneral") });
     return;
   }
 
   router.push({
-    name: "FormularioBalanceGeneral",
+    name: getRouteName("FormularioBalanceGeneral"),
     query: {
       periodoBaseId: latestPeriodId.value,
       label: periodoBaseLabel.value,
@@ -251,7 +253,7 @@ function iniciarNuevaProyeccion() {
   balanceDisponible.value = false;
 
   router.push({
-    name: "FormularioEstadoDeResultados",
+    name: getRouteName("FormularioEstadoDeResultados"),
     query: {
       periodoBaseId: latestPeriodId.value,
       label: periodoBaseLabel.value,
@@ -309,7 +311,7 @@ function verProyeccionHistorica(item) {
     localStorage.removeItem('history_balance_supuestos');
   }
 
-  router.push({ name: "ProyeccionProformaEdo", query: { isHistory: 'true' } });
+  router.push({ name: getRouteName("ProyeccionProformaEdo"), query: { isHistory: 'true' } });
 }
 
 // Lógica para edición en línea del nombre

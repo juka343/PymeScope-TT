@@ -6,6 +6,7 @@ import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, where,
 
 const router = useRouter();
 const route = useRoute();
+const getRouteName = (baseName) => route.path.includes('dashboard-multi') ? `${baseName}Multi` : baseName;
 const projectId = route.params.id_proyecto;
 
 const isProcessing = ref(false);
@@ -255,7 +256,7 @@ const capitalGanadoEditable = ref([
 ]);
 
 function cancelar() {
-  router.push({ name: "proyecciones" });
+  router.push({ name: getRouteName("proyecciones") });
 }
 
 function isFilaVacia(item) {
@@ -409,7 +410,7 @@ async function generarProyeccion() {
     localStorage.setItem(`${prefix}_balance_supuestos`, JSON.stringify(payload));
 
     router.push({ 
-      name: "ProyeccionProformaBalanceGeneral",
+      name: getRouteName("ProyeccionProformaBalanceGeneral"),
       params: { id_proyecto: projectId },
       query: isHistory ? { isHistory: 'true' } : {}
     });
@@ -628,11 +629,13 @@ async function generarProyeccion() {
 
       <div class="group-label group-label-bordered">Capital ganado</div>
       <div class="assumptions-table">
+        <!-- 
         <div class="assumptions-row">
           <div class="col-concepto"><div class="concept-text">Utilidades de ejercicios anteriores</div></div>
           <div class="col-variacion"><input class="input input-disabled" type="text" placeholder="Inmovilizado" disabled /></div>
           <div class="col-check check-wrap"><span class="mini-tag mini-tag-gray">Automático</span></div>
-        </div>
+        </div> 
+        -->
 
         <div v-for="(item, idx) in capitalGanadoEditable" :key="`cg-${idx}`" class="assumptions-row">
           <div class="col-concepto"><div class="concept-text">{{ item.concepto }}</div></div>

@@ -8,6 +8,7 @@ import jsPDF from "jspdf";
 
 const router = useRouter();
 const route = useRoute();
+const getRouteName = (baseName) => route.path.includes('dashboard-multi') ? `${baseName}Multi` : baseName;
 const projectId = route.params.id_proyecto;
 
 function editProjection() {
@@ -16,7 +17,7 @@ function editProjection() {
   const configRaw = localStorage.getItem(lsKeyConfig);
   const config = configRaw ? JSON.parse(configRaw) : {};
   router.push({
-    name: "FormularioBalanceGeneral",
+    name: getRouteName("FormularioBalanceGeneral"),
     query: {
       periodoBaseId: config.periodoBaseId || '',
       label: config.periodoBase || '',
@@ -30,7 +31,7 @@ function editProjection() {
 function regresarEstadoResultados() {
   const isHistory = route.query.isHistory === 'true';
   router.push({ 
-    name: "ProyeccionProformaEdo",
+    name: getRouteName("ProyeccionProformaEdo"),
     query: isHistory ? { isHistory: 'true' } : {}
   });
 }
@@ -56,7 +57,7 @@ function finalizarProyeccion() {
     localStorage.removeItem('history_balance_supuestos');
   }
 
-  router.push({ name: 'proyecciones' });
+  router.push({ name: getRouteName('proyecciones') });
 }
 
 const headerInfo = ref({
@@ -147,7 +148,7 @@ onMounted(async () => {
 
   if (!resultsRaw) {
     console.warn("No se encontraron resultados de balance para mostrar.");
-    router.push({ name: 'Proyecciones' });
+    router.push({ name: getRouteName('proyecciones') });
     return;
   }
 

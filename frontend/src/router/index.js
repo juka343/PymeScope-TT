@@ -153,11 +153,31 @@ const router = createRouter({
           name: "estructuraMulti",
           component: () => import("../views/EstructuraMultiView.vue"),
         },
-        // {
-        //   path: "proyecciones",
-        //   name: "proyeccionesMulti",
-        //   component: () => import("../views/ProyeccionesMultiView.vue"), 
-        // },
+        {
+          path: "proyecciones",
+          name: "proyeccionesMulti",
+          component: () => import("../views/ProyeccionesView.vue"), 
+        },
+        {
+          path: "FormularioEstadoDeResultados",
+          name: "FormularioEstadoDeResultadosMulti",
+          component: () => import("../views/FormularioEstadoDeResultadosView.vue"),
+        },
+        {
+          path: "ProyeccionProformaEdo",
+          name: "ProyeccionProformaEdoMulti",
+          component: () => import("../views/ProyeccionProformaEdoView.vue"),
+        },
+        {
+          path: "FormularioBalanceGeneral",
+          name: "FormularioBalanceGeneralMulti",
+          component: () => import("../views/FormularioBalanceGeneralView.vue"),
+        },
+        {
+          path: "ProyeccionProformaBalanceGeneral",
+          name: "ProyeccionProformaBalanceGeneralMulti",
+          component: () => import("../views/ProyeccionProformaBalanceGeneralView.vue"),
+        },
       ],
     },
 
