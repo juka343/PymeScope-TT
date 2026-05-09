@@ -194,14 +194,18 @@ onMounted(async () => {
   rows.push({ 
     type: "subtotal", 
     concept: "Utilidad de operación", 
+    base: fmt(utilidadOperativaBase),
     proforma: fmt(results.utilidad_operativa), 
+    variation: "—",
     highlightValue: true 
   });
   
   rows.push({ 
     type: "subtotal", 
     concept: "Utilidad antes de impuestos", 
+    base: fmt(utilidadAntesImpuestosBase),
     proforma: fmt(results.utilidad_antes_impuestos), 
+    variation: "—",
     highlightValue: true 
   });
 
@@ -222,7 +226,9 @@ onMounted(async () => {
   rows.push({
     type: "final",
     concept: "Utilidad neta del ejercicio",
+    base: fmt(utilidadNetaBase),
     proforma: fmt(results.utilidad_neta),
+    variation: "—",
     variationTone: "final-up"
   });
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import Any, Dict
-from app.models.projections import ProyeccionSupuestosRequest, ProyeccionBalanceRequest
+from app.models.projections import ProyeccionSupuestosRequest, ProyeccionBalanceRequest, LineaSupuesto
 from app.services.azure_document_service import AzureDocumentService
 from app.services.projection_calculator import ProjectionCalculator
 from app.services.firebase_service import FirebaseDBManager
@@ -32,6 +32,7 @@ async def generar_proyeccion_estado_resultados(payload: ProyeccionSupuestosReque
     print(f"  PROYECCIÓN - Proyecto: {payload.project_id}")
     print(f"  Periodo proyectado: {payload.periodo_proyectado_label}")
     print(f"  Inflación esperada: {payload.inflacion_esperada}%")
+    print(f"  Periodo base (dinámico): {payload.periodo_base}")
     print(f"{'='*60}")
 
     try:
@@ -47,7 +48,9 @@ async def generar_proyeccion_estado_resultados(payload: ProyeccionSupuestosReque
             ocr_data=ocr_data,
             supuestos_ingresos=payload.ingresos,
             supuestos_costos=payload.costos,
-            supuestos_impuestos=payload.impuestos
+            supuestos_impuestos=payload.impuestos,
+            inflacion_esperada=payload.inflacion_esperada,
+            periodo_base=payload.periodo_base
         )
 
         filas_proyectadas = res_proy["tablas_proyectadas"]
@@ -106,6 +109,19 @@ async def generar_proyeccion_balance_general(payload: ProyeccionBalanceRequest) 
     print(f"{'='*60}")
 
     try:
+        # --- INYECCIÓN AUTOMÁTICA DE DEPRECIACIÓN ---
+        # Si el Frontend no envía la Depreciación Acumulada, la inyectamos silenciosamente
+        # para que el motor la busque en el PDF, reste el valor histórico y el FER cuadre.
+        tiene_dep = any("depreciaci" in sup.concepto.lower() for sup in payload.activo_no_circulante)
+        if not tiene_dep:
+            payload.activo_no_circulante.append(
+                LineaSupuesto(
+                    concepto="Depreciación acumulada",
+                    variacion=0.0,
+                    mantener_igual=True
+                )
+            )
+
         # 1. Extraer datos crudos del periodo base (PDF del Balance General)
         print(f"\n-> Analizando PDF base con Azure (Balance General)...")
         ocr_data = await _azure_service.process_financial_document_async(payload.results_url)

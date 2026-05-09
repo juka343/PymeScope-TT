@@ -520,7 +520,7 @@ async function generarProyeccion() {
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' && item.variacion !== 0)" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -539,7 +539,7 @@ async function generarProyeccion() {
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' && item.variacion !== 0)" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -571,7 +571,7 @@ async function generarProyeccion() {
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' && item.variacion !== 0)" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -590,7 +590,7 @@ async function generarProyeccion() {
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' && item.variacion !== 0)" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -622,7 +622,7 @@ async function generarProyeccion() {
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' && item.variacion !== 0)" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -646,7 +646,7 @@ async function generarProyeccion() {
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
-          <div class="col-check check-wrap"><input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' && item.variacion !== 0)" /></div>
+          <div class="col-check check-wrap"><input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" /></div>
         </div>
 
         <div class="assumptions-row">
@@ -657,6 +657,7 @@ async function generarProyeccion() {
               type="text" 
               :value="formatMoney(projectConfig.utilidadNetaProforma)" 
               disabled 
+              style="opacity: 0.65; color: var(--text-tertiary);"
             />
           </div>
           <div class="col-check check-wrap"><span class="mini-tag mini-tag-blue">Cálculo extraído del Estado de Resultados Proforma</span></div>

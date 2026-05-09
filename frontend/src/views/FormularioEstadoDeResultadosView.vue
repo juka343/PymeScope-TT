@@ -282,6 +282,7 @@ async function generarProyeccion() {
       results_url: projectConfig.value.resultsUrl,
       periodo_proyectado_label: projectConfig.value.periodoProyectado,
       inflacion_esperada: parseFloat(projectConfig.value.inflacionEsperada) || 0,
+      periodo_base: projectConfig.value.periodoBaseLabel,
       ingresos: ingresosRows.value.map(row => ({
         concepto: row.concepto,
         variacion: parseFloat(row.variacion) || 0,
@@ -493,7 +494,7 @@ async function generarProyeccion() {
             <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' && row.variacion !== 0)" />
+            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -525,7 +526,7 @@ async function generarProyeccion() {
             <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' && row.variacion !== 0)" />
+            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -560,7 +561,7 @@ async function generarProyeccion() {
             </div>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' && row.variacion !== 0)" />
+            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
           </div>
         </div>
       </div>
