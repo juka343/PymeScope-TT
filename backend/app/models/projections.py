@@ -12,6 +12,7 @@ class ProyeccionSupuestosRequest(BaseModel):
     results_url: str
     periodo_proyectado_label: str
     inflacion_esperada: float
+    periodo_base: Optional[str] = None
     ingresos: List[LineaSupuesto]
     costos: List[LineaSupuesto]
     impuestos: List[LineaSupuesto]
