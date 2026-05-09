@@ -256,7 +256,7 @@ class FinancialCalculator:
                             if col_idx > kw_col_index:
                                 cell_text = str(cell.get("text", "")).strip()
                                 val = self._clean_number(cell_text)
-                                if val is not None and abs(val) > 0:
+                                if val is not None:
                                     found_values.append(float(val))
                                 elif cell_text and val is None:
                                     # Celda de texto no-numérico después del keyword = concepto diferente
@@ -268,7 +268,7 @@ class FinancialCalculator:
                             # --- FILTRO ANTI-PORCENTAJES (Nivel Experto) ---
                             max_magnitude = max(abs(v) for v in found_values)
                             
-                            val_monetarios = [v for v in found_values if abs(v) > 100 or abs(v) == max_magnitude]
+                            val_monetarios = [v for v in found_values if abs(v) > 100 or abs(v) == max_magnitude or v == 0]
                             
                             # Determinamos la lista a usar
                             lista_final = val_monetarios if val_monetarios else found_values
@@ -288,7 +288,7 @@ class FinancialCalculator:
                         for cell in row_cells:
                             if kw in str(cell.get("text", "")).lower():
                                 val = self._clean_number(cell.get("text", ""))
-                                if val is not None and abs(val) > 0:
+                                if val is not None:
                                     return float(val)
         return 0.0
 

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, computed } from "vue";
+import { onBeforeUnmount, onMounted, ref, computed, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { ref as storageRef, deleteObject } from "firebase/storage";
 import { useConfirm } from "@/composables/useConfirm";
@@ -11,6 +11,7 @@ import {
   collection,
   doc,
   setDoc,
+  updateDoc,
   getDoc,
   getDocs,
   deleteDoc,
@@ -355,7 +356,7 @@ function goToAnalysis(p) {
   if (!p || p.status !== "completo") return;
 
   const base = p.analysisMode === "multi" ? "dashboard-multi" : "dashboard";
-  router.push(`/proyecto/${p.id}/${base}/rentabilidad`);
+  router.push(`/proyecto/${p.id}/${base}/resumen`);
 }
 
 const deleting = ref(null);
@@ -414,6 +415,37 @@ async function removeProject(id) {
     });
   } finally {
     deleting.value = null;
+  }
+}
+// ====== EDICIÓN DE NOMBRE DE PROYECTO ======
+const editingId = ref(null);
+const editNameInput = ref("");
+
+async function iniciarEdicionNombre(p) {
+  editingId.value = p.id;
+  editNameInput.value = p.title;
+  await nextTick();
+  const inputEl = document.getElementById(`edit-input-${p.id}`);
+  if (inputEl) inputEl.focus();
+}
+
+function cancelarNombre() {
+  editingId.value = null;
+  editNameInput.value = "";
+}
+
+async function guardarNombre(p) {
+  if (!editNameInput.value.trim()) return;
+  try {
+    const projectRef = doc(db, "proyectos", p.id);
+    await updateDoc(projectRef, {
+      nombre: editNameInput.value.trim()
+    });
+    p.title = editNameInput.value.trim();
+    editingId.value = null;
+  } catch (error) {
+    console.error("Error al actualizar nombre de proyecto:", error);
+    toast({ message: "Hubo un error al guardar el nombre.", type: "error" });
   }
 }
 </script>
@@ -486,7 +518,17 @@ async function removeProject(id) {
           </div>
 
           <div class="card-body">
-            <h3>{{ p.title }}</h3>
+            <div v-if="editingId === p.id" class="edit-name-wrap">
+              <input :id="`edit-input-${p.id}`" v-model="editNameInput" class="input input-sm" type="text" @keyup.enter="guardarNombre(p)" @keyup.esc="cancelarNombre" />
+              <button class="btn-icon-small btn-icon-ok" @click="guardarNombre(p)" title="Guardar"><span class="material-symbols-outlined">check</span></button>
+              <button class="btn-icon-small btn-icon-cancel" @click="cancelarNombre" title="Cancelar"><span class="material-symbols-outlined">close</span></button>
+            </div>
+            <div v-else class="title-with-edit">
+              <h3>{{ p.title }}</h3>
+              <button class="btn-icon-small edit-icon-btn" @click="iniciarEdicionNombre(p)" title="Editar nombre">
+                <span class="material-symbols-outlined">edit</span>
+              </button>
+            </div>
 
             <div class="meta">
               <div class="meta-row">
@@ -1746,5 +1788,94 @@ async function removeProject(id) {
     font-size: 12px;
     padding: 9px 10px;
   }
+}
+
+/* Inline Edit Styles */
+.title-with-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.title-with-edit h3 {
+  margin: 0;
+}
+
+.edit-icon-btn {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  padding: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.edit-icon-btn:hover {
+  background: #f3f4f6;
+  color: #299de0;
+}
+
+.edit-icon-btn .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.edit-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.input-sm {
+  padding: 4px 8px;
+  font-size: 14px;
+  height: 28px;
+  width: 150px;
+  border: 1px solid #dce2e5;
+  border-radius: 6px;
+  outline: none;
+}
+.input-sm:focus {
+  border-color: #299de0;
+  box-shadow: 0 0 0 2px rgba(41, 157, 224, 0.1);
+}
+
+.btn-icon-small {
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.btn-icon-small .material-symbols-outlined {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.btn-icon-ok {
+  color: #059669;
+  background: #ecfdf5;
+}
+
+.btn-icon-ok:hover {
+  background: #d1fae5;
+}
+
+.btn-icon-cancel {
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.btn-icon-cancel:hover {
+  background: #fee2e2;
 }
 </style>

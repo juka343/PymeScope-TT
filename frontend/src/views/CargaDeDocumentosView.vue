@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, nextTick } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useConfirm } from "@/composables/useConfirm";
 import { useToast } from "@/composables/useToast";
@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   getDocs,
   deleteDoc,
   collection,
@@ -47,6 +48,65 @@ const fileInputRefs = ref({});
 const setInputRef = (el, periodId, type) => {
   if (el) fileInputRefs.value[`${periodId}_${type}`] = el;
 };
+
+// =====================
+// EDICIÓN DE NOMBRES
+// =====================
+const isEditingProjectName = ref(false);
+const editProjectNameInput = ref("");
+
+async function iniciarEdicionProyecto() {
+  isEditingProjectName.value = true;
+  editProjectNameInput.value = projectTitle.value;
+  await nextTick();
+  const inputEl = document.getElementById(`edit-project-input`);
+  if (inputEl) inputEl.focus();
+}
+
+function cancelarEdicionProyecto() {
+  isEditingProjectName.value = false;
+  editProjectNameInput.value = "";
+}
+
+async function guardarNombreProyecto() {
+  if (!editProjectNameInput.value.trim()) return;
+  try {
+    const projectRef = doc(db, "proyectos", projectId);
+    await updateDoc(projectRef, {
+      nombre: editProjectNameInput.value.trim()
+    });
+    projectTitle.value = editProjectNameInput.value.trim();
+    isEditingProjectName.value = false;
+  } catch (error) {
+    console.error("Error al actualizar nombre del proyecto:", error);
+    toast({ message: "Hubo un error al guardar el nombre.", type: "error" });
+  }
+}
+
+const editingPeriodId = ref(null);
+const editPeriodNameInput = ref("");
+
+async function iniciarEdicionPeriodo(p) {
+  editingPeriodId.value = p.id;
+  editPeriodNameInput.value = p.label;
+  await nextTick();
+  const inputEl = document.getElementById(`edit-period-input-${p.id}`);
+  if (inputEl) inputEl.focus();
+}
+
+function cancelarEdicionPeriodo() {
+  editingPeriodId.value = null;
+  editPeriodNameInput.value = "";
+}
+
+async function guardarNombrePeriodo(p) {
+  if (!editPeriodNameInput.value.trim()) return;
+  p.label = editPeriodNameInput.value.trim();
+  p.hasChanges = true;
+  p.hasAnalysis = false;
+  await savePeriodToFirestore(p);
+  editingPeriodId.value = null;
+}
 
 // =====================
 // NAVEGACIÓN AL RESUMEN
@@ -403,10 +463,10 @@ async function handleFileChange(event, periodId, type) {
   const file = event.target.files?.[0];
   if (!file) return;
 
-  if (file.type !== "application/pdf") {
+  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
     toast({
       message: "Por favor sube solo archivos PDF.",
-      type: "warning",
+      type: "error",
     });
     event.target.value = null;
     return;
@@ -600,6 +660,8 @@ async function analyzePeriod(period) {
     resultados_url: period.resultsFile.url,
     periodicidad: periodicity.value,
     col_index: getColIndex(period),
+    period_date: period.periodDate,
+    period_label: period.label,
   };
 
   const response = await fetch(`${API_BASE_URL}/documents/analyze-period`, {
@@ -707,6 +769,22 @@ async function generateAnalysis() {
   } catch (error) {
     console.error("Error en el análisis:", error);
 
+    if (error.message && error.message.includes("DATE_MISMATCH")) {
+      const match = error.message.match(/DATE_MISMATCH\|([^|]+)\|([^|]+)\|([^|]+)/);
+      const docType = match ? match[1] : "documento";
+      const expectedDate = match ? match[2] : "la fecha indicada";
+      const periodLabel = match ? match[3] : "el periodo";
+      
+      await confirm({
+        title: "Fechas no coinciden",
+        message: "No se pudo validar la fecha ingresada con la fecha del archivo, por favor, valida que la fecha ingresada coincida con la de ambos documentos.",
+        confirmText: "Entendido",
+        cancelText: "",
+        variant: "warning",
+      });
+      return;
+    }
+
     toast({
       message: error.message || "Hubo un error procesando los documentos.",
       type: "error",
@@ -719,6 +797,15 @@ async function generateAnalysis() {
 
 <template>
   <div class="page">
+    <!-- Overlay de Carga -->
+    <div v-if="isProcessing" class="loading-overlay">
+      <div class="loading-content">
+        <div class="spinner"></div>
+        <h3>Generando Análisis Financiero...</h3>
+        <p>Procesando documentos y ejecutando algoritmos de IA.</p>
+      </div>
+    </div>
+
     <header class="header">
       <div class="header-inner">
         <div class="brand">
@@ -748,7 +835,17 @@ async function generateAnalysis() {
         </div>
 
         <div class="project-meta">
-          <span class="project-title">{{ projectTitle }}</span>
+          <div v-if="isEditingProjectName" class="edit-name-wrap" style="margin-bottom: 0;">
+            <input id="edit-project-input" v-model="editProjectNameInput" class="input input-sm" type="text" @keyup.enter="guardarNombreProyecto" @keyup.esc="cancelarEdicionProyecto" />
+            <button class="btn-icon-small btn-icon-ok" @click="guardarNombreProyecto" title="Guardar"><span class="material-symbols-outlined">check</span></button>
+            <button class="btn-icon-small btn-icon-cancel" @click="cancelarEdicionProyecto" title="Cancelar"><span class="material-symbols-outlined">close</span></button>
+          </div>
+          <div v-else class="title-with-edit" style="margin-bottom: 0;">
+            <span class="project-title">{{ projectTitle }}</span>
+            <button class="btn-icon-small edit-icon-btn" @click="iniciarEdicionProyecto" title="Editar nombre">
+              <span class="material-symbols-outlined">edit</span>
+            </button>
+          </div>
           <span class="pill">Periodicidad: {{ periodicity }}</span>
         </div>
 
@@ -810,16 +907,24 @@ async function generateAnalysis() {
         <article v-for="p in periods" :key="p.id" class="period-card">
           <header class="period-card-head">
             <div class="head-left">
-              <div class="input-with-icon">
+              <div v-if="editingPeriodId === p.id" class="edit-name-wrap" style="margin-bottom: 0;">
                 <input
+                  :id="`edit-period-input-${p.id}`"
+                  v-model="editPeriodNameInput"
+                  class="input input-sm"
+                  style="font-weight: 900; width: 140px;"
                   type="text"
-                  v-model="p.label"
-                  @blur="savePeriodToFirestore(p)"
-                  placeholder="Nombre (Ej. Enero 2024)"
-                  class="editable-input label-input"
-                  title="Puedes editar este nombre"
+                  @keyup.enter="guardarNombrePeriodo(p)"
+                  @keyup.esc="cancelarEdicionPeriodo"
                 />
-                <span class="material-symbols-outlined edit-icon">edit</span>
+                <button class="btn-icon-small btn-icon-ok" @click="guardarNombrePeriodo(p)" title="Guardar"><span class="material-symbols-outlined">check</span></button>
+                <button class="btn-icon-small btn-icon-cancel" @click="cancelarEdicionPeriodo" title="Cancelar"><span class="material-symbols-outlined">close</span></button>
+              </div>
+              <div v-else class="title-with-edit" style="margin-bottom: 0;">
+                <span style="font-weight: 900; width: 140px; display: inline-block;">{{ p.label }}</span>
+                <button class="btn-icon-small edit-icon-btn" @click="iniciarEdicionPeriodo(p)" title="Editar nombre">
+                  <span class="material-symbols-outlined">edit</span>
+                </button>
               </div>
 
               <div class="date-wrapper">
@@ -941,7 +1046,7 @@ async function generateAnalysis() {
               <input
                 type="file"
                 hidden
-                accept="application/pdf"
+                accept=".pdf"
                 :ref="(el) => setInputRef(el, p.id, 'balance')"
                 @change="(e) => handleFileChange(e, p.id, 'balance')"
               />
@@ -980,7 +1085,7 @@ async function generateAnalysis() {
               <input
                 type="file"
                 hidden
-                accept="application/pdf"
+                accept=".pdf"
                 :ref="(el) => setInputRef(el, p.id, 'resultado')"
                 @change="(e) => handleFileChange(e, p.id, 'resultado')"
               />
@@ -1500,46 +1605,93 @@ async function generateAnalysis() {
   font-size: 20px;
 }
 
-.editable-input {
-  border: 1px solid transparent;
+/* Inline Edit Styles */
+.title-with-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.title-with-edit h3, .title-with-edit .project-title {
+  margin: 0;
+}
+
+.edit-icon-btn {
   background: transparent;
-  border-radius: 6px;
+  border: none;
+  color: #9ca3af;
+  padding: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.edit-icon-btn:hover {
+  background: #f3f4f6;
+  color: #299de0;
+}
+
+.edit-icon-btn .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.edit-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.input-sm {
   padding: 4px 8px;
-  font-family: inherit;
   font-size: 14px;
-  color: #0e161b;
-  transition: all 0.2s;
-}
-
-.editable-input:hover {
-  background: #f1f5f9;
-}
-
-.editable-input:focus {
+  height: 28px;
+  width: 150px;
+  border: 1px solid #dce2e5;
+  border-radius: 6px;
   outline: none;
+}
+.input-sm:focus {
   border-color: #299de0;
-  background: white;
   box-shadow: 0 0 0 2px rgba(41, 157, 224, 0.1);
 }
 
-.label-input {
-  font-weight: 900;
-  width: 140px;
-  padding-right: 24px;
-}
-
-.input-with-icon {
-  position: relative;
+.btn-icon-small {
+  background: transparent;
+  border: none;
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s ease;
 }
 
-.edit-icon {
-  position: absolute;
-  right: 8px;
-  font-size: 14px;
-  color: #94a3b8;
-  pointer-events: none;
+.btn-icon-small .material-symbols-outlined {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.btn-icon-ok {
+  color: #059669;
+  background: #ecfdf5;
+}
+
+.btn-icon-ok:hover {
+  background: #d1fae5;
+}
+
+.btn-icon-cancel {
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.btn-icon-cancel:hover {
+  background: #fee2e2;
 }
 
 .date-wrapper {
@@ -1655,6 +1807,47 @@ async function generateAnalysis() {
   font-weight: 700;
   display: none;
 }
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.loading-content h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.loading-content p {
+  margin: 0;
+  font-size: 13px;
+  color: #507c95;
+  font-weight: 700;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #299de0;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 @media (min-width: 640px) {
   .back-text {
