@@ -79,6 +79,8 @@ class SolicitudAnalisisPeriodo(BaseModel):
     resultados_url: str
     periodicidad: str
     col_index: int = 0
+    period_date: str = ""
+    period_label: str = ""
 
 
 # Modelo para solicitar análisis con IA
@@ -177,6 +179,51 @@ class RespuestaAnalisisFinancieroIA(BaseModel):
     data_quality_notes: List[str]
     disclaimer: str
 
+
+def validate_document_date(text: str, period_date: str, periodicity: str, doc_name: str, period_label: str):
+    if not text or not period_date:
+        return
+        
+    text_lower = text.lower()
+    parts = period_date.split("-")
+    year = parts[0]
+    
+    if periodicity.lower() == "anual":
+        if not re.search(r'\b' + year + r'\b', text_lower):
+            raise ValueError(f"DATE_MISMATCH|{doc_name}|{year}|{period_label}")
+    else:
+        month = parts[1] if len(parts) > 1 else ""
+        months = {
+            "01": ["enero", "january", "jan", "ene"],
+            "02": ["febrero", "february", "feb"],
+            "03": ["marzo", "march", "mar"],
+            "04": ["abril", "april", "abr", "apr"],
+            "05": ["mayo", "may"],
+            "06": ["junio", "june", "jun"],
+            "07": ["julio", "july", "jul"],
+            "08": ["agosto", "august", "ago", "aug"],
+            "09": ["septiembre", "september", "sep"],
+            "10": ["octubre", "october", "oct"],
+            "11": ["noviembre", "november", "nov"],
+            "12": ["diciembre", "december", "dic", "dec"]
+        }
+        month_names = months.get(month, [])
+        if not month_names:
+            return
+            
+        month_pattern = r'\b(' + '|'.join(month_names) + r')\.?'
+        middle_pattern = r'\s*(?:\d{1,2}\s*,?\s*)?(?:de\s*|del\s*)?'
+        pattern = month_pattern + middle_pattern + year + r'\b'
+        
+        numeric_month = str(int(month)) if month.isdigit() else month
+        numeric_month_padded = month
+        numeric_pattern = r'(?<!\d[\/\-])\b(?:' + numeric_month + r'|' + numeric_month_padded + r')[\/\-]' + year + r'\b'
+        
+        full_date_pattern = r'\b(?:al|de|del|periodo|mes)\s*(?:3[01]|[12][0-9]|0?[1-9])[\/\-](?:' + numeric_month + r'|' + numeric_month_padded + r')[\/\-]' + year + r'\b'
+        
+        if not re.search(pattern, text_lower) and not re.search(numeric_pattern, text_lower) and not re.search(full_date_pattern, text_lower):
+            expected_month_name = month_names[0].capitalize()
+            raise ValueError(f"DATE_MISMATCH|{doc_name}|{expected_month_name} {year}|{period_label}")
 
 # --- HELPERS IA ---
 
@@ -515,6 +562,12 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
             _azure_service.process_financial_document_async(payload.resultados_url),
         )
 
+        try:
+            validate_document_date(balance_data.get("text_content", ""), payload.period_date, payload.periodicidad, "Balance General", payload.period_label)
+            validate_document_date(resultados_data.get("text_content", ""), payload.period_date, payload.periodicidad, "Estado de Resultados", payload.period_label)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         indice = payload.col_index
 
         # 2. Calcular indicadores financieros
@@ -567,6 +620,8 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
             },
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error en análisis cruzado: {str(e)}")
         raise HTTPException(

@@ -24,7 +24,7 @@ const { isOpen, title, message, confirmText, cancelText, variant, handleConfirm,
 
             <!-- Acciones -->
             <div class="confirm-actions">
-              <button class="confirm-btn confirm-btn--cancel" @click="handleCancel">
+              <button v-if="cancelText" class="confirm-btn confirm-btn--cancel" @click="handleCancel">
                 {{ cancelText }}
               </button>
               <button
@@ -99,6 +99,8 @@ const { isOpen, title, message, confirmText, cancelText, variant, handleConfirm,
   font-weight: 900;
   color: #0f172a;
   letter-spacing: -0.01em;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .confirm-message {
