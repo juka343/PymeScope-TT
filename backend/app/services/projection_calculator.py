@@ -19,7 +19,10 @@ class ProjectionCalculator(FinancialCalculator):
             "EQUIPO AUTOMOTRIZ": "Equipo de transporte"
         }
 
-        self.concept_keywords: Dict[str, List[str]] = {
+        # ─── DICCIONARIO DEL ESTADO DE RESULTADOS ───────────────────────────────
+        # Alias para cuentas de INGRESOS, COSTOS, GASTOS e IMPUESTOS (gasto).
+        # Nunca debe usarse al procesar el Balance General.
+        self.er_keywords: Dict[str, List[str]] = {
             "Ventas netas / Ingresos por servicios": self.kw_ventas_netas,
             "Costo de ventas/Costo por servicios":   self.kw_costo_de_ventas,
             "Gastos financieros":                    self.kw_intereses,
@@ -48,65 +51,89 @@ class ProjectionCalculator(FinancialCalculator):
                 "otros gastos", "otros egresos", "gastos diversos",
                 "otros gastos y pérdidas",
             ],
+            # Impuestos como GASTO del ER (no confundir con pasivos del BG)
             "ISR": [
                 "isr", "impuesto sobre la renta", "impuesto a las ganancias",
+                "isr del ejercicio", "isr causado",
             ],
             "PTU (Participación de los Trabajadores en las Utilidades)": [
                 "ptu", "participación de los trabajadores en las utilidades",
+                "ptu del ejercicio",
             ],
-            # --- BALANCE GENERAL (Reutilizando etiquetas de la clase padre) ---
-            "Caja": ["caja", "efectivo en caja"],
-            "Bancos": ["bancos", "efectivo y equivalentes", "efectivo en bancos"],
-            "Cuentas por cobrar a clientes": self.kw_cuentas_por_cobrar,
+        }
+
+        # ─── DICCIONARIO DEL BALANCE GENERAL ────────────────────────────────────
+        # Alias para cuentas de ACTIVO, PASIVO y CAPITAL.
+        # Nunca debe usarse al procesar el Estado de Resultados.
+        self.bg_keywords: Dict[str, List[str]] = {
+            # Activo Circulante
+            "Caja":                                    ["caja", "efectivo", "caja chica", "fondo fijo", "efectivo en caja"],
+            "Bancos":                                  ["bancos", "efectivo y equivalentes", "efectivo en bancos"],
+            "Cuentas por cobrar a clientes":           self.kw_cuentas_por_cobrar,
             "Otras cuentas por cobrar (deudores diversos)": ["deudores diversos", "deudores"],
-            "Inventarios": self.kw_inventario,
-            "IVA acreditable": ["impuestos a favor", "iva a favor", "iva acreditable"],
-            "Terrenos": ["terrenos"],
-            "Edificios": ["edificios", "inmuebles", "casa oficina"],
-            "Maquinaria y equipo": ["maquinaria y equipo", "maquinaria"],
+            "Inventarios":                             self.kw_inventario,
+            "IVA acreditable":                         ["impuestos a favor", "iva a favor", "iva acreditable"],
+            "Impuestos y derechos": [
+                "impuestos acreditables por pagar", "impuestos acreditables pagados",
+                "impuestos acreditables", "otros impuestos a favor",
+                "impuestos y derechos", "impuesto acreditable",
+                "isr anticipos", "isr a favor", "sub-sidio al empleo",
+                "ISR ANTICIPOS", "ISR A FAVOR", "SUB-SIDIO AL EMPLEO",
+            ],
+            "Seguros y fianzas": ["seguros y fianzas", "seguros pagados por anticipado", "seguros anticipados"],
+            # Activo No Circulante
+            "Terrenos":                  ["terrenos"],
+            "Edificios":                 ["edificios", "inmuebles", "casa oficina"],
+            "Maquinaria y equipo":       ["maquinaria y equipo", "maquinaria"],
             "Equipo de transporte": [
-                "equipo de transporte", 
-                "vehículos",
-                "automóviles, autobuses, camiones",
-                "automóviles",
-                "camiones",
-                "equipo automotriz"
+                "equipo de transporte", "vehículos",
+                "automóviles, autobuses, camiones", "automóviles",
+                "camiones", "equipo automotriz",
             ],
             "Mobiliario y equipo de oficina": ["mobiliario y equipo de oficina", "muebles y enseres"],
-            "Equipo de cómputo": ["equipo de cómputo", "equipo de comunicación", "cómputo"],
-            "Depreciación acumulada": ["dep. acum.", "dep. acumulada", "depreciación acumulada", "depreciacion acumulada", "depreciacion"],
-            "Impuestos y derechos": ["impuestos acreditables por pagar", "impuestos acreditables pagados", "impuestos acreditables", "otros impuestos a favor", "impuestos retenidos", "impuestos y derechos", "impuesto acreditable", "isr anticipos", "isr a favor", "sub-sidio al empleo", "ISR ANTICIPOS", "ISR A FAVOR", "SUB-SIDIO AL EMPLEO"],
-            "Cuentas por pagar a proveedores": ["proveedores", "cuentas por pagar a proveedores"],
-            "Préstamo bancario / Deuda a corto plazo": ["documentos por pagar", "préstamos bancarios", "prestamos bancarios", "deuda a corto plazo"],
-            "Acreedores diversos": ["acreedores diversos", "acreedores"],
-            "Impuestos a la utilidad por pagar": ["impuestos a la utilidad por pagar", "impuestos por pagar", "impuestos retenidos", "isr por pagar", "ptu por pagar"],
-            "IVA por causar o trasladar": ["iva por causar o trasladar", "iva por causar", "iva trasladado no cobrado"],
-            "IVA causado o trasladado": ["iva causado o trasladado", "i.v.a trasladado", "iva cobrado", "i.v.a. trasladado"],
-            "Capital social": self.kw_capital_social + ["certif. aportación", "certificados de aportación"],
-            "Reserva legal": ["reserva legal", "reservas"],
-            "Caja": ["caja", "efectivo", "caja chica", "fondo fijo"],
-            "Depreciación acumulada": ["depreciación acumulada", "deprec. acum.", "depreciacion", "deprec acum", "dep. acum.", "(-) deprec. acum."],
-            "Seguros y fianzas": ["seguros y fianzas", "seguros pagados por anticipado", "seguros anticipados"],
-            "Acreedores diversos a largo plazo": ["acreedores diversos a largo plazo", "pasivo l.p.", "pasivo a largo plazo"],
-            "Cuentas por pagar a largo plazo": ["cuentas por pagar a largo plazo", "deuda a largo plazo"],
-            "Cobros anticipados a largo plazo": ["cobros anticipados a largo plazo"],
+            "Equipo de cómputo":         ["equipo de cómputo", "equipo de comunicación", "cómputo"],
+            "Depreciación acumulada": [
+                "depreciación acumulada", "deprec. acum.", "dep. acum.", "dep. acumulada",
+                "depreciacion acumulada", "depreciacion", "deprec acum", "(-) deprec. acum.",
+            ],
+            # Pasivo Corto Plazo
+            "Cuentas por pagar a proveedores":           ["proveedores", "cuentas por pagar a proveedores"],
+            "Préstamo bancario / Deuda a corto plazo":   ["documentos por pagar", "préstamos bancarios", "prestamos bancarios", "deuda a corto plazo"],
+            "Acreedores diversos":                       ["acreedores diversos", "acreedores"],
+            "Impuestos a la utilidad por pagar": [
+                "impuestos a la utilidad por pagar", "impuestos por pagar",
+                "isr por pagar", "ptu por pagar",
+                "impuestos retenidos",
+                "provisión de impuestos", "impuestos acumulados",
+            ],
+            "IVA por causar o trasladar":  ["iva por causar o trasladar", "iva por causar", "iva trasladado no cobrado"],
+            "IVA causado o trasladado":    ["iva causado o trasladado", "i.v.a trasladado", "iva cobrado", "i.v.a. trasladado"],
+            # Pasivo Largo Plazo
+            "Acreedores diversos a largo plazo":    ["acreedores diversos a largo plazo", "pasivo l.p.", "pasivo a largo plazo"],
+            "Cuentas por pagar a largo plazo":      ["cuentas por pagar a largo plazo", "deuda a largo plazo"],
+            "Cobros anticipados a largo plazo":     ["cobros anticipados a largo plazo"],
+            # Capital
+            "Capital social":  self.kw_capital_social + ["certif. aportación", "certificados de aportación"],
+            "Reserva legal":   ["reserva legal", "reservas"],
             "Utilidades o pérdidas de ejercicios anteriores": [
                 "utilidades acumuladas",
                 "resultados de ejercicios anteriores",
                 "utilidades de ejercicios anteriores",
                 "pérdidas acumuladas",
-                "pérdida del ejercicio",  # Nomenclatura TAAS LOGISTICS (histórico acumulado)
+                "pérdida del ejercicio",
                 "utilidades y perdidas acum.",
                 "utilidades y perdidas acumuladas",
                 "resuls, ejercicios ant.",
                 "resuls. ejercicios ant.",
-                "resuls",
-                "resuls.",
+                "resuls", "resuls.",
                 "resultados",
-                "utilid. ejercicios", 
-                "utilidades de ejercicios"
+                "utilid. ejercicios",
+                "utilidades de ejercicios",
             ],
         }
+
+        # Alias unificado (retrocompatibilidad con cualquier llamada legada)
+        self.concept_keywords = {**self.er_keywords, **self.bg_keywords}
 
     def _clean_number(self, text: str) -> float | None:
         """
@@ -562,7 +589,7 @@ class ProjectionCalculator(FinancialCalculator):
                 })
                 continue
             
-            kw = self.concept_keywords.get(sup.concepto, [sup.concepto.lower()])
+            kw = self.er_keywords.get(sup.concepto, [sup.concepto.lower()])
             v_base = extract_value(kw)
             v_proy = solve_rubro(sup, v_base, ventas_proy, ventas_base)
             val["otros_ingresos"] += v_proy
@@ -616,7 +643,7 @@ class ProjectionCalculator(FinancialCalculator):
                         v_base = v_base + v_compras - v_dev
             
             else:
-                kw = self.concept_keywords.get(sup.concepto, [sup.concepto.lower()])
+                kw = self.er_keywords.get(sup.concepto, [sup.concepto.lower()])
                 v_base = abs(extract_value(kw))
             
             v_proy = solve_rubro(sup, v_base, ventas_proy, ventas_base)
@@ -637,39 +664,35 @@ class ProjectionCalculator(FinancialCalculator):
                 "valor_proyectado": float(v_proy)
             })
 
-        # --- PROCESAR IMPUESTOS ---
-        sup_isr = next((s for s in supuestos_impuestos if "isr" in s.concepto.lower()), None)
-        val["tasa_impuestos"] = sup_isr.variacion if sup_isr else 0.0
+        # 4. Impuestos (ISR y PTU operan igual, extrayendo del OCR)
+        total_impuestos_proyectados = 0.0
         
-        val_ptu = 0.0
         for sup in supuestos_impuestos:
-            if "isr" in sup.concepto.lower(): continue
-            kw = self.concept_keywords.get(sup.concepto, [sup.concepto.lower()])
+            # Quitamos el continue del ISR para que lo procese igual que la PTU
+            kw = self.er_keywords.get(sup.concepto, [sup.concepto.lower()])
             v_base = abs(extract_value(kw))
             v_proy = solve_rubro(sup, v_base, ventas_proy, ventas_base)
-            val_ptu += v_proy
+            
+            total_impuestos_proyectados += v_proy
             
             filas_tabla.append({
                 "concepto": sup.concepto,
                 "valor_base": float(v_base),
-                "variacion_aplicada": ((v_proy/v_base)-1)*100 if v_base != 0 else 0,
+                "variacion_aplicada": sup.variacion if not sup.mantener_igual else 0.0,
                 "valor_proyectado": float(v_proy)
             })
 
-        # --- ARITMÉTICA DE CASCADA ---
+        # 5. Cálculo de cascada final
         utilidad_bruta = val["ventas"] - val["costo_ventas"]
+        utilidad_bruta_proy = utilidad_bruta  # ya están proyectados en val[]
+
         utilidad_operativa = utilidad_bruta - val["gastos_operativos"] + val["otros_ingresos"] - val["otros_gastos"]
+        utilidad_operativa_proy = utilidad_operativa
+
         utilidad_antes_impuestos = utilidad_operativa - val["gastos_financieros"]
-        
-        # NUEVO: Escudo anti-impuestos sobre pérdidas
-        if utilidad_antes_impuestos > 0:
-            impuestos_calculados = utilidad_antes_impuestos * (val["tasa_impuestos"] / 100)
-        else:
-            impuestos_calculados = 0.0
-            
-        impuestos_finales = impuestos_calculados + val_ptu
-        
-        utilidad_neta = utilidad_antes_impuestos - impuestos_finales
+
+        # Restamos la suma de todos los impuestos extraídos e impactados por la regla de proyección
+        utilidad_neta = utilidad_antes_impuestos - total_impuestos_proyectados
 
         return {
             "tablas_proyectadas": filas_tabla,
@@ -680,9 +703,9 @@ class ProjectionCalculator(FinancialCalculator):
             "utilidad_operativa": float(utilidad_operativa),
             "gastos_financieros": float(val["gastos_financieros"]),
             "utilidad_antes_impuestos": float(utilidad_antes_impuestos),
-            "impuestos": float(impuestos_finales),
+            "impuestos": float(total_impuestos_proyectados),
             "utilidad_neta": float(utilidad_neta),
-            "impuestos_totales": float(impuestos_finales)
+            "impuestos_totales": float(total_impuestos_proyectados)
         }
 
     def calcular_proyeccion_balance(
@@ -846,7 +869,7 @@ class ProjectionCalculator(FinancialCalculator):
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Utilidades o pérdidas de ejercicios anteriores":
-                    kw = self.concept_keywords.get(sup.concepto, [sup.concepto.lower()])
+                    kw = self.bg_keywords.get(sup.concepto, [sup.concepto.lower()])
                     # Usamos _get_all_matches_sum para sumar TODAS las subcuentas históricas
                     # Esto preserva el signo negativo matemático nativo sin forzar un abs()
                     v_base = self._get_all_matches_sum(ocr_data, kw, target_col_index=target_col_index, target_relative_index=target_relative_index)
@@ -857,7 +880,7 @@ class ProjectionCalculator(FinancialCalculator):
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 else:
-                    kw = self.concept_keywords.get(sup.concepto, [sup.concepto.lower()])
+                    kw = self.bg_keywords.get(sup.concepto, [sup.concepto.lower()])
                     
                     # Flags contextuales dinámicos
                     _is_pasivo = "pasivo" in key_total.lower()
