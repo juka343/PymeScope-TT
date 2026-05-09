@@ -358,9 +358,13 @@ export function useFinancialAiBlock(blockKey, options = {}) {
     return recommendationItems.value.length > 0;
   });
 
+  const isAiPending = computed(() => {
+    return aiBlockLoading.value || (!aiResult.value && !aiBlockError.value);
+  });
+
   return {
     aiResult,
-    aiBlockLoading,
+    aiBlockLoading: isAiPending,
     aiBlockError,
     loadAiResult,
 

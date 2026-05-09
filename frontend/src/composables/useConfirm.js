@@ -14,7 +14,7 @@ export function useConfirm() {
     title.value = options.title || "¿Estás seguro?";
     message.value = options.message || "";
     confirmText.value = options.confirmText || "Eliminar";
-    cancelText.value = options.cancelText || "Cancelar";
+    cancelText.value = options.cancelText !== undefined ? options.cancelText : "Cancelar";
     variant.value = options.variant || "danger";
     isOpen.value = true;
 

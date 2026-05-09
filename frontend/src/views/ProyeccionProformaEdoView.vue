@@ -44,9 +44,6 @@ const kpis = ref([
 ]);
 
 const projectionRows = ref([]);
-const interpretationPoints = ref([
-  "Cargando interpretación basada en datos reales...",
-]);
 
 // Textos dinámicos
 const utilidadNetaStr = ref("$0");
@@ -238,15 +235,7 @@ onMounted(async () => {
   projectionRows.value = rows;
 
   // 5. Interpretación dinámica inteligente
-  const inter = [
-    `La proyección estima una Utilidad Neta de ${fmt(results.utilidad_neta)}, logrando un margen neto del ${margenNeto.toFixed(1)}%.`,
-    `Los gastos marcados como "Mantener Igual" conservarán su valor en dinero (${config.periodoBase}).`,
-    `Las proyecciones variables escalan o se modifican respetando dinámicas de ingreso por venta o variaciones específicas indicadas.`
-  ];
-  if(config.inflacion && config.inflacion > 0) {
-      inter.push(`Se advierte un impacto simulado de inflación esperada del ${config.inflacion}% en partidas dependientes.`);
-  }
-  interpretationPoints.value = inter;
+  // Interpretation points removed
 });
 
 function assumptionClass(tone) {
@@ -520,21 +509,7 @@ async function continueToBalance() {
         </div>
       </section>
 
-      <section class="grid-2">
-        <article class="info-card">
-          <div class="info-head">
-            <div class="info-icon"><span class="material-symbols-outlined">info</span></div>
-            <h4>Interpretación de la proyección</h4>
-          </div>
-          <ul class="info-list">
-            <li v-for="(item, idx) in interpretationPoints" :key="idx">
-              <span class="bullet">•</span>
-              <span>{{ item }}</span>
-            </li>
-          </ul>
-          <span class="info-bg material-symbols-outlined">lightbulb</span>
-        </article>
-
+      <section class="next-step-section">
         <article class="next-card">
           <div class="next-head">
             <div class="next-icon"><span class="material-symbols-outlined">arrow_forward</span></div>
@@ -890,32 +865,15 @@ async function continueToBalance() {
   font-weight: 900;
 }
 
-.grid-2 {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 18px;
-}
-
-.info-card,
 .next-card {
   position: relative;
   border-radius: 14px;
   padding: 22px;
   overflow: hidden;
-}
-
-.info-card {
-  background: #ffffff;
-  border: 1px solid #e8eff3;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-}
-
-.next-card {
   background: rgba(239, 246, 255, 0.55);
   border: 2px dashed #299de0;
 }
 
-.info-head,
 .next-head {
   display: flex;
   align-items: center;
@@ -923,7 +881,6 @@ async function continueToBalance() {
   margin-bottom: 16px;
 }
 
-.info-head h4,
 .next-head h4 {
   margin: 0;
   font-size: 16px;
@@ -931,7 +888,6 @@ async function continueToBalance() {
   color: #0e161b;
 }
 
-.info-icon,
 .next-icon {
   width: 32px;
   height: 32px;
@@ -939,53 +895,12 @@ async function continueToBalance() {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-}
-
-.info-icon {
-  background: #eff6ff;
-  color: #299de0;
-}
-
-.next-icon {
   background: #299de0;
   color: #ffffff;
 }
 
-.info-icon .material-symbols-outlined,
 .next-icon .material-symbols-outlined {
   font-size: 16px;
-}
-
-.info-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 12px;
-}
-
-.info-list li {
-  display: flex;
-  gap: 10px;
-  color: #507c95;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.bullet {
-  color: #299de0;
-  font-size: 14px;
-  font-weight: 900;
-  margin-top: 2px;
-}
-
-.info-bg {
-  position: absolute;
-  right: -10px;
-  bottom: -12px;
-  font-size: 82px;
-  opacity: 0.05;
-  color: #299de0;
 }
 
 .next-card p {
@@ -1098,9 +1013,6 @@ async function continueToBalance() {
 @media (min-width: 1024px) {
   .kpis {
     grid-template-columns: repeat(4, 1fr);
-  }
-  .grid-2 {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
 

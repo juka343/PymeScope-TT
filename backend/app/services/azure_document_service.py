@@ -9,10 +9,9 @@ class AzureDocumentService:
             # 1. Llamar a Azure esperando la respuesta asíncrona
             raw_result = await self.azure_client.analyze_document_from_url_async(file_url)
 
-            # 2. Extraer información básica (Tu código original)
             extracted_content = {
                 "tables_count": len(raw_result.tables),
-                "text_content": raw_result.content[:500] + "...",
+                "text_content": raw_result.content[:5000] + "...",
                 "tables_data": []
             }
 
