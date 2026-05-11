@@ -25,19 +25,42 @@ _is_initialized = False
 
 def _ensure_firebase_initialized() -> None:
     global _is_initialized
+
     if _is_initialized:
         return
 
-    if not settings.FIREBASE_CREDENTIALS_PATH:
-        raise HTTPException(status_code=500, detail="FIREBASE_CREDENTIALS_PATH is not set.")
+    credenciales_path = settings.FIREBASE_CREDENTIALS_PATH
+
+    firebase_base64 = os.getenv("FIREBASE_SERVICE_ACCOUNT_BASE64")
+
+    if firebase_base64:
+        temp_path = os.path.join(
+            tempfile.gettempdir(),
+            "firebase-service-account.json"
+        )
+
+        with open(temp_path, "wb") as f:
+            f.write(base64.b64decode(firebase_base64))
+
+        credenciales_path = temp_path
+
+    if not credenciales_path:
+        raise HTTPException(
+            status_code=500,
+            detail="No se configuró FIREBASE_CREDENTIALS_PATH ni FIREBASE_SERVICE_ACCOUNT_BASE64."
+        )
 
     if not settings.FIREBASE_STORAGE_BUCKET:
-        raise HTTPException(status_code=500, detail="FIREBASE_STORAGE_BUCKET is not set.")
+        raise HTTPException(
+            status_code=500,
+            detail="No se configuró FIREBASE_STORAGE_BUCKET."
+        )
 
     _db_manager.inicializar_app(
-        settings.FIREBASE_CREDENTIALS_PATH,
+        credenciales_path,
         settings.FIREBASE_STORAGE_BUCKET,
     )
+
     _is_initialized = True
 
 
