@@ -11,6 +11,7 @@ app = FastAPI(
 origins = [
     "http://localhost:5173", # Tu Frontend local
     "http://127.0.0.1:5173",
+    "pyme-scope-tt.vercel.app"
 ]
 
 app.add_middleware(
