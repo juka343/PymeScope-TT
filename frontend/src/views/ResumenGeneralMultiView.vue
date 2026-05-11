@@ -18,7 +18,7 @@ const projectId = computed(() => route.params.id_proyecto || null);
 const { toast } = useToast();
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+  import.meta.env.VITE_API_BASE_URL || "/api";
 
 const AI_ANALYSIS_COLLECTION = "ai_analysis";
 const AI_LATEST_DOC_ID = "resumen_multiperiodo_latest";
