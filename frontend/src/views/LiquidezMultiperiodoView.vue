@@ -1,11 +1,28 @@
 <script setup>
 import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { useRoute, useRouter } from "vue-router";
+import { useFinancialAiBlock } from "@/composables/useFinancialAiBlock";
 
 const route = useRoute();
+const router = useRouter();
 const projectId = route.params.id_proyecto;
+
+const {
+  loadAiResult,
+  interpretationText,
+  mainFindings,
+  recommendationItems,
+  alertItems,
+  aiBlockLoading,
+  aiBlockError,
+} = useFinancialAiBlock("liquidez");
+
+const centroDeAprendizaje = () => {
+  const routeData = router.resolve({ name: "teoriaLiquidez" });
+  window.open(routeData.href, "_blank");
+};
 
 const loading = ref(true);
 const rawPeriods = ref([]);
@@ -14,16 +31,21 @@ const activeKpi = ref("razon");
 const tableRows = ref([]);
 
 // Formateadores
-const currencyFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const currencyFmt = new Intl.NumberFormat("es-MX", {
+  style: "currency",
+  currency: "MXN",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 // Función para parsear valores que podrían venir como string o número desde el motor
 const parseVal = (val) => {
   if (!val) return 0;
-  if (typeof val === 'number') return val;
-  return parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+  if (typeof val === "number") return val;
+  return parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
 };
 
-const fetchPeriods = async () => {
+const fetchDashboardData = async () => {
   try {
     if (!projectId) return;
 
@@ -32,20 +54,37 @@ const fetchPeriods = async () => {
 
     let loaded = [];
     snapshot.forEach((docSnap) => {
-      const d = docSnap.data();
-      if (d.liquidez || d.analisis_liquidez) {
+      const data = docSnap.data();
+      if (data.liquidez || data.analisis_liquidez) {
         loaded.push({
           id: docSnap.id,
-          label: d.label || "Periodo",
-          periodDate: d.periodDate || d.label,
-          liquidez: d.liquidez || d.analisis_liquidez || { datos_crudos: {}, kpis: [], desglose_activos: [], desglose_pasivos: [] },
+          label: data.label || "Periodo",
+          periodDate: data.periodDate || data.label,
+          liquidez:
+            data.liquidez ||
+            data.analisis_liquidez || {
+              datos_crudos: {},
+              kpis: [],
+              desglose_activos: [],
+              desglose_pasivos: [],
+            },
         });
       }
     });
 
-    loaded.sort((a, b) => a.periodDate.localeCompare(b.periodDate));
+    loaded.sort((a, b) =>
+      String(a.periodDate).localeCompare(String(b.periodDate))
+    );
+
     rawPeriods.value = loaded;
-    
+
+    const kpisParaIA = loaded.map((p) => ({
+      periodo: p.label,
+      kpis: p.liquidez.kpis,
+    }));
+
+    console.log("📊 KPIs DE LIQUIDEZ (MULTIPERIODO):", kpisParaIA);
+
     if (loaded.length > 0) {
       generateDashboardData();
     }
@@ -58,37 +97,55 @@ const fetchPeriods = async () => {
 
 const generateDashboardData = () => {
   const periods = rawPeriods.value;
-  const labels = periods.map(p => p.label);
+  const labels = periods.map((p) => p.label);
 
   const findKpi = (kpis, keyword) => {
     if (!kpis) return 0;
-    const item = kpis.find(k => k.label.toLowerCase().includes(keyword.toLowerCase()));
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
     return item ? parseVal(item.value) : 0;
   };
 
-  const dataRazon = periods.map(p => findKpi(p.liquidez.kpis, "liquidez")); 
-  const dataAcida = periods.map(p => findKpi(p.liquidez.kpis, "ácido"));
-  const dataCapital = periods.map(p => {
-    const item = p.liquidez.kpis.find(k => k.label.toLowerCase().includes("capital"));
+  const getKpiStatus = (kpis, keyword) => {
+    if (!kpis) return "warn";
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    return item ? item.status : "warn";
+  };
+
+  const dataRazon = periods.map((p) => findKpi(p.liquidez.kpis, "liquidez"));
+  const dataAcida = periods.map((p) => findKpi(p.liquidez.kpis, "ácido"));
+  const dataCapital = periods.map((p) => {
+    const item = p.liquidez.kpis.find((k) =>
+      k.label.toLowerCase().includes("capital")
+    );
     return item ? parseVal(item.value) : 0;
   });
 
-  const buildChart = (values, title, subtitle, legendLabel, isCurrency = false) => {
-    const maxVal = Math.max(...values, isCurrency ? 1000 : 2); 
-    let minVal = Math.min(...values, 0); 
-    if (minVal > 0 && !isCurrency) minVal = 0; 
+  const buildChart = (
+    values,
+    title,
+    subtitle,
+    legendLabel,
+    isCurrency = false,
+    backendStatus = "warn"
+  ) => {
+    const maxVal = Math.max(...values, isCurrency ? 1000 : 2);
+    let minVal = Math.min(...values, 0);
+    if (minVal > 0 && !isCurrency) minVal = 0;
 
     const rawRange = maxVal - minVal;
-    
-    // Cálculo de pasos para el eje Y
+
     let step;
     if (isCurrency) {
-        const magnitude = Math.pow(10, Math.floor(Math.log10(rawRange || 1)));
-        step = Math.max(magnitude / 2, 1000);
+      const magnitude = Math.pow(10, Math.floor(Math.log10(rawRange || 1)));
+      step = Math.max(magnitude / 2, 1000);
     } else {
-        step = 0.5;
-        if (rawRange > 3) step = 1;
-        if (rawRange > 10) step = 2;
+      step = 0.5;
+      if (rawRange > 3) step = 1;
+      if (rawRange > 10) step = 2;
     }
 
     const yMin = Math.floor(minVal / step) * step;
@@ -97,71 +154,106 @@ const generateDashboardData = () => {
 
     const fmtLabel = (val) => {
       if (isCurrency) {
-          if (val >= 1000000) return `$${(val/1000000).toFixed(1)}M`;
-          if (val >= 1000) return `$${(val/1000).toFixed(0)}k`;
-          return `$${val}`;
+        if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
+        if (val >= 1000) return `$${(val / 1000).toFixed(0)}k`;
+        return `$${val}`;
       }
       return val.toFixed(1);
     };
 
     const yAxisLabels = [
       fmtLabel(yMax),
-      fmtLabel(yMax - (finalRange / 3)),
+      fmtLabel(yMax - finalRange / 3),
       fmtLabel(yMax - (finalRange / 3) * 2),
-      fmtLabel(yMin)
+      fmtLabel(yMin),
     ];
 
     const xStep = periods.length > 1 ? 560 / (periods.length - 1) : 0;
-    
+
     const points = values.map((val, i) => {
-      const x = periods.length > 1 ? 120 + i * xStep : 400; 
+      const x = periods.length > 1 ? 120 + i * xStep : 400;
       const y = 230 - ((val - yMin) / finalRange) * 180;
-      return { x, y, label: labels[i], bold: i === values.length - 1, value: val, isCurrency };
+      return {
+        x,
+        y,
+        label: labels[i],
+        bold: i === values.length - 1,
+        value: val,
+        isCurrency,
+      };
     });
 
     const lastVal = values[values.length - 1];
     const prevVal = values.length > 1 ? values[values.length - 2] : lastVal;
-    
-    let delta = lastVal - prevVal;
-    let status = "warn";
-    
-    // Umbrales teóricos
-    if (title.includes("Circulante")) status = (lastVal >= 1.5 && lastVal <= 2.5) ? "ok" : "warn";
-    else if (title.includes("Ácida")) status = lastVal >= 1.0 ? "ok" : "warn";
-    else status = lastVal > 0 ? "ok" : "warn";
+    const delta = lastVal - prevVal;
 
     return {
       kpiValue: isCurrency ? currencyFmt.format(lastVal) : lastVal.toFixed(2),
-      status: status,
+      status: backendStatus,
       deltaType: delta >= 0 ? "up" : "down",
-      deltaValue: isCurrency ? currencyFmt.format(delta) : `${delta > 0 ? '+' : ''}${delta.toFixed(2)}`,
-      deltaNote: periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
+      deltaValue: isCurrency
+        ? currencyFmt.format(delta)
+        : `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`,
+      deltaNote:
+        periods.length > 1 ? `vs ${labels[labels.length - 2]}` : "Sin periodo previo",
       chartTitle: title,
       chartSubtitle: subtitle,
-      legendLabel: legendLabel,
+      legendLabel,
       yAxisLabels,
-      points
+      points,
     };
   };
 
+  const lastP = periods[periods.length - 1];
+
   metrics.value = [
-    { key: "razon", label: "Razón Circulante", ...buildChart(dataRazon, "Evolución Razón Circulante", "Capacidad para cubrir deudas a corto plazo", "Veces") },
-    { key: "acida", label: "Prueba Ácida", ...buildChart(dataAcida, "Evolución Prueba Ácida", "Liquidez inmediata sin depender de inventarios", "Veces") },
-    { key: "capital", label: "Capital de Trabajo", ...buildChart(dataCapital, "Evolución Capital de Trabajo", "Recursos netos para la operación diaria", "Capital", true) }
+    {
+      key: "razon",
+      label: "Razón Circulante",
+      ...buildChart(
+        dataRazon,
+        "Evolución Razón Circulante",
+        "Capacidad para cubrir deudas a corto plazo",
+        "Circulante",
+        false,
+        getKpiStatus(lastP.liquidez.kpis, "liquidez")
+      ),
+    },
+    {
+      key: "acida",
+      label: "Prueba Ácida",
+      ...buildChart(
+        dataAcida,
+        "Evolución Prueba Ácida",
+        "Liquidez inmediata sin depender de inventarios",
+        "Ácida",
+        false,
+        getKpiStatus(lastP.liquidez.kpis, "ácido")
+      ),
+    },
+    {
+      key: "capital",
+      label: "Capital de Trabajo",
+      ...buildChart(
+        dataCapital,
+        "Evolución Capital de Trabajo",
+        "Recursos netos para la operación diaria",
+        "Capital",
+        true,
+        getKpiStatus(lastP.liquidez.kpis, "capital")
+      ),
+    },
   ];
 
-  // Construir Tabla (Orden Ascendente)
-  tableRows.value = periods.map((p, i) => {
-    return {
-      period: p.label,
-      activo: currencyFmt.format(p.liquidez.datos_crudos?.activo_circulante || 0),
-      pasivo: currencyFmt.format(p.liquidez.datos_crudos?.pasivo_circulante || 0),
-      rc: dataRazon[i].toFixed(2),
-      pa: dataAcida[i].toFixed(2),
-      ct: currencyFmt.format(dataCapital[i]),
-      highlight: i === periods.length - 1 // Resalta el más reciente
-    };
-  });
+  tableRows.value = periods.map((p, i) => ({
+    period: p.label,
+    activo: currencyFmt.format(p.liquidez.datos_crudos?.activo_circulante || 0),
+    pasivo: currencyFmt.format(p.liquidez.datos_crudos?.pasivo_circulante || 0),
+    rc: dataRazon[i].toFixed(2),
+    pa: dataAcida[i].toFixed(2),
+    ct: currencyFmt.format(dataCapital[i]),
+    highlight: i === periods.length - 1,
+  }));
 };
 
 const selectedKpi = computed(() => {
@@ -175,16 +267,25 @@ function setActive(k) {
 
 // Tooltips para la gráfica
 const hoveredPoint = ref(null);
-function showTooltip(p) { hoveredPoint.value = p; }
-function hideTooltip() { hoveredPoint.value = null; }
+
+function showTooltip(p) {
+  hoveredPoint.value = p;
+}
+
+function hideTooltip() {
+  hoveredPoint.value = null;
+}
 
 // Helpers SVG
 const baselineY = 230;
+
 const linePath = computed(() => {
   if (!selectedKpi.value) return "";
   const pts = selectedKpi.value.points;
   if (!pts.length) return "";
-  return pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`)).join(" ");
+  return pts
+    .map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `L${p.x} ${p.y}`))
+    .join(" ");
 });
 
 const areaPath = computed(() => {
@@ -197,107 +298,134 @@ const areaPath = computed(() => {
   return `M${first.x} ${baselineY} L${first.x} ${first.y} ${mid} L${last.x} ${baselineY} Z`;
 });
 
-// Composición (Donuts) - Tomamos el último periodo
+// Composición Donuts: último periodo
 const lastPeriodData = computed(() => {
   if (rawPeriods.value.length === 0) return null;
   return rawPeriods.value[rawPeriods.value.length - 1];
 });
 
-// Helper para calcular la suma de arreglos
 const sumArray = (arr) => arr.reduce((acc, curr) => acc + parseVal(curr.value), 0);
 
-// Helper para generar los stroke-dasharray de los donuts
 const generateDonutSegments = (items, total) => {
-    if(!items || items.length === 0 || total === 0) return [];
-    let currentOffset = 0;
-    const colors = ["#1e293b", "#299de0", "#507c95", "#d1dee6", "#94a3b8"];
-    
-    return items.map((item, index) => {
-        const val = parseVal(item.value);
-        const pct = (val / total) * 100;
-        // La longitud de la circunferencia es 100 en nuestro SVG (r=16 -> 2*PI*16 aprox 100)
-        const segment = {
-            ...item,
-            pct: pct.toFixed(1),
-            color: colors[index % colors.length],
-            dasharray: `${pct} 100`,
-            dashoffset: -currentOffset
-        };
-        currentOffset += pct;
-        return segment;
-    });
+  if (!items || items.length === 0 || total === 0) return [];
+
+  let currentOffset = 0;
+  const colors = ["#1e293b", "#299de0", "#507c95", "#d1dee6", "#94a3b8"];
+
+  return items.map((item, index) => {
+    const val = parseVal(item.value);
+    const pct = (val / total) * 100;
+
+    const segment = {
+      ...item,
+      pct: pct.toFixed(1),
+      color: colors[index % colors.length],
+      dasharray: `${pct} 100`,
+      dashoffset: -currentOffset,
+    };
+
+    currentOffset += pct;
+    return segment;
+  });
 };
 
 const activosCirculantes = computed(() => {
-    if(!lastPeriodData.value) return { total: 0, strTotal: "$0", segments: [] };
-    
-    // Intentamos buscar el desglose si en el futuro lo agregas a Python
-    let items = lastPeriodData.value.liquidez.desglose_activos || [];
-    
-    // Si no existe, Vue lo "inventa" con los datos crudos disponibles
-    if (items.length === 0) {
-        const crudos = lastPeriodData.value.liquidez.datos_crudos;
-        const inventario = crudos?.inventario || 0;
-        const restoActivo = (crudos?.activo_circulante || 0) - inventario;
-        
-        items = [
-            { label: "Inventarios", value: inventario },
-            { label: "Resto del Activo Circulante", value: restoActivo > 0 ? restoActivo : 0 }
-        ].filter(i => i.value > 0); // Filtramos los que estén en cero
-    }
+  if (!lastPeriodData.value) return { total: 0, strTotal: "$0", segments: [] };
 
-    const total = sumArray(items);
-    return {
-        total,
-        strTotal: total >= 1000000 ? `$${(total/1000000).toFixed(1)}M` : currencyFmt.format(total),
-        segments: generateDonutSegments(items, total)
-    };
+  let items = lastPeriodData.value.liquidez.desglose_activos || [];
+
+  if (items.length === 0) {
+    const crudos = lastPeriodData.value.liquidez.datos_crudos;
+    const inventario = crudos?.inventario || 0;
+    const restoActivo = (crudos?.activo_circulante || 0) - inventario;
+
+    items = [
+      { label: "Inventarios", value: inventario },
+      {
+        label: "Resto del Activo Circulante",
+        value: restoActivo > 0 ? restoActivo : 0,
+      },
+    ].filter((i) => i.value > 0);
+  }
+
+  const total = sumArray(items);
+
+  return {
+    total,
+    strTotal:
+      total >= 1000000 ? `$${(total / 1000000).toFixed(1)}M` : currencyFmt.format(total),
+    segments: generateDonutSegments(items, total),
+  };
 });
 
 const pasivosCirculantes = computed(() => {
-    if(!lastPeriodData.value) return { total: 0, strTotal: "$0", segments: [] };
-    
-    let items = lastPeriodData.value.liquidez.desglose_pasivos || [];
-    
-    if (items.length === 0) {
-        const crudos = lastPeriodData.value.liquidez.datos_crudos;
-        items = [
-            { label: "Pasivo Circulante Total", value: crudos?.pasivo_circulante || 0 }
-        ].filter(i => i.value > 0);
-    }
+  if (!lastPeriodData.value) return { total: 0, strTotal: "$0", segments: [] };
 
-    const total = sumArray(items);
-    const colors = ["#e11d48", "#fb923c", "#fcd34d", "#fecdd3", "#fca5a5"];
-    
-    let currentOffset = 0;
-    const segments = items.map((item, index) => {
-        const val = parseVal(item.value);
-        const pct = (val / total) * 100;
-        const segment = {
-            ...item,
-            pct: pct.toFixed(1),
-            color: colors[index % colors.length],
-            dasharray: `${pct} 100`,
-            dashoffset: -currentOffset
-        };
-        currentOffset += pct;
-        return segment;
-    });
+  let items = lastPeriodData.value.liquidez.desglose_pasivos || [];
 
-    return {
-        total,
-        strTotal: total >= 1000000 ? `$${(total/1000000).toFixed(1)}M` : currencyFmt.format(total),
-        segments
+  if (items.length === 0) {
+    const crudos = lastPeriodData.value.liquidez.datos_crudos;
+    items = [
+      {
+        label: "Pasivo Circulante Total",
+        value: crudos?.pasivo_circulante || 0,
+      },
+    ].filter((i) => i.value > 0);
+  }
+
+  const total = sumArray(items);
+  const colors = ["#e11d48", "#fb923c", "#fcd34d", "#fecdd3", "#fca5a5"];
+
+  let currentOffset = 0;
+  const segments = items.map((item, index) => {
+    const val = parseVal(item.value);
+    const pct = total ? (val / total) * 100 : 0;
+
+    const segment = {
+      ...item,
+      pct: pct.toFixed(1),
+      color: colors[index % colors.length],
+      dasharray: `${pct} 100`,
+      dashoffset: -currentOffset,
     };
+
+    currentOffset += pct;
+    return segment;
+  });
+
+  return {
+    total,
+    strTotal:
+      total >= 1000000 ? `$${(total / 1000000).toFixed(1)}M` : currencyFmt.format(total),
+    segments,
+  };
 });
 
+const fallbackAnalysisText = computed(() => {
+  if (!metrics.value.length) return "";
 
-function learnMore() {
-  // router.push(`/proyecto/${projectId}/dashboard-multi/learning/liquidez`);
-}
+  if (metrics.value[0].status === "warn") {
+    return "El periodo más reciente indica que la Razón Circulante se encuentra por debajo de los niveles óptimos. Existe un riesgo operativo si las deudas a corto plazo vencen simultáneamente.";
+  }
+
+  return `La empresa mantiene una liquidez sana en su último periodo. Su Capital de Trabajo de ${
+    metrics.value[2]?.kpiValue || "$0.00"
+  } le permite operar sin contratiempos inmediatos.`;
+});
+
+const finalAnalysisText = computed(() => {
+  return interpretationText.value || fallbackAnalysisText.value;
+});
+
+const fallbackRecommendationList = computed(() => [
+  "Vigilar el periodo medio de cobro para acelerar el flujo de efectivo.",
+  "Renegociar pagos con proveedores si la Prueba Ácida es menor a 1.",
+  "Evitar el exceso de inventarios estancados.",
+]);
 
 onMounted(() => {
-  fetchPeriods();
+  loadAiResult();
+  fetchDashboardData();
 });
 </script>
 
@@ -306,11 +434,12 @@ onMounted(() => {
     <div class="title">
       <div class="title-row">
         <h1>Liquidez</h1>
-        <button class="btn-learn" type="button" @click="learnMore">
+        <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
         </button>
       </div>
+
       <div class="subtitle">
         <p>Capacidad de la empresa para cumplir con sus obligaciones a corto plazo</p>
         <span class="dot" aria-hidden="true">•</span>
@@ -328,10 +457,14 @@ onMounted(() => {
         @click="setActive(k.key)"
       >
         <div class="kpi-top">
-          <p class="kpi-label" :class="{ 'kpi-label-selected': activeKpi === k.key }">{{ k.label }}</p>
+          <p class="kpi-label" :class="{ 'kpi-label-selected': activeKpi === k.key }">
+            {{ k.label }}
+          </p>
           <span class="kpi-dot" :class="k.status" aria-hidden="true"></span>
         </div>
+
         <div class="kpi-value">{{ k.kpiValue }}</div>
+
         <div class="kpi-delta">
           <span class="delta-pill" :class="k.deltaType === 'up' ? 'delta-up' : 'delta-down'">
             <span class="material-symbols-outlined">
@@ -350,6 +483,7 @@ onMounted(() => {
           <h3>{{ selectedKpi.chartTitle }}</h3>
           <p class="panel-sub">{{ selectedKpi.chartSubtitle }}</p>
         </div>
+
         <div class="legend">
           <div class="legend-item">
             <span class="legend-dot" aria-hidden="true"></span>
@@ -373,30 +507,36 @@ onMounted(() => {
           <line stroke="#f1f5f9" stroke-width="1" x1="50" x2="750" y1="230" y2="230"></line>
 
           <path :d="areaPath" fill="url(#gradient-rc)"></path>
-          <path :d="linePath" fill="none" stroke="#299de0" stroke-linecap="round" stroke-width="3"></path>
+          <path
+            :d="linePath"
+            fill="none"
+            stroke="#299de0"
+            stroke-linecap="round"
+            stroke-width="3"
+          ></path>
 
           <circle
-              v-for="(p, idx) in selectedKpi.points"
-              :key="idx"
-              :cx="p.x"
-              :cy="p.y"
-              fill="white"
-              :r="hoveredPoint === p ? 6 : 4" 
-              stroke="#299de0"
-              stroke-width="2"
-              style="transition: r 0.2s ease;"
+            v-for="(p, idx) in selectedKpi.points"
+            :key="idx"
+            :cx="p.x"
+            :cy="p.y"
+            fill="white"
+            :r="hoveredPoint === p ? 6 : 4"
+            stroke="#299de0"
+            stroke-width="2"
+            style="transition: r 0.2s ease;"
           ></circle>
 
           <circle
-              v-for="(p, idx) in selectedKpi.points"
-              :key="`hit-${idx}`"
-              :cx="p.x"
-              :cy="p.y"
-              r="20"
-              fill="transparent"
-              style="cursor: pointer;"
-              @mouseover="showTooltip(p)"
-              @mouseleave="hideTooltip"
+            v-for="(p, idx) in selectedKpi.points"
+            :key="`hit-${idx}`"
+            :cx="p.x"
+            :cy="p.y"
+            r="20"
+            fill="transparent"
+            style="cursor: pointer;"
+            @mouseover="showTooltip(p)"
+            @mouseleave="hideTooltip"
           ></circle>
 
           <g v-if="hoveredPoint" style="pointer-events: none;">
@@ -428,21 +568,33 @@ onMounted(() => {
           </g>
 
           <text
-              v-for="(p, idx) in selectedKpi.points"
-              :key="`t-${idx}`"
-              :x="p.x"
-              y="260"
-              text-anchor="middle"
-              font-family="Inter, sans-serif"
-              font-size="12"
-              :font-weight="p.bold ? 'bold' : 'normal'"
-              :fill="p.bold ? '#0e161b' : '#507c95'"
+            v-for="(p, idx) in selectedKpi.points"
+            :key="`t-${idx}`"
+            :x="p.x"
+            y="260"
+            text-anchor="middle"
+            font-family="Inter, sans-serif"
+            font-size="12"
+            :font-weight="p.bold ? 'bold' : 'normal'"
+            :fill="p.bold ? '#0e161b' : '#507c95'"
           >
-              {{ p.label }}
+            {{ p.label }}
           </text>
 
           <g>
-            <text v-for="(lab, i) in selectedKpi.yAxisLabels" :key="`yl-${i}`" x="45" :y="55 + (i * 60)" text-anchor="end" fill="#507c95" font-family="Inter" font-size="11" font-weight="600">{{ lab }}</text>
+            <text
+              v-for="(lab, i) in selectedKpi.yAxisLabels"
+              :key="`yl-${i}`"
+              x="45"
+              :y="55 + i * 60"
+              text-anchor="end"
+              fill="#507c95"
+              font-family="Inter"
+              font-size="11"
+              font-weight="600"
+            >
+              {{ lab }}
+            </text>
           </g>
         </svg>
       </div>
@@ -457,13 +609,23 @@ onMounted(() => {
           <div class="donut">
             <svg class="donut-svg" viewBox="0 0 36 36">
               <circle cx="18" cy="18" fill="none" r="16" stroke="#e8eff3" stroke-width="4"></circle>
-              <circle v-for="(seg, idx) in activosCirculantes.segments" :key="idx"
-                cx="18" cy="18" fill="none" r="16" :stroke="seg.color" 
-                :stroke-dasharray="seg.dasharray" :stroke-dashoffset="seg.dashoffset" stroke-width="4"
-                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;">
+              <circle
+                v-for="(seg, idx) in activosCirculantes.segments"
+                :key="idx"
+                cx="18"
+                cy="18"
+                fill="none"
+                r="16"
+                :stroke="seg.color"
+                :stroke-dasharray="seg.dasharray"
+                :stroke-dashoffset="seg.dashoffset"
+                stroke-width="4"
+                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
+              >
                 <title>{{ seg.label }}: {{ currencyFmt.format(parseVal(seg.value)) }}</title>
               </circle>
             </svg>
+
             <div class="donut-center">
               <span class="donut-kicker">Total</span>
               <span class="donut-total">{{ activosCirculantes.strTotal }}</span>
@@ -472,7 +634,11 @@ onMounted(() => {
         </div>
 
         <div class="legend-grid">
-          <div class="legend-row" v-for="(seg, idx) in activosCirculantes.segments" :key="`leg-a-${idx}`">
+          <div
+            class="legend-row"
+            v-for="(seg, idx) in activosCirculantes.segments"
+            :key="`leg-a-${idx}`"
+          >
             <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
             <span class="truncate" :title="seg.label">{{ seg.label }} ({{ seg.pct }}%)</span>
           </div>
@@ -487,13 +653,23 @@ onMounted(() => {
           <div class="donut">
             <svg class="donut-svg" viewBox="0 0 36 36">
               <circle cx="18" cy="18" fill="none" r="16" stroke="#e8eff3" stroke-width="4"></circle>
-              <circle v-for="(seg, idx) in pasivosCirculantes.segments" :key="idx"
-                cx="18" cy="18" fill="none" r="16" :stroke="seg.color" 
-                :stroke-dasharray="seg.dasharray" :stroke-dashoffset="seg.dashoffset" stroke-width="4"
-                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;">
+              <circle
+                v-for="(seg, idx) in pasivosCirculantes.segments"
+                :key="idx"
+                cx="18"
+                cy="18"
+                fill="none"
+                r="16"
+                :stroke="seg.color"
+                :stroke-dasharray="seg.dasharray"
+                :stroke-dashoffset="seg.dashoffset"
+                stroke-width="4"
+                style="transition: stroke-dasharray 1s ease-out, stroke-dashoffset 1s ease-out;"
+              >
                 <title>{{ seg.label }}: {{ currencyFmt.format(parseVal(seg.value)) }}</title>
               </circle>
             </svg>
+
             <div class="donut-center">
               <span class="donut-kicker">Total</span>
               <span class="donut-total">{{ pasivosCirculantes.strTotal }}</span>
@@ -502,7 +678,11 @@ onMounted(() => {
         </div>
 
         <div class="legend-grid">
-          <div class="legend-row" v-for="(seg, idx) in pasivosCirculantes.segments" :key="`leg-p-${idx}`">
+          <div
+            class="legend-row"
+            v-for="(seg, idx) in pasivosCirculantes.segments"
+            :key="`leg-p-${idx}`"
+          >
             <span class="dot" :style="{ background: seg.color }" aria-hidden="true"></span>
             <span class="truncate" :title="seg.label">{{ seg.label }} ({{ seg.pct }}%)</span>
           </div>
@@ -514,6 +694,7 @@ onMounted(() => {
       <div class="panel-head">
         <h3>Comparativa por periodo</h3>
       </div>
+
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -526,6 +707,7 @@ onMounted(() => {
               <th class="right">Capital de Trabajo</th>
             </tr>
           </thead>
+
           <tbody>
             <tr
               v-for="r in tableRows"
@@ -535,8 +717,12 @@ onMounted(() => {
               <td class="strong" :class="{ primary: r.highlight }">{{ r.period }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.activo }}</td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.pasivo }}</td>
-              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.rc }}</td>
-              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">{{ r.pa }}</td>
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
+                {{ r.rc }}
+              </td>
+              <td class="center" style="text-align: center;" :class="{ strong: r.highlight }">
+                {{ r.pa }}
+              </td>
               <td class="right" :class="{ strong: r.highlight }">{{ r.ct }}</td>
             </tr>
           </tbody>
@@ -549,17 +735,50 @@ onMounted(() => {
         <div class="note-bg" aria-hidden="true">
           <span class="material-symbols-outlined">warning</span>
         </div>
+
         <div class="note-mini">
           <span class="material-symbols-outlined">info</span>
           <span>Interpretación Automática</span>
         </div>
+
         <h3>Análisis de tendencia</h3>
-        <p v-if="metrics[0].status === 'warn'">
-          El periodo más reciente indica que la Razón Circulante se encuentra por debajo de los niveles óptimos (menor a 1.5). Existe un riesgo operativo si las deudas a corto plazo vencen simultáneamente.
+
+        <p v-if="aiBlockLoading">
+          Cargando interpretación automática...
         </p>
+
+        <p v-else-if="aiBlockError">
+          No se pudo cargar la interpretación automática. Se muestra una interpretación base.
+        </p>
+
         <p v-else>
-          La empresa mantiene una liquidez sana en su último periodo. Su Capital de Trabajo de {{ metrics[2].kpiValue }} le permite operar sin contratiempos inmediatos.
+          {{ finalAnalysisText }}
         </p>
+
+        <ul
+          v-if="!aiBlockLoading && !aiBlockError && mainFindings.length"
+          class="list findings-list"
+        >
+          <li v-for="(finding, idx) in mainFindings" :key="`finding-${idx}`">
+            <span class="material-symbols-outlined">info</span>
+            <span>{{ finding }}</span>
+          </li>
+        </ul>
+
+        <div
+          v-if="!aiBlockLoading && !aiBlockError && alertItems.length"
+          class="ai-alerts"
+        >
+          <div
+            v-for="(alert, idx) in alertItems"
+            :key="`alert-${idx}`"
+            class="ai-alert"
+          >
+            <strong>{{ alert.title }}</strong>
+            <p>{{ alert.message }}</p>
+            <small>{{ alert.evidence }}</small>
+          </div>
+        </div>
       </article>
 
       <article class="note note-ok">
@@ -569,28 +788,56 @@ onMounted(() => {
           </span>
           <h3>Recomendaciones</h3>
         </div>
+
         <ul class="list">
-          <li><span class="material-symbols-outlined">check_circle</span><span>Vigilar el periodo medio de cobro para acelerar el flujo de efectivo.</span></li>
-          <li><span class="material-symbols-outlined">check_circle</span><span>Renegociar pagos con proveedores si la Prueba Ácida es menor a 1.</span></li>
-          <li><span class="material-symbols-outlined">check_circle</span><span>Evitar el exceso de inventarios estancados.</span></li>
+          <li v-if="aiBlockLoading">
+            <span class="material-symbols-outlined">hourglass_empty</span>
+            <span>Cargando recomendaciones...</span>
+          </li>
+
+          <li v-else-if="aiBlockError">
+            <span class="material-symbols-outlined">info</span>
+            <span>No se pudieron cargar las recomendaciones automáticas.</span>
+          </li>
+
+          <template v-else-if="recommendationItems.length">
+            <li v-for="(item, idx) in recommendationItems" :key="`ai-rec-${idx}`">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>
+                <strong>{{ item.title }}:</strong> {{ item.description }}
+              </span>
+            </li>
+          </template>
+
+          <template v-else>
+            <li
+              v-for="(item, idx) in fallbackRecommendationList"
+              :key="`fallback-rec-${idx}`"
+            >
+              <span class="material-symbols-outlined">check_circle</span>
+              <span>{{ item }}</span>
+            </li>
+          </template>
         </ul>
       </article>
     </section>
 
     <footer class="foot">
-      <p>Todos los datos son confidenciales.<br />Este reporte es para fines informativos.</p>
+      <p>
+        Todos los datos son confidenciales.<br />
+        Este reporte es para fines informativos y no constituye asesoramiento legal o fiscal.
+      </p>
     </footer>
   </div>
+
   <div v-else-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">
-      Cargando análisis multiperiodo de liquidez...
+    Cargando análisis multiperiodo de liquidez...
   </div>
 </template>
 
 <style scoped>
-/* Pega aquí todo tu CSS intacto original, con esta pequeña adición para que las leyendas de los donuts no rompan el diseño si son muy largas */
 .truncate {
   line-height: 1.3;
-  /* Eliminamos el white-space: nowrap y el max-width para que el texto fluya libremente */
 }
 
 /* --- TU CSS ORIGINAL ABAJO --- */
@@ -725,6 +972,15 @@ onMounted(() => {
 .kpi-dot.warn {
   background: #facc15;
   box-shadow: 0 0 8px rgba(250,204,21,0.4);
+}
+
+.kpi-dot.alert {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.kpi-dot.gray {
+  background: #9ca3af;
 }
 
 .kpi-value {
@@ -910,8 +1166,7 @@ onMounted(() => {
 
 .legend-grid {
   display: grid;
-  /* Cambiamos de 1fr 1fr a 1fr para que ocupe todo el ancho de la tarjeta */
-  grid-template-columns: 1fr; 
+  grid-template-columns: 1fr;
   gap: 10px 12px;
   margin-top: 8px;
 }
@@ -1072,6 +1327,10 @@ onMounted(() => {
   gap: 12px;
 }
 
+.findings-list {
+  margin-top: 14px;
+}
+
 .list li {
   display: flex;
   align-items: flex-start;
@@ -1085,6 +1344,42 @@ onMounted(() => {
   color: #299de0;
   font-size: 18px;
   margin-top: 2px;
+}
+
+.ai-alerts {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ai-alert {
+  border: 1px solid #fee2e2;
+  background: #fff7f7;
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-alert strong {
+  display: block;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.ai-alert p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ai-alert small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 /* Footer */
@@ -1107,9 +1402,11 @@ onMounted(() => {
     align-items: baseline;
     gap: 10px;
   }
+
   .dot {
     display: inline;
   }
+
   .kpis {
     grid-template-columns: repeat(2, 1fr);
   }
