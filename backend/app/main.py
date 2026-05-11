@@ -22,13 +22,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(documents.router, prefix="/api", tags=["Documentos"])
-app.include_router(projections.router, prefix="/api", tags=["Proyecciones"])
+# Para Vercel Services: /api se usa como routePrefix y probablemente se remueve antes de llegar a FastAPI
+app.include_router(documents.router, tags=["Documentos"])
+app.include_router(projections.router, tags=["Proyecciones"])
 
-@app.get("/api/health")
-def health_check_api():
-    return {"status": "ok", "system": "PymeScope Backend"}
+# Para local: mantiene compatibilidad con http://localhost:8000/api/...
+app.include_router(documents.router, prefix="/api", tags=["Documentos Local"])
+app.include_router(projections.router, prefix="/api", tags=["Proyecciones Local"])
 
 @app.get("/health")
 def health_check():
+    return {"status": "ok", "system": "PymeScope Backend"}
+
+@app.get("/api/health")
+def health_check_api():
     return {"status": "ok", "system": "PymeScope Backend"}
