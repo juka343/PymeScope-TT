@@ -51,3 +51,24 @@ class ProyeccionBalanceRequest(BaseModel):
     pasivo_largo_plazo: List[LineaSupuesto]
     capital_contribuido: List[LineaSupuesto]
     capital_ganado: List[LineaSupuesto]
+
+class SolicitudAnalisisFER(BaseModel):
+    project_id: str
+    analysis_payload: dict
+
+class AlertIAFER(BaseModel):
+    severityKey: str
+    title: str
+    message: str
+    implication: str
+
+class RecommendationIAFER(BaseModel):
+    title: str
+    description: str
+    reason: str
+
+class RespuestaFERIA(BaseModel):
+    summary: str
+    paragraph: str         # Un solo párrafo conciso, máximo 2 oraciones
+    alerts: List[AlertIAFER]
+    recommendations: List[RecommendationIAFER]
