@@ -81,6 +81,7 @@ class ProjectionCalculator(FinancialCalculator):
                 "ISR ANTICIPOS", "ISR A FAVOR", "SUB-SIDIO AL EMPLEO",
             ],
             "Seguros y fianzas": ["seguros y fianzas", "seguros pagados por anticipado", "seguros anticipados"],
+            "Rentas pagadas por anticipado":           ["rentas pagadas por anticipado", "rentas anticipadas"],
             # Activo No Circulante
             "Terrenos":                  ["terrenos"],
             "Edificios":                 ["edificios", "inmuebles", "casa oficina"],
@@ -91,14 +92,16 @@ class ProjectionCalculator(FinancialCalculator):
                 "camiones", "equipo automotriz",
             ],
             "Mobiliario y equipo de oficina": ["mobiliario y equipo de oficina", "muebles y enseres"],
-            "Equipo de cómputo":         ["equipo de cómputo", "equipo de comunicación", "cómputo"],
+            "Equipo de cómputo":         ["equipo de cómputo", "equipo de comunicación", "cómputo", "equipo cómputo"],
+            "Marcas":                    ["marcas"],
+            "Patentes":                  ["patentes", "marcas y patentes"],
             "Depreciación acumulada": [
                 "depreciación acumulada", "deprec. acum.", "dep. acum.", "dep. acumulada",
                 "depreciacion acumulada", "depreciacion", "deprec acum", "(-) deprec. acum.",
             ],
             # Pasivo Corto Plazo
             "Cuentas por pagar a proveedores":           ["proveedores", "cuentas por pagar a proveedores"],
-            "Préstamo bancario / Deuda a corto plazo":   ["documentos por pagar", "préstamos bancarios", "prestamos bancarios", "deuda a corto plazo"],
+            "Préstamo bancario / Deuda a corto plazo":   ["documentos por pagar", "préstamos bancarios", "prestamos bancarios", "deuda a corto plazo", "préstamos bancario", "prestamos bancario"],
             "Acreedores diversos":                       ["acreedores diversos", "acreedores"],
             "Impuestos a la utilidad por pagar": [
                 "impuestos a la utilidad por pagar", "impuestos por pagar",
@@ -129,6 +132,7 @@ class ProjectionCalculator(FinancialCalculator):
                 "resultados",
                 "utilid. ejercicios",
                 "utilidades de ejercicios",
+                "utilidad neta",
             ],
         }
 
@@ -203,7 +207,7 @@ class ProjectionCalculator(FinancialCalculator):
                         cell["text"] = text_upper.replace(alias, standard.upper())
                         text_upper = cell["text"]
 
-    def _get_exact_first(self, ocr_data: Dict[str, Any], keyword: str, target_col_index: int = None, target_relative_index: int = 0) -> float | None:
+    def _get_exact_first(self, ocr_data: Dict[str, Any], keyword: str, target_col_index: int = None, target_relative_index: int = 0, consumed_set: set = None) -> float | None:
         """
         BYPASS: Ignora el método padre _find_value. 
         Busca nativamente en la matriz anidada de celdas la primera coincidencia 
@@ -212,8 +216,9 @@ class ProjectionCalculator(FinancialCalculator):
         """
         tablas_ocr = ocr_data.get("tables_data", []) or []
         kw = keyword.lower()
+        consumed = consumed_set if consumed_set is not None else ocr_data.setdefault("used_rows", set())
         
-        for table in tablas_ocr:
+        for t_idx, table in enumerate(tablas_ocr):
             rows = {}
             for cell in table:
                 r_idx = int(cell.get("row", 0))
@@ -244,6 +249,8 @@ class ProjectionCalculator(FinancialCalculator):
                             break
                             
                     if kw_col != -1:
+                        if (t_idx, r_idx, kw_col) in consumed:
+                            continue
                         val_estricto = None
                         found_values = []
                         for cell in row_cells:
@@ -263,18 +270,20 @@ class ProjectionCalculator(FinancialCalculator):
                             valor_actual = found_values[idx]
                             
                         if valor_actual is not None:
+                            consumed.add((t_idx, r_idx, kw_col))
                             return valor_actual
         return None
 
-    def _get_exact_first_with_text(self, ocr_data: Dict[str, Any], keyword: str) -> tuple:
+    def _get_exact_first_with_text(self, ocr_data: Dict[str, Any], keyword: str, consumed_set: set = None) -> tuple:
         """
         Versión extendida de _get_exact_first que además devuelve el texto completo de la fila
         donde encontró el valor para análisis de signos (Pérdidas/Déficit).
         """
         tablas_ocr = ocr_data.get("tables_data", []) or []
         kw = keyword.lower()
+        consumed = consumed_set if consumed_set is not None else ocr_data.setdefault("used_rows", set())
         
-        for table in tablas_ocr:
+        for t_idx, table in enumerate(tablas_ocr):
             rows = {}
             for cell in table:
                 r_idx = int(cell.get("row", 0))
@@ -304,16 +313,19 @@ class ProjectionCalculator(FinancialCalculator):
                             break
                             
                     if kw_col != -1:
+                        if (t_idx, r_idx, kw_col) in consumed:
+                            continue
                         for cell in row_cells:
                             if int(cell.get("col", 0)) > kw_col:
                                 texto_celda = str(cell.get("text", "")).strip()
                                 if texto_celda:
                                     val = self._clean_number(texto_celda)
                                     if val is not None:
+                                        consumed.add((t_idx, r_idx, kw_col))
                                         return float(val), row_text
         return None, ""
 
-    def _get_all_matches_sum(self, ocr_data: Dict[str, Any], keywords: List[str], target_col_index: int = None, target_relative_index: int = 0) -> float:
+    def _get_all_matches_sum(self, ocr_data: Dict[str, Any], keywords: List[str], target_col_index: int = None, target_relative_index: int = 0, consumed_set: set = None) -> float:
         """
         Busca y suma TODOS los valores numéricos de filas que coincidan con 
         cualquiera de las palabras clave, sin duplicar filas.
@@ -323,7 +335,7 @@ class ProjectionCalculator(FinancialCalculator):
         tablas_ocr = ocr_data.get("tables_data", []) or []
         kws = [k.lower() for k in keywords]
         total_sum = 0.0
-        seen_rows = set()  # (table_idx, row_idx)
+        consumed = consumed_set if consumed_set is not None else ocr_data.setdefault("used_rows", set())
         last_extracted_value = None  # Guard jerárquico: evita sumar subcuentas redundantes
 
         for t_idx, table in enumerate(tablas_ocr):
@@ -333,8 +345,6 @@ class ProjectionCalculator(FinancialCalculator):
                 rows.setdefault(r_idx, []).append(cell)
             
             for r_idx in sorted(rows.keys()):
-                if (t_idx, r_idx) in seen_rows: continue
-                
                 row_cells = sorted(rows[r_idx], key=lambda x: int(x.get("col", 0)))
                 row_text = " ".join([str(c.get("text", "")).lower() for c in row_cells])
                 
@@ -364,6 +374,8 @@ class ProjectionCalculator(FinancialCalculator):
                             break
                     
                     if kw_col != -1:
+                        if (t_idx, r_idx, kw_col) in consumed:
+                            continue
                         val_estricto = None
                         found_values = []
                         for cell in row_cells:
@@ -386,14 +398,14 @@ class ProjectionCalculator(FinancialCalculator):
                             valor_abs = abs(valor_actual)
                             # REGLA ESTRICTA 4: Deduplicación jerárquica.
                             if last_extracted_value is not None and valor_abs == last_extracted_value:
-                                seen_rows.add((t_idx, r_idx))
+                                consumed.add((t_idx, r_idx, kw_col))
                                 continue
                             total_sum += valor_actual
                             last_extracted_value = valor_abs
-                            seen_rows.add((t_idx, r_idx))
+                            consumed.add((t_idx, r_idx, kw_col))
         return total_sum
 
-    def _get_all_matches_sum_with_text(self, ocr_data: Dict[str, Any], keywords: List[str], force_abs: bool = False, exclude_dep: bool = False, sum_all: bool = False, target_col_index: int = None, target_relative_index: int = 0) -> tuple:
+    def _get_all_matches_sum_with_text(self, ocr_data: Dict[str, Any], keywords: List[str], force_abs: bool = False, exclude_dep: bool = False, sum_all: bool = False, target_col_index: int = None, target_relative_index: int = 0, consumed_set: set = None) -> tuple:
         """
         Busca y suma valores numéricos de filas que coincidan con las palabras clave.
         Devuelve (suma, texto_combinado).
@@ -411,7 +423,7 @@ class ProjectionCalculator(FinancialCalculator):
         kws = [k.lower() for k in keywords]
         total_sum = 0.0
         combined_text = ""
-        seen_rows = set()
+        consumed = consumed_set if consumed_set is not None else ocr_data.setdefault("used_rows", set())
         last_extracted_value = None  # Guard jerárquico
 
         for t_idx, table in enumerate(tablas_ocr):
@@ -421,8 +433,6 @@ class ProjectionCalculator(FinancialCalculator):
                 rows.setdefault(r_idx, []).append(cell)
             
             for r_idx in sorted(rows.keys()):
-                if (t_idx, r_idx) in seen_rows: continue
-                
                 row_cells = sorted(rows[r_idx], key=lambda x: int(x.get("col", 0)))
                 row_text = " ".join([str(c.get("text", "")).lower() for c in row_cells])
                 
@@ -456,6 +466,8 @@ class ProjectionCalculator(FinancialCalculator):
                             break
                     
                     if kw_col != -1:
+                        if (t_idx, r_idx, kw_col) in consumed:
+                            continue
                         val_estricto = None
                         found_values = []
                         for cell in row_cells:
@@ -478,13 +490,13 @@ class ProjectionCalculator(FinancialCalculator):
                             valor_abs = abs(valor_actual)
                             # REGLA ESTRICTA 4: Deduplicación jerárquica.
                             if last_extracted_value is not None and valor_abs == last_extracted_value:
-                                seen_rows.add((t_idx, r_idx))
+                                consumed.add((t_idx, r_idx, kw_col))
                                 continue
                             # REGLA ESTRICTA 3: Valor absoluto por-fila para Pasivos.
                             total_sum += abs(valor_actual) if force_abs else valor_actual
                             combined_text += " " + row_text
                             last_extracted_value = valor_abs
-                            seen_rows.add((t_idx, r_idx))
+                            consumed.add((t_idx, r_idx, kw_col))
                             # Si sum_all=False, retornamos con la primera coincidencia (Cuenta Mayor)
                             if not sum_all:
                                 return (total_sum, combined_text.strip())
@@ -789,6 +801,8 @@ class ProjectionCalculator(FinancialCalculator):
             "total_capital_contribuido": 0.0,
             "total_capital_ganado": 0.0
         }
+        
+        filas_consumidas = set()
 
         def solve_balance_rubro(sup, v_base):
             # CORRECCIÓN A (NIF/IFRS - Costo Histórico):
@@ -819,32 +833,32 @@ class ProjectionCalculator(FinancialCalculator):
                     # 1. Intentar Modo GCMK (sumar rubros sueltos de impuestos del activo)
                     # Excluimos estrictamente "impuestos a favor" para no chocar con el IVA Acreditable
                     kw_gcmk = ["isr anticipos", "isr a favor", "sub-sidio al empleo", "subsidio al empleo"]
-                    v_gcmk = self._get_all_matches_sum(ocr_data, kw_gcmk, target_col_index=target_col_index, target_relative_index=target_relative_index)
+                    v_gcmk = self._get_all_matches_sum(ocr_data, kw_gcmk, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     
                     if v_gcmk > 0:
                         # Estamos en GCMK, tomamos la suma y le agregamos el IVA retenido
                         v_base = abs(v_gcmk)
-                        v_iva_ret = self._get_exact_first(ocr_data, "iva retenido", target_col_index=target_col_index, target_relative_index=target_relative_index)
+                        v_iva_ret = self._get_exact_first(ocr_data, "iva retenido", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                         if v_iva_ret is not None and v_iva_ret > 0:
                             v_base += v_iva_ret
                     else:
                         # 2. Estamos en TAAS. Tomamos subcuentas específicas sin tocar la cuenta padre del IVA
                         kw_taas = ["impuestos acreditables por pagar", "impuestos y derechos"]
-                        v_base = abs(self._get_all_matches_sum(ocr_data, kw_taas, target_col_index=target_col_index, target_relative_index=target_relative_index))
+                        v_base = abs(self._get_all_matches_sum(ocr_data, kw_taas, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas))
                         
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "IVA causado o trasladado":
                     # SUMATORIA SEGURA: Suma 'iva cobrado' + 'i.v.a trasladado' + variantes
                     kw_iva = self.concept_keywords.get("IVA causado o trasladado", ["iva causado o trasladado"])
-                    v_base = abs(self._get_all_matches_sum(ocr_data, kw_iva, target_col_index=target_col_index, target_relative_index=target_relative_index))
+                    v_base = abs(self._get_all_matches_sum(ocr_data, kw_iva, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas))
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Mobiliario y equipo de oficina":
-                    v_mob = self._get_exact_first(ocr_data, "mobiliario y equipo de oficina", target_col_index=target_col_index, target_relative_index=target_relative_index)
+                    v_mob = self._get_exact_first(ocr_data, "mobiliario y equipo de oficina", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     if v_mob is None:
-                        v_mob = self._get_exact_first(ocr_data, "muebles y enseres", target_col_index=target_col_index, target_relative_index=target_relative_index)
-                    v_comunicacion = self._get_exact_first(ocr_data, "equipo de comunicación", target_col_index=target_col_index, target_relative_index=target_relative_index)
+                        v_mob = self._get_exact_first(ocr_data, "muebles y enseres", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
+                    v_comunicacion = self._get_exact_first(ocr_data, "equipo de comunicación", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     
                     v_base = (v_mob or 0.0) + (v_comunicacion or 0.0)
                     v_base = extraer_valor_con_signo(v_base, "mobiliario y comunicación", sup.concepto, key_total)
@@ -852,17 +866,18 @@ class ProjectionCalculator(FinancialCalculator):
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Equipo de cómputo":
-                    v_computo = self._get_exact_first(ocr_data, "equipo de cómputo", target_col_index=target_col_index, target_relative_index=target_relative_index)
+                    kw_comp = self.bg_keywords.get("Equipo de cómputo", ["equipo de cómputo"])
+                    v_computo = self._get_all_matches_sum(ocr_data, kw_comp, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     v_base = extraer_valor_con_signo(v_computo or 0.0, "equipo de cómputo", sup.concepto, key_total)
                     v_base = v_base if v_base is not None else 0.0
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Depreciación acumulada":
                     kw_dep = self.concept_keywords.get("Depreciación acumulada", ["(-) deprec. acum.", "deprec. acum.", "dep. acum.", "depreciacion acumulada", "depreciacion", "deprec acum"])
-                    v_base = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index)
+                    v_base = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     
                     if v_base == 0:
-                        v_base = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index)
+                        v_base = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                         
                     v_base = v_base if v_base is not None else 0.0
                     v_base = -abs(v_base) if v_base != 0 else 0.0
@@ -872,7 +887,7 @@ class ProjectionCalculator(FinancialCalculator):
                     kw = self.bg_keywords.get(sup.concepto, [sup.concepto.lower()])
                     # Usamos _get_all_matches_sum para sumar TODAS las subcuentas históricas
                     # Esto preserva el signo negativo matemático nativo sin forzar un abs()
-                    v_base = self._get_all_matches_sum(ocr_data, kw, target_col_index=target_col_index, target_relative_index=target_relative_index)
+                    v_base = self._get_all_matches_sum(ocr_data, kw, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     
                     if v_base == 0:
                         v_base = self._find_value(tablas_ocr, kw, take_last=False) or 0.0
@@ -893,11 +908,13 @@ class ProjectionCalculator(FinancialCalculator):
                         exclude_dep=_is_fixed_asset,
                         sum_all=(sup.concepto == "Impuestos a la utilidad por pagar"),
                         target_col_index=target_col_index,
-                        target_relative_index=target_relative_index
+                        target_relative_index=target_relative_index,
+                        consumed_set=filas_consumidas
                     )
                     
                     if v_base is None:
-                        v_base = self._find_value(tablas_ocr, kw, take_last=False)
+                        if sup.concepto not in ["Marcas", "Patentes"]:
+                            v_base = self._find_value(tablas_ocr, kw, take_last=False)
                     
                     v_base = extraer_valor_con_signo(v_base, row_text_lower, sup.concepto, key_total)
                     v_base = v_base if v_base is not None else 0.0

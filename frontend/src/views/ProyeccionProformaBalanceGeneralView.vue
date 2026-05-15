@@ -2,9 +2,14 @@
 import { ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
-import { collection, query, orderBy, limit, getDocs, where } from "firebase/firestore";
+import { collection, query, orderBy, limit, getDocs, where, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+
+// --- Constantes de IA (Proyecciones FER) ---
+const AI_ANALYSIS_COLLECTION = "ai_analysis";
+const AI_FER_DOC_ID = "fer_proforma_latest";
+const AI_FER_PROMPT_VERSION = "1.0.0";
 
 const router = useRouter();
 const route = useRoute();
@@ -61,6 +66,7 @@ function finalizarProyeccion() {
 }
 
 const headerInfo = ref({
+  companyName: "",
   generatedPeriod: "...",
   basePeriod: "...",
   title: "Proyección Proforma - Balance General",
@@ -132,7 +138,9 @@ onMounted(async () => {
       const projectDocRef = doc(db, "proyectos", projectId);
       const projectDocSnap = await getDoc(projectDocRef);
       if (projectDocSnap.exists()) {
-        sourceSummary.value.periodicidad = projectDocSnap.data().periodicidad || "mensual";
+        const pData = projectDocSnap.data();
+        sourceSummary.value.periodicidad = pData.periodicidad || "mensual";
+        headerInfo.value.companyName = pData.empresa || pData.nombre || "";
       }
     } catch (err) {
       console.error("Error al recuperar periodicidad:", err);
@@ -243,8 +251,133 @@ onMounted(async () => {
     { title: "CAPITAL CONTRIBUIDO", rows: groupCC.map(i => ({ ...i, proforma: i.value, base: i.baseValue, total: false })) },
     { title: "CAPITAL GANADO", rows: groupCG.map(i => ({ ...i, proforma: i.value, base: i.baseValue, total: false })) }
   ];
+
+  // Ejecutar IA al final del montaje
+  await generateAiAnalysis(conf, res);
 });
 
+// ===== LÓGICA DE IA (FER Proforma) =====
+
+const aiLoading = ref(true);
+const interpretation = ref({ summary: '', paragraphs: [] });
+const aiAlerts = ref([]);
+const recommendations = ref([]);
+
+function applyAiResultToView(result) {
+  interpretation.value = {
+    summary: result.summary || '',
+    paragraph: result.paragraph || result.paragraphs?.[0] || '' // fallback por compatibilidad
+  };
+  aiAlerts.value = result.alerts || [];
+  recommendations.value = result.recommendations || [];
+}
+
+const saveFerAiToFirestore = async (apiResponse, conf) => {
+  if (!projectId || !apiResponse?.ai_result) return;
+
+  const docData = {
+    promptVersion: AI_FER_PROMPT_VERSION,
+    analysisMode: "fer_proforma",
+    periodoBase: conf.periodoBase || null,
+    periodoProyectado: conf.periodoProyectado || null,
+    model: apiResponse.model || "gemini-2.5-flash",
+    status: "completed",
+    result: apiResponse.ai_result,
+    updatedAt: serverTimestamp(),
+  };
+
+  const ferDocRef = doc(db, "proyectos", projectId, AI_ANALYSIS_COLLECTION, AI_FER_DOC_ID);
+  await setDoc(ferDocRef, docData, { merge: true });
+
+  console.log(`✅ Análisis FER IA guardado en Firestore: proyectos/${projectId}/${AI_ANALYSIS_COLLECTION}/${AI_FER_DOC_ID}`);
+};
+
+const loadFerAiFromFirestore = async (conf) => {
+  if (!projectId) return false;
+
+  const ferDocRef = doc(db, "proyectos", projectId, AI_ANALYSIS_COLLECTION, AI_FER_DOC_ID);
+  const snap = await getDoc(ferDocRef);
+
+  if (!snap.exists()) return false;
+
+  const saved = snap.data();
+
+  const isSameContext =
+    saved?.promptVersion === AI_FER_PROMPT_VERSION &&
+    saved?.periodoProyectado === (conf.periodoProyectado || null) &&
+    saved?.periodoBase === (conf.periodoBase || null) &&
+    saved?.analysisMode === "fer_proforma" &&
+    saved?.status === "completed" &&
+    saved?.result;
+
+  if (!isSameContext) return false;
+
+  applyAiResultToView(saved.result);
+  console.log("✅ Análisis FER IA cargado desde Firestore.");
+  return true;
+};
+
+async function generateAiAnalysis(conf, res) {
+  try {
+    // 1. Intentar cargar desde Firestore primero
+    const loadedFromDB = await loadFerAiFromFirestore(conf);
+    if (loadedFromDB) {
+      aiLoading.value = false;
+      return;
+    }
+
+    // 2. Si no hay caché válido, llamar a Gemini
+    aiLoading.value = true;
+
+    // Construir desglose de cuentas desde el OCR ya procesado
+    const tablas = res.tablas_proyectadas || [];
+    const cuentasFmt = (nombres) =>
+      tablas
+        .filter(f => nombres.some(n => f.concepto.toLowerCase().includes(n.toLowerCase())))
+        .map(f => ({ cuenta: f.concepto, base: f.valor_base, proyectado: f.valor_proyectado }))
+        .filter(f => f.proyectado !== 0);
+
+    const analysis_payload = {
+      fer: totals.value.fer,
+      ventas_proy_incremento_pct: conf.ventas_proy_incremento_pct || 0,
+      utilidad_neta_proforma: res.utilidad_neta_proforma || (tablas.find(f => f.concepto === "Utilidad neta proforma")?.valor_proyectado || 0),
+      total_activo: totals.value.activo,
+      total_pasivo: totals.value.pasivo,
+      total_capital: totals.value.capital,
+      // Desglose de cuentas relevantes para recomendaciones basadas en datos reales
+      activo_circulante: cuentasFmt(["Caja", "Bancos", "Inversiones temporales", "Cuentas por cobrar", "Inventarios"]),
+      activo_no_circulante: cuentasFmt(["Terrenos", "Edificios", "Maquinaria", "Equipo", "Dep"]),
+      pasivo_corto_plazo: cuentasFmt(["pagar a proveedores", "Préstamo bancario", "Deuda a corto", "Impuestos a la utilidad", "Anticipo de clientes"]),
+      pasivo_largo_plazo: cuentasFmt(["largo plazo", "largo"]),
+      capital: cuentasFmt(["Capital social", "Utilidades", "Reserva"])
+    };
+
+    const response = await fetch("http://127.0.0.1:8000/api/projections/fer-ai-analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId || "N/A", analysis_payload })
+    });
+
+    if (!response.ok) throw new Error("Error en la respuesta del servidor IA");
+
+    const data = await response.json();
+
+    // 3. Renderizar en pantalla
+    applyAiResultToView(data.ai_result);
+
+    // 4. Guardar en Firestore (patrón Fat Client)
+    await saveFerAiToFirestore(data, conf);
+
+  } catch (error) {
+    console.error("Error generando análisis FER IA:", error);
+    interpretation.value = {
+      summary: 'No se pudo generar el diagnóstico inteligente en este momento.',
+      paragraphs: ['Verifica tu conexión o intenta regresar y generar la proyección de nuevo.']
+    };
+  } finally {
+    aiLoading.value = false;
+  }
+}
 async function exportProjection() {
   if (isExporting.value) return;
   isExporting.value = true;
@@ -325,7 +458,14 @@ async function exportProjection() {
           </button>
         </div>
 
-        <h1>{{ headerInfo.title }}</h1>
+        <h1 class="page-title">
+          <span v-if="headerInfo.companyName" class="company-name-inline">
+            <span class="material-symbols-outlined company-icon">apartment</span>
+            {{ headerInfo.companyName }} 
+            <span class="title-separator">|</span>
+          </span>
+          {{ headerInfo.title }}
+        </h1>
         <p class="page-description">{{ headerInfo.subtitle }}</p>
       </div>
 
@@ -559,6 +699,109 @@ async function exportProjection() {
         </button>
       </div>
 
+      <section class="notes-grid">
+        <article class="note" :class="{ 'note-deficit': totals.fer > 0.01, 'note-excedente': totals.fer < -0.01 }">
+          <div class="note-bg">
+            <span class="material-symbols-outlined">{{ totals.fer > 0.01 ? 'trending_down' : 'trending_up' }}</span>
+          </div>
+
+          <div class="note-head">
+            <div class="tag" :class="totals.fer > 0.01 ? 'tag-red' : (totals.fer < -0.01 ? 'tag-green' : 'tag-blue')">
+              <span class="material-symbols-outlined">psychology</span>
+            </div>
+            <h3>Análisis Inteligente del FER</h3>
+          </div>
+
+          <!-- Bloque estático: explica el significado del FER sin depender de la IA -->
+          <div class="fer-status-block" :class="totals.fer > 0.01 ? 'fer-block-deficit' : (totals.fer < -0.01 ? 'fer-block-excedente' : 'fer-block-equilibrio')">
+            <div class="fer-block-top">
+              <span class="material-symbols-outlined">
+                {{ totals.fer > 0.01 ? 'warning' : (totals.fer < -0.01 ? 'check_circle' : 'balance') }}
+              </span>
+              <strong>
+                {{ totals.fer > 0.01 ? 'Tu empresa necesita financiamiento externo' : (totals.fer < -0.01 ? 'Tu empresa genera excedente de efectivo' : 'Tu empresa está en equilibrio financiero') }}
+              </strong>
+            </div>
+            <p class="fer-block-desc">
+              <template v-if="totals.fer > 0.01">
+                Tu proyección requiere <strong>{{ fmt(totals.fer) }}</strong> adicionales para financiar el crecimiento de tus activos. Tus ingresos y recursos actuales no son suficientes para cubrirlo por completo.
+              </template>
+              <template v-else-if="totals.fer < -0.01">
+                Tu proyección generará un excedente de <strong>{{ fmt(Math.abs(totals.fer)) }}</strong>. Tu operación se financia sola y te quedará efectivo disponible al cierre del periodo.
+              </template>
+              <template v-else>
+                Tus activos proyectados están perfectamente cubiertos por tus pasivos y capital. No necesitas financiamiento adicional.
+              </template>
+            </p>
+          </div>
+
+          <div v-if="aiLoading" class="ai-content">
+            <p class="ai-paragraph">Generando análisis con Inteligencia Artificial...</p>
+          </div>
+
+          <div v-else class="ai-content">
+            <template v-if="typeof interpretation === 'string'">
+              <p class="ai-paragraph">{{ interpretation }}</p>
+            </template>
+            <template v-else>
+              <h4 v-if="interpretation?.summary" class="ai-title">
+                {{ interpretation.summary }}
+              </h4>
+              <p v-if="interpretation?.paragraph" class="ai-paragraph">
+                {{ interpretation.paragraph }}
+              </p>
+            </template>
+
+            <div v-if="aiAlerts.length" class="ai-section">
+              <h4 class="ai-section-title">Alertas proyectadas</h4>
+              <div
+                v-for="(alert, idx) in aiAlerts"
+                :key="`alert-${idx}`"
+                class="ai-alert"
+                :class="`severity-${alert.severityKey}`"
+              >
+                <p v-if="alert.block_name" class="ai-block-name">
+                  {{ alert.block_name }}
+                </p>
+                <p class="ai-finding-title">{{ alert.title }}</p>
+                <p v-if="alert.message" class="ai-finding-text">
+                  {{ alert.message }}
+                </p>
+                <p v-if="alert.implication" class="ai-impact">
+                  {{ alert.implication }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="note note-white">
+          <div class="note-head">
+            <div class="tag" :class="totals.fer > 0.01 ? 'tag-red' : 'tag-green'">
+              <span class="material-symbols-outlined">lightbulb</span>
+            </div>
+            <h3>{{ totals.fer > 0.01 ? 'Estrategias de Financiamiento' : 'Estrategias de Inversión y Liquidez' }}</h3>
+          </div>
+
+          <ul class="list">
+            <li v-if="aiLoading">
+              <span class="material-symbols-outlined">hourglass_empty</span>
+              <span>Generando recomendaciones...</span>
+            </li>
+
+            <li v-else v-for="(item, idx) in recommendations" :key="idx">
+              <span class="material-symbols-outlined">check_circle</span>
+
+              <span class="recommendation-content">
+                <strong>{{ item.title }}</strong>
+                <small v-if="item.description">{{ item.description }}</small>
+                <em v-if="item.reason">{{ item.reason }}</em>
+              </span>
+            </li>
+          </ul>
+        </article>
+      </section>
+
       <details class="details-panel">
         <summary class="details-summary">
           <div class="details-left">
@@ -698,7 +941,10 @@ async function exportProjection() {
 .mini-badge-blue { background: #eff6ff; color: #299de0; border: 1px solid #dbeafe; }
 .mini-badge-gray { background: #f3f4f6; color: #507c95; }
 
-.page-head h1 { margin: 0; font-size: 26px; font-weight: 900; color: #0e161b; }
+.page-head h1.page-title { margin: 0; font-size: 26px; font-weight: 900; color: #0e161b; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.company-name-inline { color: #299de0; font-weight: 900; display: inline-flex; align-items: center; gap: 6px; }
+.company-icon { font-size: 28px; font-weight: 300; margin-bottom: 2px; }
+.title-separator { color: #cbd5e1; font-weight: 300; margin: 0 6px; }
 .page-description { margin: 0; color: #507c95; font-size: 13px; font-weight: 700; line-height: 1.6; }
 
 /* Source summary */
@@ -911,4 +1157,304 @@ async function exportProjection() {
 
 .pdf-brand { display: none; }
 .is-exporting .pdf-brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #299de0; }
+
+/* ===== FER Status Block ===== */
+.fer-status-block {
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  border-left: 4px solid;
+  background: #f8fafc;
+}
+
+.fer-block-deficit {
+  border-left-color: #ef4444;
+  background: #fef2f2;
+}
+.fer-block-deficit .fer-block-top strong { color: #b91c1c; }
+.fer-block-deficit .fer-block-top .material-symbols-outlined { color: #ef4444; }
+
+.fer-block-excedente {
+  border-left-color: #22c55e;
+  background: #f0fdf4;
+}
+.fer-block-excedente .fer-block-top strong { color: #15803d; }
+.fer-block-excedente .fer-block-top .material-symbols-outlined { color: #22c55e; }
+
+.fer-block-equilibrio {
+  border-left-color: #3b82f6;
+  background: #eff6ff;
+}
+.fer-block-equilibrio .fer-block-top strong { color: #1d4ed8; }
+.fer-block-equilibrio .fer-block-top .material-symbols-outlined { color: #3b82f6; }
+
+.fer-block-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.fer-block-top strong {
+  font-size: 15px;
+  font-weight: 900;
+}
+.fer-block-top .material-symbols-outlined {
+  font-size: 20px;
+}
+.fer-block-desc {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #334155;
+  font-weight: 500;
+}
+.fer-block-desc strong {
+  font-weight: 900;
+  color: #0e161b;
+}
+
+/* ===== Notes (AI Cards) ===== */
+.notes-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.note {
+  position: relative;
+  border-radius: 16px;
+  border: 1px solid #dbeafe;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
+  padding: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.note-white {
+  border-color: #e8eff3;
+  background: #fff;
+}
+
+.note-bg {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  opacity: 0.1;
+}
+
+.note-bg span {
+  font-size: 120px;
+  color: #299de0;
+}
+
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 10px;
+}
+
+.tag {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.tag-blue {
+  background: #dbeafe;
+  color: #299de0;
+}
+
+.tag-green {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.tag-red {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.note-deficit {
+  border-color: #fecaca;
+  background: linear-gradient(135deg, #fef2f2 0%, #ffffff 70%);
+}
+.note-deficit .note-bg span {
+  color: #ef4444;
+}
+
+.note-excedente {
+  border-color: #bbf7d0;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 70%);
+}
+.note-excedente .note-bg span {
+  color: #22c55e;
+}
+
+.note-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.note-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.6;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-content {
+  display: grid;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.ai-paragraph {
+  margin: 0;
+  color: #0e161b;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.ai-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.ai-section-title {
+  margin: 0;
+  color: #507c95;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ai-finding,
+.ai-alert {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #dbeafe;
+}
+
+.ai-block-name {
+  margin: 0 0 6px;
+  color: #299de0;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ai-finding-title {
+  margin: 0 0 4px;
+  color: #0e161b;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.ai-finding-text,
+.ai-impact {
+  margin: 0;
+  color: #0e161b;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.ai-impact {
+  margin-top: 6px;
+  color: #334155;
+}
+
+.ai-alert.severity-alta {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.ai-alert.severity-media {
+  border-color: #fde68a;
+  background: #fffdf2;
+}
+
+.ai-alert.severity-baja {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+.list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+.list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.list .material-symbols-outlined {
+  color: #299de0;
+  font-size: 18px;
+  margin-top: 2px;
+}
+
+.recommendation-content {
+  display: grid;
+  gap: 3px;
+}
+
+.recommendation-content strong {
+  font-size: 13px;
+  font-weight: 900;
+  color: #0e161b;
+}
+
+.recommendation-content small {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.recommendation-content em {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+@media (min-width: 768px) {
+  .notes-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 </style>

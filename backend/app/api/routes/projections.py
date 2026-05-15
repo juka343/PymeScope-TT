@@ -1,6 +1,16 @@
 from fastapi import APIRouter, HTTPException
 from typing import Any, Dict
-from app.models.projections import ProyeccionSupuestosRequest, ProyeccionBalanceRequest, LineaSupuesto
+import json
+import asyncio
+from google import genai
+from google.genai import types
+from app.models.projections import (
+    ProyeccionSupuestosRequest, 
+    ProyeccionBalanceRequest, 
+    LineaSupuesto,
+    SolicitudAnalisisFER,
+    RespuestaFERIA
+)
 from app.services.azure_document_service import AzureDocumentService
 from app.services.projection_calculator import ProjectionCalculator
 from app.services.firebase_service import FirebaseDBManager
@@ -177,3 +187,120 @@ async def generar_proyeccion_balance_general(payload: ProyeccionBalanceRequest) 
         print(f"\n❌ Error en proyección de balance: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error en motor de proyecciones (Balance): {str(e)}")
 
+# --- ENDPOINTS PARA IA (PROYECCIONES) ---
+
+def _build_fer_ai_system_prompt() -> str:
+    return """
+Eres un intérprete financiero. Tu trabajo es explicarle a un dueño de PyME el resultado de su Balance General Proforma en lenguaje sencillo.
+
+PRINCIPIOS:
+- Interpretas SOLO los números que te dan. No inventas cifras ni tendencias.
+- Usas los campos numéricos del JSON para calcular diferencias, ratios y brechas.
+- Tu tono es directo y profesional, sin jerga financiera compleja.
+- Devuelves JSON puro sin markdown.
+
+LOGICA DE ANALISIS DEL FER:
+- FER = Total Activos - (Total Pasivos + Total Capital)
+- FER > 0 significa que los activos proyectados superan lo que la empresa puede financiar con sus propios recursos y deudas actuales. Necesita fondos externos.
+- FER < 0 significa que la empresa genera más financiamiento del que necesita. Habrá excedente de efectivo.
+- FER = 0 es el equilibrio perfecto.
+- La brecha entre Utilidad Neta Proforma y el FER revela si las ganancias proyectadas son suficientes para autofinanciar el crecimiento.
+"""
+
+def _build_fer_ai_user_prompt(analysis_payload: Dict[str, Any]) -> str:
+    fer = analysis_payload.get("fer", 0)
+    utilidad = analysis_payload.get("utilidad_neta_proforma", 0)
+    total_activo = analysis_payload.get("total_activo", 0)
+    total_pasivo = analysis_payload.get("total_pasivo", 0)
+    total_capital = analysis_payload.get("total_capital", 0)
+    ventas_pct = analysis_payload.get("ventas_proy_incremento_pct", 0)
+
+    fer_status = "DÉFICIT" if fer > 0.01 else ("EXCEDENTE" if fer < -0.01 else "EQUILIBRADO")
+    brecha_utilidad_fer = utilidad - abs(fer) if fer > 0 else 0
+
+    activo_circ = analysis_payload.get("activo_circulante", [])
+    pasivo_cp = analysis_payload.get("pasivo_corto_plazo", [])
+    capital_cuentas = analysis_payload.get("capital", [])
+
+    def fmt_cuentas(lista):
+        if not lista:
+            return "  (sin cuentas registradas)"
+        return "\n".join(
+            f"  - {c['cuenta']}: base ${c['base']:,.0f} → proyectado ${c['proyectado']:,.0f}"
+            for c in lista
+        )
+
+    return f"""
+INTERPRETA los siguientes resultados del Balance General Proforma. No inventes datos fuera de los proporcionados.
+
+=== RESUMEN EJECUTIVO ===
+- Crecimiento de ventas proyectado: {ventas_pct}%
+- Utilidad Neta Proforma generada: ${utilidad:,.2f}
+- Total Activos proyectados: ${total_activo:,.2f}
+- Total Pasivos proyectados: ${total_pasivo:,.2f}
+- Total Capital proyectado: ${total_capital:,.2f}
+- FER (Fondos Externos Requeridos): ${fer:,.2f} → Estado: {fer_status}
+{f'- La utilidad generada ({utilidad:,.2f}) cubre {abs(brecha_utilidad_fer / fer * 100):.0f}% del deficit FER.' if fer > 0.01 and fer != 0 else ''}
+
+=== CUENTAS CLAVE DEL ACTIVO CIRCULANTE ===
+{fmt_cuentas(activo_circ)}
+
+=== CUENTAS CLAVE DEL PASIVO A CORTO PLAZO ===
+{fmt_cuentas(pasivo_cp)}
+
+=== CAPITAL ===
+{fmt_cuentas(capital_cuentas)}
+
+GENERA el JSON con:
+- "summary": 1 frase corta y directa que diga el impacto real del FER en el negocio (incluye el monto exacto del FER).
+- "paragraph": 1 solo párrafo de máximo 2 oraciones. Explica POR QUE ocurre el FER usando los números (relación entre utilidad generada vs activos que crecieron). Sin repetir el FER como concepto.
+- "alerts": 1 o 2 alertas concretas basadas en los datos de las cuentas anteriores.
+- "recommendations": 2 o 3 acciones tácticas CONCRETAS para cubrir el déficit o usar el excedente, mencionando las cuentas específicas que lo justifican.
+"""
+
+@router.post("/projections/fer-ai-analysis")
+async def generar_analisis_fer_ia(payload: SolicitudAnalisisFER) -> Dict[str, Any]:
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set.")
+
+    print(f"\n-> Generando diagnóstico FER Inteligente para proyecto {payload.project_id}...")
+
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        system_prompt = _build_fer_ai_system_prompt()
+        user_prompt = _build_fer_ai_user_prompt(payload.analysis_payload)
+
+        def call_gemini():
+            return client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    response_mime_type="application/json",
+                    response_schema=RespuestaFERIA,
+                    temperature=0.2,
+                ),
+            )
+
+        response = await asyncio.to_thread(call_gemini)
+
+        if getattr(response, "parsed", None):
+            result_dict = response.parsed.model_dump() if hasattr(response.parsed, 'model_dump') else response.parsed.dict()
+        else:
+            result_dict = json.loads(response.text)
+
+        print("   ✅ Análisis FER generado con éxito.")
+        return {
+            "estatus": "Completado",
+            "project_id": payload.project_id,
+            "ai_result": result_dict,
+        }
+
+    except Exception as e:
+        error_text = str(e)
+        print(f"   ❌ Error generando análisis FER IA: {error_text}")
+        
+        if "503" in error_text or "overloaded" in error_text:
+            raise HTTPException(status_code=503, detail="Gemini está temporalmente saturado. Intenta nuevamente.")
+            
+        raise HTTPException(status_code=500, detail=f"Error en Gemini: {error_text}")

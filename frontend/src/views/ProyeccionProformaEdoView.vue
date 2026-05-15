@@ -30,6 +30,7 @@ function editProjection() {
 }
 
 const headerInfo = ref({
+  companyName: "",
   generatedPeriod: "...",
   basePeriod: "...",
   title: "Proyección Proforma - Estado de Resultados",
@@ -68,6 +69,21 @@ const pct = (val) => {
 
 onMounted(async () => {
   window.scrollTo(0, 0);
+
+  if (projectId) {
+    try {
+      const { doc, getDoc } = await import("firebase/firestore");
+      const projectDocRef = doc(db, "proyectos", projectId);
+      const projectDocSnap = await getDoc(projectDocRef);
+      if (projectDocSnap.exists()) {
+        const pData = projectDocSnap.data();
+        headerInfo.value.companyName = pData.empresa || pData.nombre || "";
+      }
+    } catch (err) {
+      console.error("Error al recuperar información del proyecto:", err);
+    }
+  }
+
   const isHistory = route.query.isHistory === 'true';
   const lsKeyResult = isHistory ? 'history_projection_result' : 'current_projection_result';
   const lsKeyConfig = isHistory ? 'history_projection_config' : 'current_projection_config';
@@ -143,7 +159,7 @@ onMounted(async () => {
 
   kpis.value[3].value = margenNeto.toFixed(1) + "%";
   kpis.value[3].delta = (deltaMargen >= 0 ? '+' : '') + deltaMargen.toFixed(1) + " pts";
-  kpis.value[3].note = "Margen general";
+  kpis.value[3].note = basePeriodText;
 
   // Actualizar string reactivo para el cuadro inferior
   utilidadNetaStr.value = fmt(results.utilidad_neta);
@@ -445,7 +461,14 @@ async function continueToBalance() {
           </button>
         </div>
 
-        <h1>{{ headerInfo.title }}</h1>
+        <h1 class="page-title">
+          <span v-if="headerInfo.companyName" class="company-name-inline">
+            <span class="material-symbols-outlined company-icon">apartment</span>
+            {{ headerInfo.companyName }} 
+            <span class="title-separator">|</span>
+          </span>
+          {{ headerInfo.title }}
+        </h1>
         <p class="page-description">{{ headerInfo.subtitle }}</p>
       </section>
 
@@ -594,11 +617,35 @@ async function continueToBalance() {
   color: #507c95;
 }
 
-.page-head h1 {
+.page-head h1.page-title {
   margin: 0;
   font-size: 26px;
   font-weight: 900;
   color: #0e161b;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.company-name-inline {
+  color: #299de0;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.company-icon {
+  font-size: 28px;
+  font-weight: 300;
+  margin-bottom: 2px;
+}
+
+.title-separator {
+  color: #cbd5e1;
+  font-weight: 300;
+  margin: 0 6px;
 }
 
 .page-description {

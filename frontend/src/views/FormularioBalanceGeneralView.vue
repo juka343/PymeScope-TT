@@ -408,6 +408,9 @@ async function generarProyeccion() {
       bgId: bgId,
     }));
     localStorage.setItem(`${prefix}_balance_supuestos`, JSON.stringify(payload));
+    
+    // Al regenerar los datos, borramos el caché de la IA para forzar un nuevo análisis del FER
+    localStorage.removeItem(`${prefix}_balance_ai`);
 
     router.push({ 
       name: getRouteName("ProyeccionProformaBalanceGeneral"),
