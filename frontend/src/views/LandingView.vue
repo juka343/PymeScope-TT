@@ -12,7 +12,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
     <nav class="nav">
       <div class="container nav-inner">
         <div class="brand">
-          <span class="material-symbols-outlined brand-icon">analytics</span>
+           <img src="/logo.png" alt="Logo PymeScope" class="brand-icon" />
           <span class="brand-name">PymeScope</span>
         </div>
 
@@ -40,7 +40,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
           </h1>
 
           <p class="hero-subtitle">
-            Plataforma de análisis financiero moderna diseñada específicamente para PyMEs.
+            
             Toma el control de tus números hoy y proyecta tu crecimiento.
           </p>
 
@@ -140,15 +140,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
             </div>
           </div>
 
-          <div class="problem-card">
-            <div class="problem-icon">
-              <span class="material-symbols-outlined">remove_circle_outline</span>
-            </div>
-            <div>
-              <h3>Gastos hormiga</h3>
-              <p>Fugas de dinero en gastos pequeños.</p>
-            </div>
-          </div>
+
 
           <div class="problem-card">
             <div class="problem-icon">
@@ -192,7 +184,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
               <span class="material-symbols-outlined">description</span>
             </div>
             <h3>Reportes Automáticos</h3>
-            <p>Genera reportes PDF profesionales listos para enviar a tus socios o banco.</p>
+            <p>Genera reportes PDF automáticamente </p>
           </article>
 
           <article class="feature">
@@ -200,7 +192,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
               <span class="material-symbols-outlined">lock_person</span>
             </div>
             <h3>Seguridad de Datos</h3>
-            <p>Encriptación para asegurar que tu información financiera esté siempre protegida.</p>
+            <p>Aseguramos que tu información financiera esté siempre protegida.</p>
           </article>
 
           <article class="feature">
@@ -208,7 +200,7 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
               <span class="material-symbols-outlined">forward_10</span>
             </div>
             <h3>Proyecciones Proforma</h3>
-            <p>Anticipa escenarios futuros mediante modelos dinámicos basados en tu histórico real.</p>
+            <p>Simula distintos escenarios y proyecta el impacto de tus decisiones al momento.</p>
           </article>
 
           <article class="feature">
@@ -250,8 +242,8 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
       <div class="container cta-inner">
         <h2>Toma mejores decisiones financieras hoy</h2>
         <p>
-          Obtén claridad absoluta sobre la salud financiera de tu empresa con análisis automáticos
-          y proyecciones precisas.
+          Obtén claridad absoluta sobre la salud financiera de tu empresa con análisis
+          y proyecciones automáticas.
         </p>
         <RouterLink to="/login" class="btn btn-white btn-lg">
               Crear cuenta
@@ -270,16 +262,13 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
         </div>
 
         <div class="footer-links">
-          <a href="#">Términos</a>
-          <a href="#">Privacidad</a>
-          <a href="#">Contacto</a>
-          <a href="#">Ayuda</a>
+          <a href="#">Términos y Condiciones</a>
+          <a href="#">Abiso de privacidad</a>
+
         </div>
       </div>
 
-      <div class="footer-bottom">
-        © 2024 PymeScope. Todos los derechos reservados.
-      </div>
+
     </footer>
   </div>
 </template>
@@ -327,8 +316,10 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
   align-items: center;
 }
 .brand-icon {
-  font-size: 30px;
-  color: var(--primary);
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
 }
 .brand-name {
   font-weight: 800;

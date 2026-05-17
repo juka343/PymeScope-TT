@@ -99,7 +99,7 @@ async function handleGoogle() {
         <div class="side-content">
           <div class="brand">
             <div class="brand-icon">
-              <span class="material-symbols-outlined">analytics</span>
+            <img src="/logo.png" alt="Logo PymeScope" class="brand-icon" />
             </div>
             <span class="brand-name">PymeScope</span>
           </div>
@@ -113,8 +113,7 @@ async function handleGoogle() {
           </div>
 
           <div class="side-links desktop-only">
-            <a href="#">Privacidad</a>
-            <a href="#">Términos</a>
+
           </div>
         </div>
       </aside>
@@ -224,9 +223,8 @@ async function handleGoogle() {
         </div>
 
         <div class="mobile-links">
-          <a href="#">Privacidad</a>
-          <a href="#">Términos</a>
-          <a href="#">Ayuda</a>
+          <a href="#">Aviso de Privacidad</a>
+          <a href="#">Términos y Condiciones</a>
         </div>
       </main>
     </div>
@@ -302,8 +300,8 @@ async function handleGoogle() {
 .brand-icon {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgb(255, 255, 255);
   backdrop-filter: blur(8px);
   display: grid;
   place-items: center;
