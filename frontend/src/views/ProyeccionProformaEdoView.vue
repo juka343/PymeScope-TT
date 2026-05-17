@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from "vue";
+import PdfLoadingModal from "@/components/app/PdfLoadingModal.vue";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
 import { collection, query, orderBy, limit, getDocs, where } from "firebase/firestore";
@@ -230,7 +231,7 @@ onMounted(async () => {
     rows.push({ type: "section", label: "Impuestos" });
     rows.push({
       type: "row",
-      concept: "Impuestos Totales (ISR/PTU)",
+      concept: "Total impuestos (PTU + ISR)",
       base: "—",
       assumption: "Calculado sobre utilidad",
       participation: ((results.impuestos / results.ventas) * 100).toFixed(1) + "%",
@@ -322,6 +323,7 @@ async function exportProjection() {
     alert("No se pudo generar el PDF. Intenta de nuevo.");
   } finally {
     isExporting.value = false;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 }
 
@@ -425,6 +427,7 @@ async function continueToBalance() {
 </script>
 
 <template>
+  <PdfLoadingModal :isOpen="isExporting" documentName="tu Estado de Resultados Proforma" />
   <div class="page-container">
     <div class="wrap" :class="{ 'is-exporting': isExporting }" ref="pdfZone">
       <div class="pdf-brand">
@@ -455,7 +458,7 @@ async function continueToBalance() {
             </span>
           </div>
 
-          <button class="btn-edit" type="button" @click="editProjection">
+          <button class="btn-edit no-print" type="button" @click="editProjection" data-html2canvas-ignore="true">
             <span class="material-symbols-outlined">edit</span>
             <span>Editar supuestos</span>
           </button>

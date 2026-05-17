@@ -3,10 +3,12 @@ import { ref, onMounted, onActivated, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
 import { collection, getDocs, query, orderBy, limit, where, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { useConfirm } from "@/composables/useConfirm";
 
 const router = useRouter();
 const route = useRoute();
 const projectId = route.params.id_proyecto;
+const { confirm: confirmModal } = useConfirm();
 
 const getRouteName = (baseName) => route.path.includes('dashboard-multi') ? `${baseName}Multi` : baseName;
 
@@ -348,9 +350,15 @@ async function guardarNombre(item) {
 }
 
 async function eliminarProyeccion(item) {
-  if (!confirm(`¿Estás seguro de que deseas eliminar la proyección de "${item.proyected_label}"?\n\nEsta acción no se puede deshacer.`)) {
-    return;
-  }
+  const isConfirmed = await confirmModal({
+    title: "Eliminar proyección",
+    message: `¿Estás seguro de que deseas eliminar la proyección "${item.custom_name || item.proyected_label}"?\n\nSe eliminará el Estado de Resultados Proforma y el Balance General Proforma generados. Esta acción no se puede deshacer.`,
+    confirmText: "Sí, eliminar",
+    cancelText: "Cancelar",
+    variant: "danger",
+  });
+
+  if (!isConfirmed) return;
   
   try {
     if (item.erId) {
@@ -486,7 +494,7 @@ async function eliminarProyeccion(item) {
           <div class="hc-top">
             <div class="hc-title-box">
               <div v-if="editingId === item.erId" class="edit-name-wrap">
-                <input :id="`edit-input-${item.erId}`" v-model="editNameInput" class="input input-sm" type="text" @keyup.enter="guardarNombre(item)" @keyup.esc="cancelarNombre" />
+                <input :id="`edit-input-${item.erId}`" v-model="editNameInput" class="input input-sm" style="font-weight: 900;" type="text" @keyup.enter="guardarNombre(item)" @keyup.esc="cancelarNombre" />
                 <button class="btn-icon-small btn-icon-ok" @click="guardarNombre(item)" title="Guardar"><span class="material-symbols-outlined">check</span></button>
                 <button class="btn-icon-small btn-icon-cancel" @click="cancelarNombre" title="Cancelar"><span class="material-symbols-outlined">close</span></button>
               </div>
@@ -980,6 +988,9 @@ async function eliminarProyeccion(item) {
   font-size: 14px;
   height: 28px;
   width: 150px;
+  border: 1px solid #dce2e5;
+  border-radius: 6px;
+  outline: none;
 }
 
 .btn-icon-small {

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from "vue";
+import PdfLoadingModal from "@/components/app/PdfLoadingModal.vue";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
 import { collection, query, orderBy, limit, getDocs, where, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -84,7 +85,7 @@ const kpis = ref([
   { title: "Total activos proyectados", value: "$0", delta: "0%", note: "vs periodo base" },
   { title: "Total pasivos proyectados", value: "$0", delta: "0%", note: "vs periodo base" },
   { title: "Total capital proyectado", value: "$0", delta: "0%", note: "vs periodo base" },
-  { title: "FER", value: "$0.00", delta: null, note: "Calculando..." },
+  { title: "Fondos Externos Requeridos (FER)", value: "$0.00", delta: null, note: "Calculando..." },
 ]);
 
 const equation = ref({
@@ -381,51 +382,92 @@ async function generateAiAnalysis(conf, res) {
 async function exportProjection() {
   if (isExporting.value) return;
   isExporting.value = true;
-  await new Promise(r => setTimeout(r, 100));
+  await new Promise(r => setTimeout(r, 250));
 
   try {
-    const el = pdfZone.value;
-    const canvas = await html2canvas(el, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#f8fafb",
-      logging: false,
-    });
-
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 10;
+    const pdf      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW    = pdf.internal.pageSize.getWidth();
+    const pageH    = pdf.internal.pageSize.getHeight();
+    const margin   = 12;
     const contentW = pageW - margin * 2;
-    const contentH = (canvas.height * contentW) / canvas.width;
+    const usableH  = pageH - margin * 2;
+    let curY = margin;
 
-    let posY = margin;
-    let remaining = contentH;
+    const capture = async (el) => {
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+      const imgData = canvas.toDataURL('image/png');
+      const imgH    = (canvas.height * contentW) / canvas.width;
+      return { imgData, imgH };
+    };
 
-    while (remaining > 0) {
-      pdf.addImage(imgData, "PNG", margin, posY, contentW, contentH);
-      remaining -= (pageH - margin * 2);
-      if (remaining > 0) {
-        pdf.addPage();
-        posY = margin - (pageH - margin * 2);
+    const addBlock = async (el) => {
+      if (!el) return;
+      const { imgData, imgH } = await capture(el);
+      if (imgH > usableH) {
+        let offsetY = 0;
+        while (offsetY < imgH) {
+          if (offsetY > 0) { pdf.addPage(); curY = margin; }
+          pdf.addImage(imgData, 'PNG', margin, curY - offsetY, contentW, imgH);
+          offsetY += usableH;
+        }
+        curY = margin + (imgH % usableH || usableH);
+      } else {
+        if (curY + imgH > pageH - margin) { pdf.addPage(); curY = margin; }
+        pdf.addImage(imgData, 'PNG', margin, curY, contentW, imgH);
+        curY += imgH + 4;
       }
+    };
+
+    const wrap = pdfZone.value;
+
+    // Pagina 1: Encabezado + resumen ejecutivo
+    await addBlock(wrap.querySelector('.pdf-brand'));
+    await addBlock(wrap.querySelector('.page-head'));
+    await addBlock(wrap.querySelector('.source-card'));
+    await addBlock(wrap.querySelector('.kpis'));
+    await addBlock(wrap.querySelector('.equation-bar'));
+
+    // Pagina 1 o 2: Analisis FER y recomendaciones
+    const notesGrid = wrap.querySelector('.notes-grid');
+    if (notesGrid) {
+      await addBlock(notesGrid);
     }
 
-    const config = JSON.parse(localStorage.getItem('current_balance_config') || '{}');
-    const periodo = (config.periodoProyectado || 'Proyeccion-Balance').replace(/\s+/g, '-');
+    // Nueva pagina forzada para el Balance Contable
+    pdf.addPage(); 
+    curY = margin;
+    
+    const cards = wrap.querySelectorAll('.balance-card');
+    for (const card of cards) {
+      await addBlock(card.querySelector('.balance-card-head'));
+      for (const section of card.querySelectorAll('.group-section')) {
+        await addBlock(section);
+      }
+      const ferCard = card.querySelector('.fer-card');
+      if (ferCard) await addBlock(ferCard);
+      const totalsSummary = card.querySelector('.totals-summary');
+      if (totalsSummary) await addBlock(totalsSummary);
+      await addBlock(card.querySelector('.card-total'));
+      curY += 6;
+    }
+
+    const isHistory = route.query.isHistory === 'true';
+    const lsKey   = isHistory ? 'history_balance_config' : 'current_balance_config';
+    const config  = JSON.parse(localStorage.getItem(lsKey) || '{}');
+    const periodo = (config.periodoProyectado || 'Balance').replace(/\s+/g, '-');
     pdf.save(`balance-proforma-${periodo}.pdf`);
   } catch (err) {
-    console.error("Error generando PDF:", err);
-    alert("No se pudo generar el PDF.");
+    console.error('Error generando PDF:', err);
+    alert('No se pudo generar el PDF. Intenta de nuevo.');
   } finally {
     isExporting.value = false;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 }
 </script>
 
 <template>
+  <PdfLoadingModal :isOpen="isExporting" documentName="tu Balance General Proforma" />
   <div class="page-container">
     <div class="wrap" :class="{ 'is-exporting': isExporting }" ref="pdfZone">
       <div class="pdf-brand">
@@ -452,7 +494,7 @@ async function exportProjection() {
             <span class="mini-badge mini-badge-gray">PERIODO BASE: {{ headerInfo.basePeriod }}</span>
           </div>
 
-          <button class="btn-edit" type="button" @click="editProjection">
+          <button class="btn-edit no-print" type="button" @click="editProjection" data-html2canvas-ignore="true">
             <span class="material-symbols-outlined">edit</span>
             <span>Editar supuestos</span>
           </button>
@@ -500,12 +542,12 @@ async function exportProjection() {
 
       <section class="kpis">
         <article v-for="(kpi, idx) in kpis" :key="idx" class="kpi-card" :class="{
-          'fer-featured-red': kpi.title === 'FER' && totals.fer > 1,
-          'fer-featured-green': kpi.title === 'FER' && totals.fer < -1
+          'fer-featured-red': kpi.title === 'Fondos Externos Requeridos (FER)' && totals.fer > 1,
+          'fer-featured-green': kpi.title === 'Fondos Externos Requeridos (FER)' && totals.fer < -1
         }">
           <div class="kpi-top">
             <p class="kpi-title">{{ kpi.title }}</p>
-            <div class="kpi-info-wrapper" v-if="kpi.title === 'FER'">
+            <div class="kpi-info-wrapper" v-if="kpi.title === 'Fondos Externos Requeridos (FER)'">
               <span class="material-symbols-outlined kpi-info-icon">info</span>
               <div class="kpi-tooltip">
                 <p><strong>Fondos Externos Requeridos (FER)</strong></p>
@@ -682,16 +724,15 @@ async function exportProjection() {
         </article>
       </section>
 
-      <div class="actions">
+      <div class="actions no-print">
         <button class="btn-secondary" type="button" @click="regresarEstadoResultados">
           <span class="material-symbols-outlined">arrow_back</span>
           <span>Regresar al Estado de Resultados</span>
         </button>
 
-        <button class="btn-secondary" type="button" @click="exportProjection" :disabled="isExporting">
-          <span class="material-symbols-outlined" v-if="!isExporting">download</span>
-          <span class="material-symbols-outlined" v-else>sync</span>
-          <span>{{ isExporting ? 'Exportando...' : 'Exportar proyección' }}</span>
+        <button class="btn-secondary" type="button" @click="exportProjection">
+          <span class="material-symbols-outlined">download</span>
+          <span>Exportar proyección</span>
         </button>
 
         <button class="btn-primary" type="button" @click="finalizarProyeccion">
@@ -709,7 +750,7 @@ async function exportProjection() {
             <div class="tag" :class="totals.fer > 0.01 ? 'tag-red' : (totals.fer < -0.01 ? 'tag-green' : 'tag-blue')">
               <span class="material-symbols-outlined">psychology</span>
             </div>
-            <h3>Análisis Inteligente del FER</h3>
+            <h3>Análisis Inteligente de Fondos Externos Requeridos (FER)</h3>
           </div>
 
           <!-- Bloque estático: explica el significado del FER sin depender de la IA -->
@@ -802,7 +843,7 @@ async function exportProjection() {
         </article>
       </section>
 
-      <details class="details-panel">
+      <details class="details-panel no-print">
         <summary class="details-summary">
           <div class="details-left">
             <span class="material-symbols-outlined summary-icon">expand_more</span>
@@ -872,6 +913,13 @@ async function exportProjection() {
   padding: 40px;
   background: #f8fafb;
 }
+
+/* Durante la captura: forzar 1 columna y ocultar elementos de navegación */
+.is-exporting .main-grid     { display: block !important; }
+.is-exporting .balance-card  { margin-bottom: 28px !important; }
+.is-exporting .no-print      { display: none !important; }
+.is-exporting .page-badges   { display: none !important; }
+
 
 .page-container {
   padding: 20px 0;
@@ -1155,8 +1203,71 @@ async function exportProjection() {
 .tone-down { color: #dc2626; font-weight: 800; }
 .tone-neutral { color: #64748b; }
 
-.pdf-brand { display: none; }
-.is-exporting .pdf-brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #299de0; }
+.pdf-brand {
+  display: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+
+.is-exporting .pdf-brand {
+  display: flex;
+}
+
+.pdf-brand-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pdf-logo {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.pdf-logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+.pdf-brand-name {
+  font-size: 22px;
+  font-weight: 900;
+  color: #0e161b;
+  letter-spacing: -0.02em;
+}
+
+.pdf-brand-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  gap: 2px;
+}
+
+.pdf-doc-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0e161b;
+}
+
+.pdf-doc-meta {
+  font-size: 11px;
+  font-weight: 600;
+  color: #507c95;
+}
+
+.pdf-brand-divider {
+  margin-top: 12px;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, #299de0 0%, #e8eff3 100%);
+  border-radius: 2px;
+}
 
 /* ===== FER Status Block ===== */
 .fer-status-block {
@@ -1455,6 +1566,124 @@ async function exportProjection() {
   .notes-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ============================================================
+   ESTILOS DE IMPRESIÓN / EXPORTACIÓN PDF
+   Genera un layout de 1 columna, formal y limpio sin cortes
+   ============================================================ */
+@media print {
+  /* Reset general */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  body { margin: 0; padding: 0; background: #fff !important; font-family: 'Inter', system-ui, sans-serif; }
+
+  /* Ocultar todo lo que no es el balance contable */
+  .no-print,
+  .actions,
+  .notes-grid,
+  .details-panel,
+  .btn-edit,
+  .page-badges,
+  .source-card,
+  .kpis,
+  .equation-bar { display: none !important; }
+
+  /* Contenedor principal */
+  .page-container { padding: 0 !important; }
+  .wrap { width: 100% !important; gap: 0 !important; padding: 0 !important; }
+
+  /* Encabezado de marca — siempre visible en página 1 */
+  .pdf-brand {
+    display: flex !important;
+    margin-bottom: 16px !important;
+  }
+
+  /* Título del documento */
+  .page-head {
+    padding: 0 24px 12px !important;
+    border-bottom: 1px solid #e8eff3 !important;
+    margin-bottom: 16px !important;
+    break-inside: avoid !important;
+  }
+  .page-head h1.page-title { font-size: 18px !important; }
+  .page-description { font-size: 11px !important; }
+
+  /* LAYOUT: Convertir a 1 sola columna */
+  .main-grid {
+    display: block !important;
+    padding: 0 24px !important;
+  }
+
+  /* Cada tarjeta del balance ocupa toda la página */
+  .balance-card {
+    border: 1px solid #e8eff3 !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+    margin-bottom: 24px !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    overflow: visible !important;
+  }
+
+  .balance-card-head {
+    padding: 12px 16px !important;
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e8eff3 !important;
+  }
+  .balance-card-head h3 { font-size: 14px !important; }
+
+  .balance-card-body {
+    padding: 12px 16px !important;
+    gap: 16px !important;
+  }
+
+  /* Cada sección (Activo Circulante, No Circulante…) nunca se corta */
+  .group-section {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .group-kicker {
+    font-size: 9px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .row {
+    padding: 3px 0 !important;
+    border-bottom: 1px dotted #f1f5f9 !important;
+  }
+  .row-label { font-size: 11px !important; }
+  .row-value { font-size: 11px !important; }
+
+  .subtotal {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    break-inside: avoid !important;
+  }
+
+  .card-total {
+    padding: 12px 16px !important;
+    font-size: 14px !important;
+    break-inside: avoid !important;
+  }
+
+  /* FER dentro del balance — mantener junto */
+  .fer-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    padding: 10px 12px !important;
+    margin-top: 8px !important;
+    border-radius: 8px !important;
+  }
+  .fer-title { font-size: 12px !important; }
+  .fer-value { font-size: 14px !important; }
+
+  .totals-summary {
+    padding-top: 8px !important;
+    break-inside: avoid !important;
+  }
+  .totals-line { font-size: 12px !important; }
 }
 
 </style>
