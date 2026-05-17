@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Dict, Any
 from app.services.financial_calculator import FinancialCalculator
 from app.models.projections import LineaSupuesto
@@ -502,6 +503,81 @@ class ProjectionCalculator(FinancialCalculator):
                                 return (total_sum, combined_text.strip())
         return (total_sum, combined_text.strip()) if combined_text else (None, "")
 
+    def _detectar_columna_periodo(self, tablas_ocr, periodo_base):
+        """
+        Detecta la columna correcta del periodo base en cascada.
+        Funciona con cualquier formato de estado de resultados.
+        """
+        if not periodo_base:
+            return None
+
+        texto_limpio = str(periodo_base).lower().strip()
+
+        meses = ["enero","febrero","marzo","abril","mayo","junio",
+                 "julio","agosto","septiembre","octubre","noviembre","diciembre"]
+
+        mes_base = next((m for m in meses if m in texto_limpio), None)
+        año_base = next((w for w in texto_limpio.split() if w.isdigit() and len(w)==4), None)
+
+        # ESTRATEGIA 1: Buscar el nombre del mes en headers
+        # Funciona con: "ENERO", "FEBRERO", etc.
+        if mes_base:
+            for table in tablas_ocr:
+                rows = {}
+                for cell in table:
+                    rows.setdefault(int(cell.get("row",0)), []).append(cell)
+                for r_idx in sorted(rows.keys())[:5]:
+                    for cell in rows[r_idx]:
+                        if mes_base in str(cell.get("text","")).lower():
+                            return int(cell.get("col", 0))
+
+        # ESTRATEGIA 2: Buscar el año en headers
+        # Funciona con: "2025", "2024" (formato comparativo Contpaq/COI)
+        if año_base:
+            for table in tablas_ocr:
+                rows = {}
+                for cell in table:
+                    rows.setdefault(int(cell.get("row",0)), []).append(cell)
+                for r_idx in sorted(rows.keys())[:5]:
+                    for cell in rows[r_idx]:
+                        cell_text = str(cell.get("text","")).strip()
+                        if cell_text == año_base:
+                            return int(cell.get("col", 0))
+
+        # ESTRATEGIA 3: Buscar "PERIODO" o variantes en headers
+        # Funciona con: formato Contalink (PERIODO / ACUMULADO)
+        for table in tablas_ocr:
+            rows = {}
+            for cell in table:
+                rows.setdefault(int(cell.get("row",0)), []).append(cell)
+            for r_idx in sorted(rows.keys())[:5]:
+                for cell in rows[r_idx]:
+                    cell_text = str(cell.get("text","")).lower()
+                    if any(x in cell_text for x in ["periodo", "period", "corriente", "actual"]):
+                        return int(cell.get("col", 0))
+
+        # ESTRATEGIA 4: Primera columna numérica de datos
+        # Funciona con: PDFs sin headers claros (SAT, genéricos)
+        for table in tablas_ocr:
+            rows = {}
+            for cell in table:
+                rows.setdefault(int(cell.get("row",0)), []).append(cell)
+            for r_idx in sorted(rows.keys()):
+                row_cells = sorted(rows[r_idx], key=lambda x: int(x.get("col",0)))
+                cols_numericas = []
+                for cell in row_cells:
+                    val = self._clean_number(str(cell.get("text","")))
+                    if val is not None and abs(val) > 100:
+                        cols_numericas.append(int(cell.get("col",0)))
+                if len(cols_numericas) >= 2:
+                    return cols_numericas[0]
+
+        return None
+
+    def _redondear(self, valor: float) -> float:
+        """Redondeo matemático tradicional (0.5 siempre sube). Evita redondeo bancario de Python."""
+        return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
     def calcular_proyeccion_edo_resultados(
         self,
         ocr_data: Dict[str, Any],
@@ -515,28 +591,7 @@ class ProjectionCalculator(FinancialCalculator):
         self._preprocess_ocr_data(ocr_data)
         tablas_ocr = ocr_data.get("tables_data", []) or []
 
-        print(f"DEBUG OCR - Periodo Base Recibido: '{periodo_base}'")
-
-        # ESCANEO DINÁMICO DE CABECERAS PARA EXTRACCIÓN ESTRICTA
-        target_col_index = None
-        if periodo_base:
-            texto_limpio = str(periodo_base).lower().replace('ejercicio', '').replace('periodo', '').strip()
-            p_base_lower = texto_limpio.split()[0] if texto_limpio else ""
-            if p_base_lower:
-                for table in tablas_ocr:
-                    rows = {}
-                    for cell in table:
-                        r_idx = int(cell.get("row", 0))
-                        rows.setdefault(r_idx, []).append(cell)
-                    for r_idx in sorted(rows.keys())[:5]: # Primeras 5 filas
-                        for cell in rows[r_idx]:
-                            if p_base_lower in str(cell.get("text", "")).strip().lower():
-                                target_col_index = int(cell.get("col", 0))
-                                break
-                        if target_col_index is not None: break
-                    if target_col_index is not None: break
-        
-        print(f"DEBUG OCR - target_col_index detectado: {target_col_index}")
+        target_col_index = self._detectar_columna_periodo(tablas_ocr, periodo_base)
 
         # 1. Identificar Ventas Base (Bypass forzado a la columna mensual/anual)
         ventas_base = self._get_exact_first(ocr_data, "ing por servicios", target_col_index=target_col_index) 
@@ -551,12 +606,13 @@ class ProjectionCalculator(FinancialCalculator):
             
         ventas_base = abs(ventas_base) if ventas_base else 0.0
 
-        # 2. Calcular Ventas Proyectadas
+        # 2. Calcular Ventas Proyectadas (Combinando crecimiento real + inflación)
         sup_v = next((s for s in supuestos_ingresos if s.concepto == "Ventas netas / Ingresos por servicios"), None)
+        
         if sup_v and not sup_v.mantener_igual:
-            ventas_proy = ventas_base * (1 + (sup_v.variacion / 100))
+            ventas_proy = ventas_base * (1 + (sup_v.variacion / 100)) * (1 + (inflacion_esperada / 100))
         else:
-            ventas_proy = ventas_base
+            ventas_proy = ventas_base * (1 + (inflacion_esperada / 100))
 
         val = {
             "ventas": float(ventas_proy),
@@ -565,25 +621,33 @@ class ProjectionCalculator(FinancialCalculator):
             "gastos_financieros": 0.0,
             "otros_ingresos": 0.0,
             "otros_gastos": 0.0,
+            "productos_financieros": 0.0,  # ← agregar esta llave
             "tasa_impuestos": 0.0
         }
         filas_tabla = []
+        filas_consumidas = set()
 
         def solve_rubro(sup, v_base, v_proy_sales, b_sales):
-            if sup.mantener_igual: 
-                # NUEVO: Protege el valor adquisitivo multiplicando por la inflación
-                return v_base * (1 + (inflacion_esperada / 100))
-            elif sup.variacion != 0: 
-                return v_base * (1 + (sup.variacion / 100)) 
+            if sup.mantener_igual or sup.variacion == 0.0 or sup.variacion == 0:
+                # Fijo: solo crece con inflación
+                return self._redondear(v_base * (1 + (inflacion_esperada / 100)))
+            elif sup.variacion is None:
+                # Variable: sigue proporción de ventas (inflación ya integrada en v_proy_sales)
+                if b_sales > 0:
+                    proporcion = v_base / b_sales
+                    return self._redondear(proporcion * v_proy_sales)
+                else:
+                    return self._redondear(v_base)
             else:
-                p_base = v_base / b_sales if b_sales != 0 else 0
-                return p_base * v_proy_sales 
+                # Manual: el usuario definió su % de crecimiento real
+                # Se aplica inflación encima para ser consistente con las ventas
+                return self._redondear(v_base * (1 + (sup.variacion / 100.0)) * (1 + (inflacion_esperada / 100)))
 
         # --- FUNCIÓN DE EXTRACCIÓN ROBUSTA (Con Bucle y take_last=False) ---
         def extract_value(kw_list):
             v = None
             for keyword in kw_list:
-                v = self._get_exact_first(ocr_data, keyword, target_col_index=target_col_index)
+                v = self._get_exact_first(ocr_data, keyword, target_col_index=target_col_index, consumed_set=filas_consumidas)
                 if v is not None:
                     break
             if v is None:
@@ -604,7 +668,12 @@ class ProjectionCalculator(FinancialCalculator):
             kw = self.er_keywords.get(sup.concepto, [sup.concepto.lower()])
             v_base = extract_value(kw)
             v_proy = solve_rubro(sup, v_base, ventas_proy, ventas_base)
-            val["otros_ingresos"] += v_proy
+            
+            # Separar productos financieros de otros ingresos operativos
+            if sup.concepto == "Productos financieros":
+                val["productos_financieros"] += v_proy  # ← va al resultado financiero
+            else:
+                val["otros_ingresos"] += v_proy          # ← va a ingresos operativos
             
             filas_tabla.append({
                 "concepto": sup.concepto,
@@ -619,7 +688,7 @@ class ProjectionCalculator(FinancialCalculator):
             # Escudo A: Gastos de Administración (Separación de Gastos Generales)
             if sup.concepto == "Gastos de administración":
                 v_admin = abs(extract_value(["gastos de administración", "gastos de administracion"]))
-                v_grales = self._get_exact_first(ocr_data, "gastos generales", target_col_index=target_col_index)
+                v_grales = self._get_exact_first(ocr_data, "gastos generales", target_col_index=target_col_index, consumed_set=filas_consumidas)
                 v_grales = abs(v_grales) if v_grales is not None else 0.0
                 
                 # Insertar Gastos Generales como fila independiente si existe
@@ -638,15 +707,15 @@ class ProjectionCalculator(FinancialCalculator):
             # Escudo B: Otros Gastos
             elif sup.concepto == "Otros gastos":
                 v_base = abs(extract_value(["otros gastos y pérdidas", "otros egresos"]))
-                if v_base == 581.90: v_base = 0.0
                     
             # Escudo C: Costo de Ventas (Reconstrucción Forzada)
             elif sup.concepto == "Costo de ventas/Costo por servicios":
                 v_base = abs(extract_value(self.kw_costo_de_ventas))
+                
                 if v_base > 0 and ventas_base > 0 and (v_base / ventas_base) < 0.10: 
                     # Extraemos la primera compra directamente del texto
-                    v_compras = self._get_exact_first(ocr_data, "compras", target_col_index=target_col_index)
-                    v_dev = self._get_exact_first(ocr_data, "devoluciones, descuentos o bonificaciones sobre compras", target_col_index=target_col_index)
+                    v_compras = self._get_exact_first(ocr_data, "compras", target_col_index=target_col_index, consumed_set=filas_consumidas)
+                    v_dev = self._get_exact_first(ocr_data, "devoluciones, descuentos o bonificaciones sobre compras", target_col_index=target_col_index, consumed_set=filas_consumidas)
                     
                     v_compras = abs(v_compras) if v_compras is not None else 0.0
                     v_dev = abs(v_dev) if v_dev is not None else 0.0
@@ -676,35 +745,125 @@ class ProjectionCalculator(FinancialCalculator):
                 "valor_proyectado": float(v_proy)
             })
 
-        # 4. Impuestos (ISR y PTU operan igual, extrayendo del OCR)
-        total_impuestos_proyectados = 0.0
-        
-        for sup in supuestos_impuestos:
-            # Quitamos el continue del ISR para que lo procese igual que la PTU
-            kw = self.er_keywords.get(sup.concepto, [sup.concepto.lower()])
-            v_base = abs(extract_value(kw))
-            v_proy = solve_rubro(sup, v_base, ventas_proy, ventas_base)
-            
-            total_impuestos_proyectados += v_proy
-            
-            filas_tabla.append({
-                "concepto": sup.concepto,
-                "valor_base": float(v_base),
-                "variacion_aplicada": sup.variacion if not sup.mantener_igual else 0.0,
-                "valor_proyectado": float(v_proy)
-            })
+        # 4. Cálculo de cascada parcial (Utilidad Antes de Impuestos)
+        utilidad_bruta = self._redondear(val["ventas"] - val["costo_ventas"])
+        utilidad_operativa = self._redondear(
+            utilidad_bruta 
+            - val["gastos_operativos"] 
+            + val["otros_ingresos"] 
+            - val["otros_gastos"]
+        )
+        resultado_financiero = self._redondear(
+            val["gastos_financieros"] - val["productos_financieros"]  # neto financiero
+        )
+        utilidad_antes_impuestos = self._redondear(
+            utilidad_operativa - resultado_financiero
+        )
 
-        # 5. Cálculo de cascada final
-        utilidad_bruta = val["ventas"] - val["costo_ventas"]
-        utilidad_bruta_proy = utilidad_bruta  # ya están proyectados en val[]
+        uai_proy = utilidad_antes_impuestos
 
-        utilidad_operativa = utilidad_bruta - val["gastos_operativos"] + val["otros_ingresos"] - val["otros_gastos"]
-        utilidad_operativa_proy = utilidad_operativa
+        # ── LÓGICA DE IMPUESTOS CORREGIDA ──────────────────────────────────────
+        uai_proy = utilidad_antes_impuestos
 
-        utilidad_antes_impuestos = utilidad_operativa - val["gastos_financieros"]
+        # --- CÁLCULO DE PTU ---
+        sup_ptu = next((s for s in supuestos_impuestos 
+                        if s.concepto == "PTU (Participación de los Trabajadores en las Utilidades)"), None)
+
+        # Búsqueda estricta en cascada — excluye filas que contengan "utilidad" o "impuesto"
+        EXCLUIR_PTU = ["utilidad", "impuesto", "antes de"]
+
+        v_ptu_base = None
+
+        # Intento 1: búsqueda por frases largas y específicas
+        for kw in ["participación de los trabajadores en las utilidades", 
+                   "ptu (participación", 
+                   "ptu del ejercicio"]:
+            resultado = self._get_exact_first(ocr_data, kw, target_col_index=target_col_index, consumed_set=filas_consumidas)
+            if resultado is not None:
+                v_ptu_base = resultado
+                break
+
+        # Intento 2: buscar "(-) ptu" o "- ptu" (formato con signo negativo)
+        if v_ptu_base is None:
+            for kw in ["(-) ptu", "- ptu", "menos ptu"]:
+                resultado = self._get_exact_first(ocr_data, kw, target_col_index=target_col_index, consumed_set=filas_consumidas)
+                if resultado is not None:
+                    v_ptu_base = resultado
+                    break
+
+        # Intento 3: buscar "ptu" pero validando que la fila NO contenga palabras de utilidad
+        if v_ptu_base is None:
+            tablas_ocr_local = ocr_data.get("tables_data", []) or []
+            for table in tablas_ocr_local:
+                rows = {}
+                for cell in table:
+                    rows.setdefault(int(cell.get("row", 0)), []).append(cell)
+                for r_idx in sorted(rows.keys()):
+                    row_cells = sorted(rows[r_idx], key=lambda x: int(x.get("col", 0)))
+                    row_text = " ".join([str(c.get("text", "")).lower() for c in row_cells])
+                    # Solo procesar si contiene "ptu" Y no contiene palabras de exclusión
+                    if "ptu" in row_text and not any(ex in row_text for ex in EXCLUIR_PTU):
+                        for cell in row_cells:
+                            if int(cell.get("col", 0)) > 0:
+                                val = self._clean_number(str(cell.get("text", "")))
+                                if val is not None and val != 0:
+                                    v_ptu_base = abs(val)
+                                    break
+                    if v_ptu_base is not None:
+                        break
+                if v_ptu_base is not None:
+                    break
+
+        v_ptu_base = abs(v_ptu_base) if v_ptu_base else 0.0
+
+        # Solo calcular PTU si el documento base lo traía O el usuario lo activó explícitamente
+        ptu_viene_del_doc = v_ptu_base > 0
+        ptu_activado_por_usuario = sup_ptu is not None and sup_ptu.variacion is not None
+
+        if uai_proy > 0 and (ptu_viene_del_doc or ptu_activado_por_usuario):
+            tasa_ptu = (sup_ptu.variacion / 100.0) if (sup_ptu and sup_ptu.variacion is not None) else 0.10
+            ptu_proy = uai_proy * tasa_ptu
+            tasa_ptu_aplicada = tasa_ptu * 100
+        else:
+            ptu_proy = 0.0
+            tasa_ptu_aplicada = 0.0
+
+        filas_tabla.append({
+            "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
+            "valor_base": float(v_ptu_base),
+            "variacion_aplicada": tasa_ptu_aplicada,
+            "valor_proyectado": float(ptu_proy)
+        })
+
+        # --- CÁLCULO DE ISR ---
+        sup_isr = next((s for s in supuestos_impuestos if s.concepto == "ISR"), None)
+        kw_isr = self.er_keywords.get("ISR", ["isr"])
+        v_isr_base = abs(extract_value(kw_isr))
+
+        # Solo calcular ISR si el documento base lo traía O el usuario lo activó explícitamente
+        isr_viene_del_doc = v_isr_base > 0
+        isr_activado_por_usuario = sup_isr is not None and sup_isr.variacion is not None
+
+        if uai_proy > 0 and (isr_viene_del_doc or isr_activado_por_usuario):
+            base_isr = uai_proy - ptu_proy  # Base reducida por PTU
+            tasa_isr = (sup_isr.variacion / 100.0) if (sup_isr and sup_isr.variacion is not None) else 0.30
+            isr_proy = base_isr * tasa_isr
+            tasa_isr_aplicada = tasa_isr * 100
+        else:
+            isr_proy = 0.0
+            tasa_isr_aplicada = 0.0
+
+        filas_tabla.append({
+            "concepto": "ISR",
+            "valor_base": float(v_isr_base),
+            "variacion_aplicada": tasa_isr_aplicada,
+            "valor_proyectado": float(isr_proy)
+        })
+
+        total_impuestos_proyectados = ptu_proy + isr_proy
 
         # Restamos la suma de todos los impuestos extraídos e impactados por la regla de proyección
-        utilidad_neta = utilidad_antes_impuestos - total_impuestos_proyectados
+        utilidad_neta = self._redondear(utilidad_antes_impuestos - total_impuestos_proyectados)
 
         return {
             "tablas_proyectadas": filas_tabla,
@@ -714,6 +873,8 @@ class ProjectionCalculator(FinancialCalculator):
             "gastos_operativos": float(val["gastos_operativos"]),
             "utilidad_operativa": float(utilidad_operativa),
             "gastos_financieros": float(val["gastos_financieros"]),
+            "productos_financieros": float(val["productos_financieros"]),  # ← agregar
+            "resultado_financiero_neto": float(resultado_financiero),       # ← agregar
             "utilidad_antes_impuestos": float(utilidad_antes_impuestos),
             "impuestos": float(total_impuestos_proyectados),
             "utilidad_neta": float(utilidad_neta),
@@ -811,14 +972,14 @@ class ProjectionCalculator(FinancialCalculator):
             # porque se registran a costo histórico, no a valor de reposición.
             # (La inflación solo aplica en el ER para proteger el poder adquisitivo de gastos.)
             if sup.mantener_igual:
-                return v_base
+                return self._redondear(v_base)
             elif sup.variacion != 0:
-                return v_base * (1 + (sup.variacion / 100))
+                return self._redondear(v_base * (1 + (sup.variacion / 100)))
             else:
                 # Método Porcentaje de Ventas por defecto (Escalabilidad operativa)
                 # Esto asegura que rubros como Proveedores, IVA por causar e Impuestos retenidos
                 # crezcan en la misma proporción que las ventas.
-                return v_base * (1 + (ventas_proy_incremento_pct / 100))
+                return self._redondear(v_base * (1 + (ventas_proy_incremento_pct / 100)))
 
         def procesar_seccion(lista_sups, key_total):
             for sup in lista_sups:

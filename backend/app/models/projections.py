@@ -3,7 +3,7 @@ from typing import List, Optional
 
 class LineaSupuesto(BaseModel):
     concepto: str
-    variacion: float
+    variacion: Optional[float] = None
     mantener_igual: bool
 
 class ProyeccionSupuestosRequest(BaseModel):

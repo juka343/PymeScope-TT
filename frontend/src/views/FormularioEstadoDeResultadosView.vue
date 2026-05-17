@@ -203,9 +203,24 @@ onMounted(async () => {
     }
 
     if (sup) {
-      if (sup.ingresos)   ingresosRows.value   = sup.ingresos.map(r => ({ ...r, mantener_igual: r.mantener_igual ?? r.mantenerIgual ?? false }));
-      if (sup.costos)     costosRows.value     = sup.costos.map(r => ({ ...r, mantener_igual: r.mantener_igual ?? r.mantenerIgual ?? false }));
-      if (sup.impuestos)  impuestosRows.value  = sup.impuestos.map(r => ({ ...r, mantener_igual: r.mantener_igual ?? r.mantenerIgual ?? false }));
+      if (sup.ingresos) {
+        ingresosRows.value = ingresosRows.value.map(baseRow => {
+          const loadedRow = sup.ingresos.find(r => r.concepto === baseRow.concepto);
+          return loadedRow ? { ...baseRow, variacion: loadedRow.variacion, mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false } : baseRow;
+        });
+      }
+      if (sup.costos) {
+        costosRows.value = costosRows.value.map(baseRow => {
+          const loadedRow = sup.costos.find(r => r.concepto === baseRow.concepto);
+          return loadedRow ? { ...baseRow, variacion: loadedRow.variacion, mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false } : baseRow;
+        });
+      }
+      if (sup.impuestos) {
+        impuestosRows.value = impuestosRows.value.map(baseRow => {
+          const loadedRow = sup.impuestos.find(r => r.concepto === baseRow.concepto);
+          return loadedRow ? { ...baseRow, variacion: loadedRow.variacion, mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false } : baseRow;
+        });
+      }
       if (typeof sup.incluirImpuestos === 'boolean') incluirImpuestos.value = sup.incluirImpuestos;
       if (sup.inflacionEsperada !== undefined) projectConfig.value.inflacionEsperada = sup.inflacionEsperada;
       if (sup.periodoProyectado) projectConfig.value.periodoProyectado = sup.periodoProyectado;
@@ -214,32 +229,33 @@ onMounted(async () => {
 });
 
 const ingresosRows = ref([
-  { concepto: "Ventas netas / Ingresos por servicios", variacion: "", mantener_igual: false },
-  { concepto: "Otros ingresos", variacion: "", mantener_igual: false },
-  { concepto: "Productos financieros", variacion: "", mantener_igual: false },
+  { concepto: "Ventas netas / Ingresos por servicios", variacion: "", mantener_igual: false, isMotor: true, isVariable: false },
+  { concepto: "Otros ingresos", variacion: "", mantener_igual: false, isVariable: false },
+  { concepto: "Productos financieros", variacion: null, mantener_igual: false, isVariable: true },
 ]);
 
 const costosRows = ref([
-  { concepto: "Costo de ventas/Costo por servicios", subtitulo: "", variacion: "", mantener_igual: false },
-  { concepto: "Gastos de venta", subtitulo: "", variacion: "", mantener_igual: false },
-  { concepto: "Gastos de administración", subtitulo: "Operativos y administrativos", variacion: "", mantener_igual: false },
-  { concepto: "Gastos de nómina", subtitulo: "Sueldos y salarios", variacion: "", mantener_igual: false },
-  { concepto: "Gastos financieros", subtitulo: "Intereses y comisiones", variacion: "", mantener_igual: false },
-  { concepto: "Otros gastos", subtitulo: "", variacion: "", mantener_igual: false },
+  { concepto: "Costo de ventas/Costo por servicios", subtitulo: "", variacion: null, mantener_igual: false, isVariable: true },
+  { concepto: "Gastos de venta", subtitulo: "", variacion: null, mantener_igual: false, isVariable: true },
+  { concepto: "Gastos de administración", subtitulo: "Operativos y administrativos", variacion: "", mantener_igual: false, isVariable: false },
+  { concepto: "Gastos de nómina", subtitulo: "Sueldos y salarios", variacion: "", mantener_igual: false, isVariable: false },
+  { concepto: "Gastos financieros", subtitulo: "Intereses y comisiones", variacion: "", mantener_igual: false, isVariable: false },
+  { concepto: "Otros gastos", subtitulo: "", variacion: "", mantener_igual: false, isVariable: false },
 ]);
 
 const impuestosRows = ref([
-  { concepto: "ISR", variacion: "", mantener_igual: false },
-  { concepto: "PTU (Participación de los Trabajadores en las Utilidades)", variacion: "", mantener_igual: false },
+  { concepto: "ISR", variacion: null, mantener_igual: false, isVariable: true },
+  { concepto: "PTU (Participación de los Trabajadores en las Utilidades)", variacion: null, mantener_igual: false, isVariable: true },
 ]);
 
-const incluirImpuestos = ref(false);
+const incluirImpuestos = ref(true);
 
 function cancelar() {
   router.push({ name: getRouteName("proyecciones") });
 }
 
 function isFilaVacia(row) {
+  if (row.isVariable) return false;
   return !row.mantener_igual && (row.variacion === "" || row.variacion === null || row.variacion === undefined);
 }
 
@@ -276,6 +292,12 @@ async function generarProyeccion() {
   isProcessing.value = true;
 
   try {
+    const formatRow = (row) => ({
+      concepto: row.concepto,
+      variacion: (row.isVariable && (row.variacion === "" || row.variacion === null) && !row.mantener_igual) ? null : (isNaN(parseFloat(row.variacion)) ? 0 : parseFloat(row.variacion)),
+      mantener_igual: row.mantener_igual
+    });
+
     const payload = {
       project_id: projectId,
       period_id: projectConfig.value.periodoBaseId,
@@ -283,23 +305,9 @@ async function generarProyeccion() {
       periodo_proyectado_label: projectConfig.value.periodoProyectado,
       inflacion_esperada: parseFloat(projectConfig.value.inflacionEsperada) || 0,
       periodo_base: projectConfig.value.periodoBaseLabel,
-      ingresos: ingresosRows.value.map(row => ({
-        concepto: row.concepto,
-        variacion: parseFloat(row.variacion) || 0,
-        mantener_igual: row.mantener_igual
-      })),
-      costos: costosRows.value.map(row => ({
-        concepto: row.concepto,
-        variacion: parseFloat(row.variacion) || 0,
-        mantener_igual: row.mantener_igual
-      })),
-      impuestos: incluirImpuestos.value
-        ? impuestosRows.value.map(row => ({
-            concepto: row.concepto,
-            variacion: parseFloat(row.variacion) || 0,
-            mantener_igual: row.mantener_igual
-          }))
-        : []
+      ingresos: ingresosRows.value.map(formatRow),
+      costos: costosRows.value.map(formatRow),
+      impuestos: incluirImpuestos.value ? impuestosRows.value.map(formatRow) : []
     };
 
     const response = await fetch("http://127.0.0.1:8000/api/projections/estado-resultados", {
@@ -488,13 +496,13 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" placeholder="0.0" :disabled="row.mantener_igual" />
+              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+            <input v-if="!row.isMotor" v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
           </div>
         </div>
       </div>
@@ -520,7 +528,7 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" placeholder="0.0" :disabled="row.mantener_igual" />
+              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
@@ -533,18 +541,12 @@ async function generarProyeccion() {
     </section>
 
     <section class="card">
-      <div class="section-title-toggle assumptions-head">
-        <div class="col-concepto section-title-left">
-          <span class="material-symbols-outlined section-icon icon-amber">account_balance</span>
-          <h3>Impuestos</h3>
-        </div>
-        <div class="col-variacion"></div>
-        <div class="col-check check-wrap">
-          <input type="checkbox" v-model="incluirImpuestos" class="tax-include-check checkbox" />
-        </div>
+      <div class="section-title">
+        <span class="material-symbols-outlined section-icon icon-amber">account_balance</span>
+        <h3>Impuestos</h3>
       </div>
 
-      <div class="assumptions-table" v-show="incluirImpuestos">
+      <div class="assumptions-table">
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
           <div class="col-variacion center">Variación (%)</div>
@@ -556,9 +558,10 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" type="number" step="0.1" placeholder="0.0" :disabled="row.mantener_igual" />
+              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.concepto.includes('ISR') ? 'Provisión automática (30%)' : 'Provisión automática (10%)'" :disabled="row.mantener_igual" />
               <span class="suffix">%</span>
             </div>
+            <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
             <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
