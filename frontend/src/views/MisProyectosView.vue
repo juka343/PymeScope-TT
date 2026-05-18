@@ -1195,11 +1195,11 @@ async function guardarNombre(p) {
   max-width: 240px;
 }
 
-/* Modal crear proyecto */
 .modal-root {
   position: fixed;
   inset: 0;
   z-index: 60;
+  overflow-y: auto;
 }
 .overlay {
   position: absolute;
@@ -1400,6 +1400,7 @@ async function guardarNombre(p) {
   position: fixed;
   inset: 0;
   z-index: 80;
+  overflow-y: auto;
 }
 
 .onboarding-overlay {
