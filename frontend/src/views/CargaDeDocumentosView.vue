@@ -115,18 +115,20 @@ const completePeriods = computed(() =>
   periods.value.filter((p) => p.balanceFile && p.resultsFile)
 );
 
-const isMultiPeriod = computed(() => completePeriods.value.length > 1);
+const isMultiPeriod = computed(() => periods.value.length > 1);
 
 const periodsToProcess = computed(() =>
   completePeriods.value.filter((p) => p.hasChanges || !p.hasAnalysis)
 );
 
-const canGenerate = computed(() => completePeriods.value.length > 0);
+const canGenerate = computed(() => 
+  periods.value.length > 0 && periods.value.every((p) => p.balanceFile && p.resultsFile)
+);
 
 const hasMissingDates = computed(() => {
   return (
     isMultiPeriod.value &&
-    completePeriods.value.some((p) => {
+    periods.value.some((p) => {
       if (periodicity.value === "anual") {
         return !p.periodDate || String(p.periodDate).length < 4;
       }
@@ -137,7 +139,7 @@ const hasMissingDates = computed(() => {
 });
 
 function getModeFromCurrentPeriods() {
-  return completePeriods.value.length > 1 ? "multi" : "mono";
+  return periods.value.length > 1 ? "multi" : "mono";
 }
 
 function getSummaryRouteName(mode = getModeFromCurrentPeriods()) {
@@ -310,7 +312,7 @@ async function updateProjectAnalysisMode(extraData = {}) {
     projectRef,
     {
       analysis_mode: mode,
-      periods_count: completePeriods.value.length,
+      periods_count: periods.value.length,
       updatedAt: serverTimestamp(),
       ...extraData,
     },
@@ -597,7 +599,7 @@ async function removePeriod(periodId) {
 
     await updateProjectAnalysisMode({
       status:
-        completePeriods.value.length > 0 && periodsToProcess.value.length === 0
+        canGenerate.value && periodsToProcess.value.length === 0
           ? "completo"
           : "pendiente",
     });
@@ -756,7 +758,7 @@ async function generateAnalysis() {
       {
         status: "completo",
         analysis_mode: finalMode,
-        periods_count: completePeriods.value.length,
+        periods_count: periods.value.length,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
@@ -808,11 +810,11 @@ async function generateAnalysis() {
 
     <header class="header">
       <div class="header-inner">
-        <div class="brand">
+        <RouterLink to="/misProyectos" class="brand">
             <img src="/logo.png" alt="Logo PymeScope" class="brand-icon" />
 
           <h2 class="brand-name">PymeScope</h2>
-        </div>
+        </RouterLink>
 
         <div class="project-meta">
           <div v-if="isEditingProjectName" class="edit-name-wrap" style="margin-bottom: 0;">
@@ -1170,6 +1172,8 @@ async function generateAnalysis() {
   align-items: center;
   gap: 12px;
   min-width: 160px;
+  text-decoration: none;
+  color: inherit;
 }
 
 .brand-icon {

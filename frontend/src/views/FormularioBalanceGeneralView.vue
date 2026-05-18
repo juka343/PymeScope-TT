@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from "vue";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
 import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, where, addDoc, serverTimestamp } from "firebase/firestore";
@@ -335,7 +336,7 @@ async function generarProyeccion() {
   };
 
   try {
-    const response = await fetch("http://127.0.0.1:8000/api/projections/balance-general", {
+    const response = await fetch(`${API_BASE_URL}/projections/balance-general`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -437,13 +438,6 @@ async function generarProyeccion() {
       </div>
     </div>
 
-    <!-- Alerta de Error -->
-    <div v-if="errorBanner" class="form-error-banner">
-      <span class="material-symbols-outlined">error</span>
-      <p>{{ errorBanner }}</p>
-      <button class="close-error" @click="errorBanner = ''">×</button>
-    </div>
-
     <div class="page-head">
       <div class="page-head-top">
         <div>
@@ -458,6 +452,13 @@ async function generarProyeccion() {
           <span>Periodo base: {{ projectConfig.periodoBase }}</span>
         </div>
       </div>
+    </div>
+
+    <!-- Alerta de Error -->
+    <div v-if="errorBanner" class="form-error-banner">
+      <span class="material-symbols-outlined">error</span>
+      <p>{{ errorBanner }}</p>
+      <button class="close-error" @click="errorBanner = ''">×</button>
     </div>
 
     <section class="card">

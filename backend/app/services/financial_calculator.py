@@ -338,17 +338,17 @@ class FinancialCalculator:
                 {
                     "label": "Margen de Rentabilidad",
                     "value": f"{margen_utilidad * 100:.2f}%",
-                    "status": "ok" if margen_utilidad >= 0.10 else "warn",
+                    "status": "ok" if margen_utilidad >= 0.10 else ("warn" if margen_utilidad >= 0 else "danger"),
                 },
                 {
                     "label": "Rendimiento sobre Activos Totales (RAT)",
                     "value": f"{roa * 100:.2f}%",
-                    "status": "ok" if roa >= 0.05 else "warn",
+                    "status": "ok" if roa >= 0.05 else ("warn" if roa >= 0 else "danger"),
                 },
                 {
                     "label": "Rendimiento sobre el Patrimonio",
                     "value": f"{roe * 100:.2f}%",
-                    "status": "ok" if roe >= 0.10 else "warn",
+                    "status": "ok" if roe >= 0.10 else ("warn" if roe >= 0 else "danger"),
                 },
             ],
         }
@@ -379,17 +379,17 @@ class FinancialCalculator:
                 {
                     "label": "Razón de Liquidez",
                     "value": f"{razon_liquidez:.2f}",
-                    "status": "ok" if razon_liquidez >= 1.0 else "warn",
+                    "status": "ok" if razon_liquidez >= 1.0 else ("warn" if razon_liquidez >= 0.8 else "danger"),
                 },
                 {
                     "label": "Prueba del Ácido",
                     "value": f"{prueba_acido:.2f}",
-                    "status": "ok" if prueba_acido >= 0.8 else "warn",
+                    "status": "ok" if prueba_acido >= 0.8 else ("warn" if prueba_acido >= 0.5 else "danger"),
                 },
                 {
                     "label": "Capital de Trabajo",
                     "value": f"${capital_trabajo:,.2f}",
-                    "status": "ok" if capital_trabajo > 0 else "warn",
+                    "status": "ok" if capital_trabajo > 0 else ("warn" if capital_trabajo == 0 else "danger"),
                 },
             ],
         }
@@ -456,17 +456,17 @@ class FinancialCalculator:
                 {
                     "label": "Apalancamiento",
                     "value": f"{apalancamiento:.2f}",
-                    "status": "ok" if apalancamiento <= 0.5 and apalancamiento > 0 else "warn",
+                    "status": "ok" if 0 < apalancamiento <= 0.5 else ("warn" if 0.5 < apalancamiento <= 0.7 else "danger"),
                 },
                 {
                     "label": "Razón de Cobertura de Intereses",
                     "value": f"{cobertura_intereses:.2f}",
-                    "status": "ok" if cobertura_intereses >= 1.5 else "warn",
+                    "status": "ok" if cobertura_intereses >= 1.5 else ("warn" if cobertura_intereses >= 1.0 else "danger"),
                 },
                 {
                     "label": "Estabilidad Financiera",
                     "value": f"{estabilidad_financiera:.2f}",
-                    "status": "ok" if estabilidad_financiera <= 1.0 and estabilidad_financiera > 0 else "warn",
+                    "status": "ok" if 0 < estabilidad_financiera <= 1.0 else ("warn" if 1.0 < estabilidad_financiera <= 1.5 else "danger"),
                 },
             ],
         }
@@ -522,28 +522,28 @@ class FinancialCalculator:
                 {
                     "label": "Rotación de la Cartera",
                     "value": f"{rotacion_cartera:.2f}",
-                    "status": "ok" if rotacion_cartera > 0 else "warn",
+                    "status": "ok" if rotacion_cartera >= 4.0 else ("warn" if rotacion_cartera > 0 else "danger"),
                 },
                 {
                     "label": "Periodo Promedio de Recaudo",
                     "value": f"{periodo_recaudo:,.0f} días",
-                    "status": "ok" if periodo_recaudo <= 60 and periodo_recaudo > 0 else "warn",
+                    "status": "ok" if 0 < periodo_recaudo <= 60 else ("warn" if 60 < periodo_recaudo <= 90 else "danger"),
                 },
                 {
                     "label": "Rotación de Inventarios",
                     "value": "N/A" if inventario == 0 else f"{rotacion_inventarios:.2f}",
                     # Si el inventario es 0, es una empresa de servicios y el estatus es OK
-                    "status": "ok" if (rotacion_inventarios > 0 or inventario == 0) else "warn",
+                    "status": "ok" if (rotacion_inventarios > 0 or inventario == 0) else "danger",
                 },
                 {
                     "label": "Rotación de Activos Fijos",
                     "value": f"{rotacion_activos_fijos:.2f}",
-                    "status": "ok" if rotacion_activos_fijos >= 1.0 else "warn",
+                    "status": "ok" if rotacion_activos_fijos >= 1.0 else ("warn" if rotacion_activos_fijos >= 0.5 else "danger"),
                 },
                 {
                     "label": "Rotación de Activos Totales",
                     "value": f"{rotacion_activos_totales:.2f}",
-                    "status": "ok" if rotacion_activos_totales >= 1.0 else "warn",
+                    "status": "ok" if rotacion_activos_totales >= 1.0 else ("warn" if rotacion_activos_totales >= 0.5 else "danger"),
                 },
             ],
         }
@@ -611,23 +611,23 @@ class FinancialCalculator:
                 {
                     "label": "Solvencia General",
                     "value": f"{solvencia:.2f}",
-                    "status": "ok" if solvencia > 1.0 else "warn",
+                    "status": "ok" if solvencia > 1.0 else ("warn" if solvencia >= 0.8 else "danger"),
                 },
                 {
                     "label": "Seguridad a largo plazo",
                     "value": "N/A" if seguridad_largo_plazo is None else f"{seguridad_largo_plazo:.2f}",
                     # Sin deuda a largo plazo es una posición de seguridad (OK)
-                    "status": "ok" if (seguridad_largo_plazo is None or seguridad_largo_plazo >= 1.0) else "warn",
+                    "status": "ok" if (seguridad_largo_plazo is None or seguridad_largo_plazo >= 1.0) else ("warn" if seguridad_largo_plazo >= 0.5 else "danger"),
                 },
                 {
                     "label": "Inmovilización de Cap. Social",
                     "value": f"{inmovilizacion_social:.2f}",
-                    "status": "ok" if inmovilizacion_social <= 1.0 else "warn", 
+                    "status": "ok" if inmovilizacion_social <= 1.0 else ("warn" if inmovilizacion_social <= 1.5 else "danger"), 
                 },
                 {
                     "label": "Inmovilización de Cap. Contable",
                     "value": f"{inmovilizacion_contable:.2f}",
-                    "status": "ok" if inmovilizacion_contable <= 1.0 else "warn",
+                    "status": "ok" if inmovilizacion_contable <= 1.0 else ("warn" if inmovilizacion_contable <= 1.5 else "danger"),
                 },
             ],
         }

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from "vue";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 import PdfLoadingModal from "@/components/app/PdfLoadingModal.vue";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
@@ -353,7 +354,7 @@ async function generateAiAnalysis(conf, res) {
       capital: cuentasFmt(["Capital social", "Utilidades", "Reserva"])
     };
 
-    const response = await fetch("http://127.0.0.1:8000/api/projections/fer-ai-analysis", {
+    const response = await fetch(`${API_BASE_URL}/projections/fer-ai-analysis`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ project_id: projectId || "N/A", analysis_payload })
