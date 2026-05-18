@@ -555,16 +555,25 @@ async function generarProyeccion() {
         <div v-for="(row, idx) in impuestosRows" :key="`impuesto-${idx}`" class="assumptions-row">
           <div class="col-concepto">
             <div class="concept-text">{{ row.concepto }}</div>
+            <div class="leyenda-fiscal" v-if="row.concepto === 'ISR'" style="font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;">
+              💡 Para personas morales en México se recomienda <strong>30%</strong> (Art. 9 LISR). 
+              Verifica la tasa aplicable según el régimen fiscal de tu empresa.
+            </div>
+            <div class="leyenda-fiscal" v-if="row.concepto.includes('PTU')" style="font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;">
+              💡 La tasa estándar en México es <strong>10%</strong> (Art. 123 Constitucional). 
+              No aplica si la empresa tuvo pérdidas fiscales o es de nueva creación.
+            </div>
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.concepto.includes('ISR') ? 'Provisión automática (30%)' : 'Provisión automática (10%)'" :disabled="row.mantener_igual" />
+              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" placeholder="" :disabled="row.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
           </div>
-          <div class="col-check check-wrap">
-            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+          <div class="col-check check-wrap" style="flex-direction: column; align-items: flex-end;">
+            <span style="font-size: 12px; color: #94a3b8; font-weight: 700; user-select: none;">N/A</span>
+            <span style="font-size: 10px; color: #94a3b8; text-align: right; max-width: 140px; margin-top: 4px; line-height: 1.3;">Los impuestos dependen de la utilidad proyectada, no pueden mantenerse fijos.</span>
           </div>
         </div>
       </div>

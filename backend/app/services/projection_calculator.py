@@ -816,39 +816,68 @@ class ProjectionCalculator(FinancialCalculator):
 
         v_ptu_base = abs(v_ptu_base) if v_ptu_base else 0.0
 
-        # Solo calcular PTU si el documento base lo traía O el usuario lo activó explícitamente
+        # --- CÁLCULO DE PTU ---
+        # Solo calcular PTU si el documento base lo traía Y el usuario definió una tasa
+        # O si el usuario lo activó explícitamente con un % manual
         ptu_viene_del_doc = v_ptu_base > 0
-        ptu_activado_por_usuario = sup_ptu is not None and sup_ptu.variacion is not None
+        ptu_activado_por_usuario = sup_ptu is not None and sup_ptu.variacion is not None and sup_ptu.variacion > 0
 
         if uai_proy > 0 and (ptu_viene_del_doc or ptu_activado_por_usuario):
-            tasa_ptu = (sup_ptu.variacion / 100.0) if (sup_ptu and sup_ptu.variacion is not None) else 0.10
-            ptu_proy = uai_proy * tasa_ptu
-            tasa_ptu_aplicada = tasa_ptu * 100
+            if sup_ptu and sup_ptu.variacion is not None and sup_ptu.variacion > 0:
+                # El usuario definió una tasa explícita — usarla
+                tasa_ptu = sup_ptu.variacion / 100.0
+            elif ptu_viene_del_doc:
+                # El doc lo trae pero el usuario no definió tasa
+                # NO asumir 10% — dejar que el usuario lo defina
+                ptu_proy = 0.0
+                tasa_ptu_aplicada = 0.0
+                # Agregar fila y continuar sin calcular
+                filas_tabla.append({
+                    "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
+                    "valor_base": float(v_ptu_base),
+                    "variacion_aplicada": 0.0,
+                    "valor_proyectado": 0.0
+                })
+                tasa_ptu = None  # señal para saltar el cálculo
+            
+            if tasa_ptu is not None:
+                ptu_proy = uai_proy * tasa_ptu
+                tasa_ptu_aplicada = tasa_ptu * 100
+                filas_tabla.append({
+                    "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
+                    "valor_base": float(v_ptu_base),
+                    "variacion_aplicada": tasa_ptu_aplicada,
+                    "valor_proyectado": float(ptu_proy)
+                })
         else:
             ptu_proy = 0.0
             tasa_ptu_aplicada = 0.0
-
-        filas_tabla.append({
-            "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
-            "valor_base": float(v_ptu_base),
-            "variacion_aplicada": tasa_ptu_aplicada,
-            "valor_proyectado": float(ptu_proy)
-        })
+            filas_tabla.append({
+                "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
+                "valor_base": float(v_ptu_base),
+                "variacion_aplicada": 0.0,
+                "valor_proyectado": 0.0
+            })
 
         # --- CÁLCULO DE ISR ---
         sup_isr = next((s for s in supuestos_impuestos if s.concepto == "ISR"), None)
         kw_isr = self.er_keywords.get("ISR", ["isr"])
         v_isr_base = abs(extract_value(kw_isr))
 
-        # Solo calcular ISR si el documento base lo traía O el usuario lo activó explícitamente
         isr_viene_del_doc = v_isr_base > 0
-        isr_activado_por_usuario = sup_isr is not None and sup_isr.variacion is not None
+        isr_activado_por_usuario = sup_isr is not None and sup_isr.variacion is not None and sup_isr.variacion > 0
 
         if uai_proy > 0 and (isr_viene_del_doc or isr_activado_por_usuario):
-            base_isr = uai_proy - ptu_proy  # Base reducida por PTU
-            tasa_isr = (sup_isr.variacion / 100.0) if (sup_isr and sup_isr.variacion is not None) else 0.30
-            isr_proy = base_isr * tasa_isr
-            tasa_isr_aplicada = tasa_isr * 100
+            if sup_isr and sup_isr.variacion is not None and sup_isr.variacion > 0:
+                # El usuario definió una tasa explícita — usarla
+                base_isr = uai_proy - ptu_proy
+                tasa_isr = sup_isr.variacion / 100.0
+                isr_proy = base_isr * tasa_isr
+                tasa_isr_aplicada = tasa_isr * 100
+            else:
+                # El doc lo trae pero el usuario no definió tasa — no asumir 30%
+                isr_proy = 0.0
+                tasa_isr_aplicada = 0.0
         else:
             isr_proy = 0.0
             tasa_isr_aplicada = 0.0
