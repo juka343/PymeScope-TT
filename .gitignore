@@ -153,3 +153,6 @@ venv/
 backend/source/
 backend/.env
 frontend/.env
+
+playwright-report/
+test-results/

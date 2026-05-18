@@ -131,10 +131,10 @@ const emit = defineEmits(["toggle-sidebar"]);
         <span class="material-symbols-outlined">menu</span>
       </button>
 
-      <div class="brand">
+      <RouterLink to="/misProyectos" class="brand">
         <img src="/logo.png" alt="Logo PymeScope" class="brand-icon" />
         <h2 class="brand-name">PymeScope</h2>
-      </div>
+      </RouterLink>
 
       <div class="project-pill">
         <span class="pill-title">{{ project.name }}</span>
@@ -258,6 +258,8 @@ const emit = defineEmits(["toggle-sidebar"]);
   display: flex;
   align-items: center;
   gap: 10px;
+  text-decoration: none;
+  color: inherit;
 }
 .brand-icon {
   width: 32px;

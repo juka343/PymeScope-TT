@@ -1114,7 +1114,7 @@ onMounted(() => {
 }
 
 .donut-total {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 900;
   color: #0e161b;
 }
