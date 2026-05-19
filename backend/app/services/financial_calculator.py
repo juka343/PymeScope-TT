@@ -95,12 +95,19 @@ class FinancialCalculator:
             "utilidad de operación", "utilidad de operacion", "utilidad operativa", 
             "resultado de operación", "resultado de operacion", "resultado operativo", 
             "ganancia operativa",
+            # Formatos corporativos BMV (ej. Bimbo: "UTILIDAD (PÉRDIDA) DE OPERACIÓN")
+            # IMPORTANTE: Solo variantes con acento en "operación" (ó) para evitar
+            # colisión con "UTILIDAD (PÉRDIDA) DE OPERACIONES CONTINUAS"
+            "utilidad (pérdida) de operación", "utilidad (perdida) de operación",
         ]
         
         self.kw_intereses = [
-            "gastos financieros", 
+            "gastos financieros", "gasto financiero",  # plural + singular (ej. FEMSA)
             "costo integral de financiamiento",
-            # Quitamos los específicos que pueden capturar sub-cuentas pequeñas
+            # Formatos corporativos BMV (ej. Bimbo: "Resultado Integral de Financiamiento")
+            "resultado integral de financiamiento",
+            # FEMSA: "Gastos de Financiamiento, neto"
+            "gastos de financiamiento",
         ]
 
         # ===== Rotación de activos =====
@@ -230,7 +237,7 @@ class FinancialCalculator:
     # -------------------------------------------------------------------------
     # Búsqueda de valores en tablas OCR (Proximidad Inteligente + Columnas)
     # -------------------------------------------------------------------------
-    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0) -> float:
+    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None) -> float:
         for table in reversed(tables_data):
             rows: Dict[int, List[Dict[str, Any]]] = {}
             for cell in table:
@@ -241,6 +248,10 @@ class FinancialCalculator:
                 row_cells = rows[r_idx]
                 row_cells.sort(key=lambda x: int(x.get("col", 0)))
                 row_text = " ".join([str(c.get("text", "")).lower() for c in row_cells])
+
+                # Saltar filas que contienen palabras "veneno" (ej. "TOTAL PASIVO Y CAPITAL CONTABLE")
+                if skip_if_row_contains and any(poison in row_text for poison in skip_if_row_contains):
+                    continue
 
                 for kw in keywords:
                     if kw in row_text:
@@ -300,7 +311,7 @@ class FinancialCalculator:
         """Calcula indicadores de rentabilidad cruzando Balance y Estado de Resultados."""
         tablas_resultados = self._get_tables(resultados_data)
         tablas_balance = self._get_tables(balance_data)
-        usar_acumulado, _ = self._parse_periodicidad(periodicidad)
+        usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
         ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index)
         if ventas_netas == 0:
             ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index)
@@ -320,12 +331,20 @@ class FinancialCalculator:
 
         # 3) Balance
         activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0)
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0)
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital"])
 
         # 4) Cálculos
         margen_utilidad = (utilidad_neta / ventas_netas) if ventas_netas else 0
         roa = (utilidad_neta / activo_total) if activo_total else 0
         roe = (utilidad_neta / capital_contable) if capital_contable else 0
+
+        # 5) Factor de ajuste para umbrales flujo÷stock
+        # ROA y ROE comparan un flujo del periodo (utilidad) contra un stock (activos/capital),
+        # por lo que en periodos más cortos el flujo es proporcionalmente menor.
+        # El margen (utilidad/ventas) es flujo÷flujo, así que NO se ajusta.
+        factor = dias_periodo / 365  # 1.0 anual, ~0.25 trimestral, ~0.08 mensual
+        roa_ok = 0.05 * factor
+        roe_ok = 0.10 * factor
 
         return {
             "datos_crudos": {
@@ -343,12 +362,12 @@ class FinancialCalculator:
                 {
                     "label": "Rendimiento sobre Activos Totales (RAT)",
                     "value": f"{roa * 100:.2f}%",
-                    "status": "ok" if roa >= 0.05 else ("warn" if roa >= 0 else "danger"),
+                    "status": "ok" if roa >= roa_ok else ("warn" if roa >= 0 else "danger"),
                 },
                 {
                     "label": "Rendimiento sobre el Patrimonio",
                     "value": f"{roe * 100:.2f}%",
-                    "status": "ok" if roe >= 0.10 else ("warn" if roe >= 0 else "danger"),
+                    "status": "ok" if roe >= roe_ok else ("warn" if roe >= 0 else "danger"),
                 },
             ],
         }
@@ -404,8 +423,8 @@ class FinancialCalculator:
         activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0)
         
         # Renombramos a capital_contable para evitar confusiones y asegurar la fórmula
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0)
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0)
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital"])
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "+ capital"])
 
         # Lógica de rescate para Pasivo Total (Ecuación Contable: P = A - C)
         # Si no lo encuentra (0) o si captura la fila "Total Pasivo + Capital" (>= activo_total)
@@ -508,6 +527,17 @@ class FinancialCalculator:
         rotacion_activos_fijos = (ventas_netas / activo_fijo_neto) if activo_fijo_neto else 0
         rotacion_activos_totales = (ventas_netas / activo_total) if activo_total else 0
 
+        # 4. Factor de ajuste para umbrales flujo÷stock
+        # Las rotaciones comparan un flujo del periodo (ventas, costo) contra un stock (activos),
+        # por lo que en periodos más cortos el flujo es proporcionalmente menor.
+        # El Periodo Promedio de Recaudo ya se ajusta vía dias_periodo, así que NO cambia.
+        factor = dias_periodo / 365  # 1.0 anual, ~0.25 trimestral, ~0.08 mensual
+        rot_cartera_ok = 4.0 * factor
+        rot_af_ok = 1.0 * factor
+        rot_af_warn = 0.5 * factor
+        rot_at_ok = 1.0 * factor
+        rot_at_warn = 0.5 * factor
+
         return {
             "datos_crudos": {
                 "cuentas_por_cobrar": cuentas_por_cobrar,
@@ -522,7 +552,7 @@ class FinancialCalculator:
                 {
                     "label": "Rotación de la Cartera",
                     "value": f"{rotacion_cartera:.2f}",
-                    "status": "ok" if rotacion_cartera >= 4.0 else ("warn" if rotacion_cartera > 0 else "danger"),
+                    "status": "ok" if rotacion_cartera >= rot_cartera_ok else ("warn" if rotacion_cartera > 0 else "danger"),
                 },
                 {
                     "label": "Periodo Promedio de Recaudo",
@@ -538,12 +568,12 @@ class FinancialCalculator:
                 {
                     "label": "Rotación de Activos Fijos",
                     "value": f"{rotacion_activos_fijos:.2f}",
-                    "status": "ok" if rotacion_activos_fijos >= 1.0 else ("warn" if rotacion_activos_fijos >= 0.5 else "danger"),
+                    "status": "ok" if rotacion_activos_fijos >= rot_af_ok else ("warn" if rotacion_activos_fijos >= rot_af_warn else "danger"),
                 },
                 {
                     "label": "Rotación de Activos Totales",
                     "value": f"{rotacion_activos_totales:.2f}",
-                    "status": "ok" if rotacion_activos_totales >= 1.0 else ("warn" if rotacion_activos_totales >= 0.5 else "danger"),
+                    "status": "ok" if rotacion_activos_totales >= rot_at_ok else ("warn" if rotacion_activos_totales >= rot_at_warn else "danger"),
                 },
             ],
         }
@@ -556,8 +586,8 @@ class FinancialCalculator:
         # --- 1. EXTRACCIÓN BÁSICA ---
         activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0)
         activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0) 
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0)
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0)
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital"])
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital"])
         pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=0)
 
         # --- 2. LÓGICA INTELIGENTE PARA CAPITAL SOCIAL ---

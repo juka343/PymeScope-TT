@@ -213,11 +213,208 @@ def validate_document_date(text: str, period_date: str, periodicity: str, doc_na
     text_lower = text.lower()
     parts = period_date.split("-")
     year = parts[0]
+    year_short = year[2:]  # "2025" -> "25"
     
     if periodicity.lower() == "anual":
         if not re.search(r'\b' + year + r'\b', text_lower):
             raise ValueError(f"DATE_MISMATCH|{doc_name}|{year}|{period_label}")
+
+    elif periodicity.lower() == "trimestral":
+        month = parts[1] if len(parts) > 1 else ""
+        if not month:
+            return
+
+        month_int = int(month)
+        quarter = (month_int - 1) // 3 + 1  # 01-03→1, 04-06→2, 07-09→3, 10-12→4
+
+        # Meses que componen cada trimestre
+        quarter_months_map = {
+            1: {"start": "01", "end": "03"},
+            2: {"start": "04", "end": "06"},
+            3: {"start": "07", "end": "09"},
+            4: {"start": "10", "end": "12"},
+        }
+        q_info = quarter_months_map[quarter]
+
+        # Nombres de todos los meses del trimestre para buscar en el texto
+        all_months = {
+            "01": ["enero", "january", "jan", "ene"],
+            "02": ["febrero", "february", "feb"],
+            "03": ["marzo", "march", "mar"],
+            "04": ["abril", "april", "abr", "apr"],
+            "05": ["mayo", "may"],
+            "06": ["junio", "june", "jun"],
+            "07": ["julio", "july", "jul"],
+            "08": ["agosto", "august", "ago", "aug"],
+            "09": ["septiembre", "september", "sep"],
+            "10": ["octubre", "october", "oct"],
+            "11": ["noviembre", "november", "nov"],
+            "12": ["diciembre", "december", "dic", "dec"],
+        }
+
+        # Recolectar nombres de los 3 meses del trimestre
+        q_month_names = []
+        for m in range(int(q_info["start"]), int(q_info["end"]) + 1):
+            q_month_names.extend(all_months.get(f"{m:02d}", []))
+
+        # Nombres ordinales del trimestre en español
+        ordinal_names = {
+            1: ["primer", "1er", "primero", "first"],
+            2: ["segundo", "2do", "2°", "second"],
+            3: ["tercer", "3er", "tercero", "third"],
+            4: ["cuarto", "4to", "4°", "fourth"],
+        }
+
+        # Patrones de detección trimestral (cualquiera que coincida es suficiente)
+        found = False
+
+        # Patrón 1: Formato corporativo "1T25", "1T2025", "1T 25", "1T 2025"
+        # Nota: No usamos \b entre el dígito y la T porque "1t25" es alfanumérico continuo
+        corp_pattern = r'(?<!\w)' + str(quarter) + r't\s*(?:' + year + r'|' + year_short + r')(?!\w)'
+        if re.search(corp_pattern, text_lower):
+            found = True
+
+        # Patrón 2: Formato internacional "Q1 2025", "Q1 25", "Q12025"
+        if not found:
+            intl_pattern = r'(?<!\w)q' + str(quarter) + r'\s*(?:' + year + r'|' + year_short + r')(?!\w)'
+            if re.search(intl_pattern, text_lower):
+                found = True
+
+        # Para los siguientes patrones, verificamos que el año exista en el documento
+        if not found:
+            year_found = bool(re.search(r'\b' + year + r'\b', text_lower)) or bool(re.search(r'(?<!\d)' + year_short + r'(?!\d)', text_lower))
+            if not year_found:
+                raise ValueError(f"DATE_MISMATCH|{doc_name}|Q{quarter} {year}|{period_label}")
+
+        # Patrón 3: Texto en español "primer trimestre", "1er trimestre", "trimestre 1"
+        if not found:
+            ordinals = ordinal_names.get(quarter, [])
+            for ordinal in ordinals:
+                if re.search(re.escape(ordinal) + r'\s+trimestre', text_lower):
+                    found = True
+                    break
+                if re.search(r'trimestre\s+' + re.escape(ordinal), text_lower):
+                    found = True
+                    break
+            # También: "trimestre 1", "trimestre 2", etc.
+            if not found and re.search(r'trimestre\s+' + str(quarter) + r'\b', text_lower):
+                found = True
+
+        # Patrón 4: Rango de meses "enero a marzo", "enero-marzo", "ene-mar", "de enero a marzo"
+        if not found:
+            start_names = all_months.get(q_info["start"], [])
+            end_names = all_months.get(q_info["end"], [])
+            for s_name in start_names:
+                for e_name in end_names:
+                    range_pattern = r'\b' + re.escape(s_name) + r'\s*(?:a|al|-|–)\s*' + re.escape(e_name) + r'\b'
+                    if re.search(range_pattern, text_lower):
+                        found = True
+                        break
+                if found:
+                    break
+
+        # Patrón 5: Cualquier mes del trimestre mencionado junto con el año
+        # (ej. "Mar, 2025", "marzo 2025", "mar 2025")
+        if not found:
+            any_month_pattern = r'\b(' + '|'.join(q_month_names) + r')\.?,?\s*(?:de\s*|del\s*)?' + r'(?:' + year + r'|' + year_short + r')\b'
+            if re.search(any_month_pattern, text_lower):
+                found = True
+
+        if not found:
+            raise ValueError(f"DATE_MISMATCH|{doc_name}|Q{quarter} {year}|{period_label}")
+
+    elif periodicity.lower() == "semestral":
+        month = parts[1] if len(parts) > 1 else ""
+        if not month:
+            return
+
+        month_int = int(month)
+        semester = 1 if month_int <= 6 else 2
+
+        all_months = {
+            "01": ["enero", "january", "jan", "ene"],
+            "02": ["febrero", "february", "feb"],
+            "03": ["marzo", "march", "mar"],
+            "04": ["abril", "april", "abr", "apr"],
+            "05": ["mayo", "may"],
+            "06": ["junio", "june", "jun"],
+            "07": ["julio", "july", "jul"],
+            "08": ["agosto", "august", "ago", "aug"],
+            "09": ["septiembre", "september", "sep"],
+            "10": ["octubre", "october", "oct"],
+            "11": ["noviembre", "november", "nov"],
+            "12": ["diciembre", "december", "dic", "dec"],
+        }
+
+        sem_range = range(1, 7) if semester == 1 else range(7, 13)
+        s_month_names = []
+        for m in sem_range:
+            s_month_names.extend(all_months.get(f"{m:02d}", []))
+
+        start_month = "01" if semester == 1 else "07"
+        end_month = "06" if semester == 1 else "12"
+
+        ordinal_sem = {
+            1: ["primer", "1er", "primero", "first"],
+            2: ["segundo", "2do", "2°", "second"],
+        }
+
+        found = False
+
+        # Patrón 1: "1S25", "1S2025"
+        corp_pattern = r'(?<!\w)' + str(semester) + r's\s*(?:' + year + r'|' + year_short + r')(?!\w)'
+        if re.search(corp_pattern, text_lower):
+            found = True
+
+        # Patrón 2: "H1 2025" (half)
+        if not found:
+            intl_pattern = r'(?<!\w)h' + str(semester) + r'\s*(?:' + year + r'|' + year_short + r')(?!\w)'
+            if re.search(intl_pattern, text_lower):
+                found = True
+
+        # Para los siguientes patrones, verificamos que el año exista en el documento
+        if not found:
+            year_found = bool(re.search(r'\b' + year + r'\b', text_lower)) or bool(re.search(r'(?<!\d)' + year_short + r'(?!\d)', text_lower))
+            if not year_found:
+                raise ValueError(f"DATE_MISMATCH|{doc_name}|S{semester} {year}|{period_label}")
+
+        # Patrón 3: "primer semestre", "1er semestre", "semestre 1"
+        if not found:
+            ordinals = ordinal_sem.get(semester, [])
+            for ordinal in ordinals:
+                if re.search(re.escape(ordinal) + r'\s+semestre', text_lower):
+                    found = True
+                    break
+                if re.search(r'semestre\s+' + re.escape(ordinal), text_lower):
+                    found = True
+                    break
+            if not found and re.search(r'semestre\s+' + str(semester) + r'\b', text_lower):
+                found = True
+
+        # Patrón 4: Rango de meses "enero a junio", "julio-diciembre"
+        if not found:
+            start_names = all_months.get(start_month, [])
+            end_names = all_months.get(end_month, [])
+            for s_name in start_names:
+                for e_name in end_names:
+                    range_pattern = r'\b' + re.escape(s_name) + r'\s*(?:a|al|-|–)\s*' + re.escape(e_name) + r'\b'
+                    if re.search(range_pattern, text_lower):
+                        found = True
+                        break
+                if found:
+                    break
+
+        # Patrón 5: Cualquier mes del semestre + año
+        if not found:
+            any_month_pattern = r'\b(' + '|'.join(s_month_names) + r')\.?,?\s*(?:de\s*|del\s*)?' + r'(?:' + year + r'|' + year_short + r')\b'
+            if re.search(any_month_pattern, text_lower):
+                found = True
+
+        if not found:
+            raise ValueError(f"DATE_MISMATCH|{doc_name}|S{semester} {year}|{period_label}")
+
     else:
+        # Mensual (lógica original sin cambios)
         month = parts[1] if len(parts) > 1 else ""
         months = {
             "01": ["enero", "january", "jan", "ene"],

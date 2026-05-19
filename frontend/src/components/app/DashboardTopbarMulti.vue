@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore"; // <-- Importamos Firestore
 import { db } from "@/firebase/config"; // <-- Importamos la DB
+import UserProfileModal from "@/components/app/UserProfileModal.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -121,6 +122,23 @@ function handleClickOutside(e) {
   }
 }
 
+const isProfileModalOpen = ref(false);
+
+function openProfileModal() {
+  showUserMenu.value = false;
+  isProfileModalOpen.value = true;
+}
+
+function handleProfileUpdated(newData) {
+  if (user.value) {
+    user.value = {
+      ...user.value,
+      displayName: newData.displayName,
+      photoURL: newData.photoURL
+    };
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
 });
@@ -219,6 +237,10 @@ const emit = defineEmits(["toggle-sidebar"]);
               </div>
             </div>
             <div class="dropdown-divider"></div>
+            <button class="dropdown-item" @click="openProfileModal">
+              <span class="material-symbols-outlined">person</span>
+              Mi Perfil
+            </button>
             <button class="dropdown-item dropdown-logout" @click="handleLogout">
               <span class="material-symbols-outlined">logout</span>
               Cerrar sesión
@@ -227,6 +249,12 @@ const emit = defineEmits(["toggle-sidebar"]);
         </Transition>
       </div>
     </div>
+
+    <UserProfileModal 
+      :isOpen="isProfileModalOpen" 
+      @close="isProfileModalOpen = false" 
+      @profile-updated="handleProfileUpdated" 
+    />
   </header>
 </template>
 

@@ -1,31 +1,13 @@
 <script setup>
 import { ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
-
+import { RouterLink } from "vue-router";
 import { auth } from "@/firebase/config";
-import {
-  signInWithEmailAndPassword,
-  GoogleAuthProvider,
-  signInWithPopup,
-  setPersistence,
-  browserLocalPersistence,
-  browserSessionPersistence,
-} from "firebase/auth";
-
-const router = useRouter();
-
-const showPassword = ref(false);
+import { sendPasswordResetEmail } from "firebase/auth";
 
 const email = ref("");
-const password = ref("");
-const rememberMe = ref(false);
-
 const loading = ref(false);
 const errorMsg = ref("");
-
-function togglePassword() {
-  showPassword.value = !showPassword.value;
-}
+const successMsg = ref(false);
 
 function mapFirebaseError(code) {
   switch (code) {
@@ -33,53 +15,23 @@ function mapFirebaseError(code) {
       return "Correo inválido.";
     case "auth/user-not-found":
       return "No existe una cuenta con ese correo.";
-    case "auth/wrong-password":
-    case "auth/invalid-credential":
-      return "Correo o contraseña incorrectos.";
     case "auth/too-many-requests":
       return "Demasiados intentos. Intenta más tarde.";
-    case "auth/popup-closed-by-user":
-      return "Cerraste la ventana de Google antes de terminar.";
     default:
-      return "No se pudo iniciar sesión.";
+      return "No se pudo enviar el enlace.";
   }
 }
 
 async function handleSubmit() {
   errorMsg.value = "";
+  successMsg.value = false;
   loading.value = true;
 
   try {
-    await setPersistence(
-      auth,
-      rememberMe.value ? browserLocalPersistence : browserSessionPersistence
-    );
-
-    await signInWithEmailAndPassword(auth, email.value, password.value);
-
-    router.push("/misProyectos");
-  } catch (err) {
-    console.error(err);
-    errorMsg.value = mapFirebaseError(err?.code);
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function handleGoogle() {
-  errorMsg.value = "";
-  loading.value = true;
-
-  try {
-    await setPersistence(
-      auth,
-      rememberMe.value ? browserLocalPersistence : browserSessionPersistence
-    );
-
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-
-    router.push("/misProyectos");
+    auth.languageCode = 'es'; // Forzar que el correo llegue en español
+    await sendPasswordResetEmail(auth, email.value);
+    successMsg.value = true;
+    email.value = ""; // clear email after success
   } catch (err) {
     console.error(err);
     errorMsg.value = mapFirebaseError(err?.code);
@@ -109,9 +61,7 @@ async function handleGoogle() {
             </p>
           </div>
 
-          <div class="side-links desktop-only">
-
-          </div>
+          <div class="side-links desktop-only"></div>
         </div>
       </aside>
 
@@ -119,12 +69,17 @@ async function handleGoogle() {
         <div class="card">
           <div class="card-body">
             <div class="head">
-              <h1>Iniciar sesión</h1>
-              <p>Bienvenido de nuevo a tu panel de control</p>
+              <h1>Recuperar Contraseña</h1>
+              <p>Te enviaremos un enlace seguro para restablecerla</p>
 
               <div v-if="errorMsg" class="form-error">
                 <span class="material-symbols-outlined">error</span>
                 <span>{{ errorMsg }}</span>
+              </div>
+              
+              <div v-if="successMsg" class="form-success">
+                <span class="material-symbols-outlined">check_circle</span>
+                <span>¡Enlace enviado! Revisa tu bandeja de entrada (y la carpeta de spam).</span>
               </div>
             </div>
 
@@ -144,77 +99,17 @@ async function handleGoogle() {
                 </div>
               </label>
 
-              <label class="field">
-                <span class="label">Contraseña</span>
-
-                <div class="control password">
-                  <span class="icon material-symbols-outlined">lock</span>
-
-                  <input
-                    v-model="password"
-                    :type="showPassword ? 'text' : 'password'"
-                    placeholder="••••••••"
-                    autocomplete="current-password"
-                    required
-                  />
-
-                  <button class="eye" type="button" @click="showPassword = !showPassword">
-                    <span class="material-symbols-outlined">
-                      {{ showPassword ? "visibility_off" : "visibility" }}
-                    </span>
-                  </button>
-                </div>
-              </label>
-
-
-
-              <div class="row">
-                <label class="check">
-                  <input v-model="rememberMe" type="checkbox" :disabled="loading" />
-                  <span>Recordarme</span>
-                </label>
-
-                <RouterLink class="link" to="/recuperar-password">¿Olvidaste tu contraseña?</RouterLink>
-              </div>
-
               <button class="btn-primary" type="submit" :disabled="loading">
-                {{ loading ? "Iniciando..." : "Iniciar sesión" }}
+                {{ loading ? "Enviando enlace..." : "Enviar enlace" }}
               </button>
             </form>
 
-            <div class="divider">
-              <span></span>
-              <strong>o</strong>
-              <span></span>
-            </div>
-
-            <button class="btn-outline" type="button" @click="handleGoogle" :disabled="loading">
-              <svg aria-hidden="true" class="google" viewBox="0 0 24 24">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              <span>{{ loading ? "Espera..." : "Continuar con Google" }}</span>
-            </button>
           </div>
 
           <div class="card-foot">
             <p>
-              ¿No tienes una cuenta?
-              <RouterLink class="link strong" to="/registro">Crear cuenta</RouterLink>
+              ¿Recordaste tu contraseña?
+              <RouterLink class="link strong" to="/login">Volver al inicio de sesión</RouterLink>
             </p>
           </div>
         </div>
@@ -229,7 +124,7 @@ async function handleGoogle() {
 </template>
 
 <style scoped>
-/* Paleta base */
+/* Paleta base (Igual a LoginView) */
 .page {
   --primary: #299de0;
   --primary-dark: #1a6ba3;
@@ -398,21 +293,22 @@ async function handleGoogle() {
   flex-shrink: 0;
 }
 
-.field-error {
-  display: inline-flex;
+.form-success {
+  display: flex;
+  gap: 8px;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  margin: 14px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 13px;
   font-weight: 700;
-  color: #ef4444;
-  background: #fee2e2;
-  padding: 4px 8px;
-  border-radius: 6px;
-  animation: shake 0.3s ease;
 }
 
-.field-error .material-symbols-outlined {
-  font-size: 14px;
+.form-success .material-symbols-outlined {
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 @keyframes shake {
@@ -423,106 +319,11 @@ async function handleGoogle() {
   80% { transform: translateX(2px); }
 }
 
-.invalid {
-  border-color: rgba(239, 68, 68, 0.6) !important;
-  background: #fef8f8 !important;
-}
-
 .form {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-
-.password {
-  position: relative;
-  width: 100%;
-
-}
-
-.password input {
-  width: 100%;
-  padding-right: 48px;
-}
-
-.eye {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.eye:hover {
-  color: #475569;
-}
-
-.eye span {
-  font-size: 20px;
-}
-
-.control.password {
-  position: relative;
-}
-
-.control.password .icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 20px;
-  color: #94a3b8;
-  pointer-events: none;
-}
-
-.control.password input {
-  width: 100%;
-  height: 48px;
-  border-radius: 12px;
-  border: 1px solid #cbd5e1;
-  background: #f8fafc;
-  padding-left: 42px;  /* espacio para el candado */
-  padding-right: 46px; /* espacio para el ojo */
-  font-size: 16px;
-  outline: none;
-}
-
-.control.password .eye {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-
-  background: transparent;
-  border: none;
-  padding: 0;
-  margin: 0;
-  line-height: 1;
-  cursor: pointer;
-
-  color: #94a3b8;
-}
-
-.control.password .eye:hover {
-  color: #475569;
-}
-
-.control.password .eye span {
-  font-size: 22px;
-}
-
-
 
 .field {
   display: flex;
@@ -550,8 +351,7 @@ async function handleGoogle() {
   pointer-events: none;
 }
 
-input[type="email"],
-input[type="password"] {
+input[type="email"] {
   width: 100%;
   height: 48px;
   border-radius: 12px;
@@ -571,31 +371,6 @@ input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(41, 157, 224, 0.25);
   background: white;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  user-select: none;
-  font-weight: 700;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.check input {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  accent-color: var(--primary);
 }
 
 .link {
@@ -633,52 +408,6 @@ input:focus {
 .btn-primary:disabled {
   opacity: 0.65;
   cursor: not-allowed;
-}
-
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 18px 0;
-  color: #94a3b8;
-}
-.divider span {
-  flex: 1;
-  height: 1px;
-  background: #e2e8f0;
-}
-.divider strong {
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.btn-outline {
-  height: 48px;
-  border-radius: 12px;
-  border: 1px solid #cbd5e1;
-  background: white;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  font-weight: 900;
-  color: #334155;
-  transition: background 0.15s ease, transform 0.05s ease, opacity 0.15s ease;
-}
-.btn-outline:hover {
-  background: #f8fafc;
-}
-.btn-outline:active {
-  transform: translateY(1px);
-}
-.btn-outline:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.google {
-  width: 20px;
-  height: 20px;
 }
 
 /* Footer inside card */
