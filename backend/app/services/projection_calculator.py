@@ -68,8 +68,8 @@ class ProjectionCalculator(FinancialCalculator):
         # Nunca debe usarse al procesar el Estado de Resultados.
         self.bg_keywords: Dict[str, List[str]] = {
             # Activo Circulante
-            "Caja":                                    ["caja", "efectivo", "caja chica", "fondo fijo", "efectivo en caja"],
-            "Bancos":                                  ["bancos", "efectivo y equivalentes", "efectivo en bancos"],
+            "Caja":                                    ["caja", "efectivo", "caja chica", "fondo fijo", "efectivo en caja", "efectivo y equivalentes"],
+            "Bancos":                                  ["bancos", "efectivo en bancos"],
             "Cuentas por cobrar a clientes":           self.kw_cuentas_por_cobrar,
             "Otras cuentas por cobrar (deudores diversos)": ["deudores diversos", "deudores"],
             "Inventarios":                             self.kw_inventario,
@@ -93,7 +93,7 @@ class ProjectionCalculator(FinancialCalculator):
                 "camiones", "equipo automotriz",
             ],
             "Mobiliario y equipo de oficina": ["mobiliario y equipo de oficina", "muebles y enseres"],
-            "Equipo de cómputo":         ["equipo de cómputo", "equipo de comunicación", "cómputo", "equipo cómputo"],
+            "Equipo de cómputo":         ["equipo de cómputo", "cómputo", "equipo cómputo"],
             "Marcas":                    ["marcas"],
             "Patentes":                  ["patentes", "marcas y patentes"],
             "Depreciación acumulada": [
@@ -107,11 +107,18 @@ class ProjectionCalculator(FinancialCalculator):
             "Impuestos a la utilidad por pagar": [
                 "impuestos a la utilidad por pagar", "impuestos por pagar",
                 "isr por pagar", "ptu por pagar",
-                "impuestos retenidos",
                 "provisión de impuestos", "impuestos acumulados",
             ],
             "IVA por causar o trasladar":  ["iva por causar o trasladar", "iva por causar", "iva trasladado no cobrado"],
             "IVA causado o trasladado":    ["iva causado o trasladado", "i.v.a trasladado", "iva cobrado", "i.v.a. trasladado"],
+            "Impuestos retenidos por enterar": [
+                "impuestos retenidos",
+                "iva retenido pendiente",
+                "iva retenido acreditable",
+                "isr retenido acreditable",
+                "retenciones por enterar",
+                "impuestos retenidos por enterar",
+            ],
             # Pasivo Largo Plazo
             "Acreedores diversos a largo plazo":    ["acreedores diversos a largo plazo", "pasivo l.p.", "pasivo a largo plazo"],
             "Cuentas por pagar a largo plazo":      ["cuentas por pagar a largo plazo", "deuda a largo plazo"],
@@ -120,27 +127,30 @@ class ProjectionCalculator(FinancialCalculator):
             "Capital social":  self.kw_capital_social + ["certif. aportación", "certificados de aportación"],
             "Reserva legal":   ["reserva legal", "reservas"],
             "Utilidades o pérdidas de ejercicios anteriores": [
-                "utilidades acumuladas",
+                # GCMK — abreviaciones específicas
+                "resuls. ejercicios ant.",
+                "resuls, ejercicios ant.",
+                "resul. ejercicios ant.",
+                "resuls.",
+                "resuls",
+                # Formatos genéricos seguros
+                "resultado de ejercicios anteriores",
                 "resultados de ejercicios anteriores",
                 "utilidades de ejercicios anteriores",
+                "utilidades acumuladas",
                 "pérdidas acumuladas",
-                "pérdida del ejercicio",
-                "utilidades y perdidas acum.",
-                "utilidades y perdidas acumuladas",
-                "resuls, ejercicios ant.",
-                "resuls. ejercicios ant.",
-                "resuls", "resuls.",
-                "resultados",
+                "perdidas acumuladas",
                 "utilid. ejercicios",
-                "utilidades de ejercicios",
-                "utilidad neta",
+                "resuls. ejercicios",
+                # Contalink — se procesa con lógica de row mínimo
+                "resultado del ejercicio",
             ],
         }
 
         # Alias unificado (retrocompatibilidad con cualquier llamada legada)
         self.concept_keywords = {**self.er_keywords, **self.bg_keywords}
 
-    def _clean_number(self, text: str) -> float | None:
+    def _clean_number(self, text: str) -> Decimal | None:
         """
         Sobreescritura local para limpiar números sucios del OCR (ej. 6.200.47)
         específica para el motor de proyecciones, evitando conflictos con
@@ -164,9 +174,9 @@ class ProjectionCalculator(FinancialCalculator):
             parts = s.split(".")
             s = "".join(parts[:-1]) + "." + parts[-1]
             try:
-                val = float(s)
+                val = Decimal(s)
                 return -abs(val) if is_negative else val
-            except ValueError:
+            except Exception:
                 return None
 
         if "," in s and "." in s:
@@ -184,9 +194,9 @@ class ProjectionCalculator(FinancialCalculator):
                 s = "".join(parts[:-1]) + "." + parts[-1]
 
         try:
-            val = float(s)
+            val = Decimal(s)
             return -abs(val) if is_negative else val
-        except ValueError:
+        except Exception:
             return None
 
     def _preprocess_ocr_data(self, ocr_data: Dict[str, Any]) -> None:
@@ -208,7 +218,7 @@ class ProjectionCalculator(FinancialCalculator):
                         cell["text"] = text_upper.replace(alias, standard.upper())
                         text_upper = cell["text"]
 
-    def _get_exact_first(self, ocr_data: Dict[str, Any], keyword: str, target_col_index: int = None, target_relative_index: int = 0, consumed_set: set = None) -> float | None:
+    def _get_exact_first(self, ocr_data: Dict[str, Any], keyword: str, target_col_index: int = None, target_relative_index: int = 0, consumed_set: set = None) -> Decimal | None:
         """
         BYPASS: Ignora el método padre _find_value. 
         Busca nativamente en la matriz anidada de celdas la primera coincidencia 
@@ -261,9 +271,9 @@ class ProjectionCalculator(FinancialCalculator):
                                 if texto_celda:
                                     val = self._clean_number(texto_celda)
                                     if val is not None:
-                                        found_values.append(float(val))
+                                        found_values.append(Decimal(str(val)))
                                         if target_col_index is not None and c_idx == target_col_index:
-                                            val_estricto = float(val)
+                                            val_estricto = Decimal(str(val))
                         
                         valor_actual = val_estricto
                         if valor_actual is None and found_values:
@@ -274,6 +284,104 @@ class ProjectionCalculator(FinancialCalculator):
                             consumed.add((t_idx, r_idx, kw_col))
                             return valor_actual
         return None
+
+    def _get_first_row_match(
+        self,
+        ocr_data: Dict[str, Any],
+        keyword: str,
+        target_col_index: int = None,
+        target_relative_index: int = 0,
+        consumed_set: set = None
+    ) -> float | None:
+        """
+        Busca el keyword y retorna el valor de la fila con el row más bajo.
+        Esto resuelve el problema de Contalink donde padre y subcuentas
+        tienen el mismo texto base pero diferente número de fila.
+        El padre siempre tiene el row más bajo.
+        """
+        tablas_ocr = ocr_data.get("tables_data", []) or []
+        keyword_lower = keyword.lower().strip()
+        
+        mejor_row = None
+        mejor_valor = None
+        
+        for table in tablas_ocr:
+            rows = {}
+            for cell in table:
+                rows.setdefault(int(cell.get("row", 0)), []).append(cell)
+            
+            for r_idx, row_cells in rows.items():
+                row_cells_sorted = sorted(row_cells, key=lambda c: int(c.get("col", 0)))
+                
+                # Buscar el keyword en las celdas de texto de esta fila
+                texto_fila = " ".join([
+                    str(c.get("text", "")).lower().strip() 
+                    for c in row_cells_sorted
+                ])
+                
+                if keyword_lower not in texto_fila:
+                    continue
+                
+                # Verificar que la celda no esté consumida
+                celda_key = f"{r_idx}_{target_col_index or 0}"
+                if consumed_set and celda_key in consumed_set:
+                    continue
+                
+                # Encontrar en qué columna está el keyword
+                col_keyword = None
+                for cell in row_cells_sorted:
+                    cell_text = str(cell.get("text", "")).lower().strip()
+                    if keyword_lower in cell_text:
+                        col_keyword = int(cell.get("col", 0))
+                        break
+
+                if col_keyword is None:
+                    continue
+
+                # Tomar el valor numérico de la columna más cercana a la DERECHA del keyword
+                # Esto evita tomar valores de activos que están a la IZQUIERDA del keyword
+                cols_con_valor = [
+                    c for c in row_cells_sorted
+                    if int(c.get("col", 0)) > col_keyword  # solo columnas a la derecha del keyword
+                    and self._clean_number(str(c.get("text", ""))) is not None
+                ]
+
+                # Si no hay valores a la derecha, buscar en target_col_index específico
+                if not cols_con_valor:
+                    if target_col_index is not None:
+                        cols_con_valor = [
+                            c for c in row_cells_sorted
+                            if int(c.get("col", 0)) == target_col_index
+                            and self._clean_number(str(c.get("text", ""))) is not None
+                        ]
+                    if not cols_con_valor:
+                        continue
+
+                # Tomar la primera columna a la derecha del keyword
+                if target_col_index is not None:
+                    col_target = next(
+                        (c for c in cols_con_valor if int(c.get("col", 0)) == target_col_index),
+                        cols_con_valor[0]  # fallback: primera a la derecha
+                    )
+                else:
+                    col_target = cols_con_valor[0]  # primera columna a la derecha del keyword
+
+                if col_target is None:
+                    continue
+
+                valor = self._clean_number(str(col_target.get("text", "")))
+                if valor is None:
+                    continue
+
+                # Guardar si es el row más bajo encontrado hasta ahora
+                if mejor_row is None or r_idx < mejor_row:
+                    mejor_row = r_idx
+                    mejor_valor = valor
+                    if consumed_set is not None:
+                        celda_key = f"{r_idx}_{int(col_target.get('col', 0))}"
+                        consumed_set.add(celda_key)
+        
+        return mejor_valor
 
     def _get_exact_first_with_text(self, ocr_data: Dict[str, Any], keyword: str, consumed_set: set = None) -> tuple:
         """
@@ -323,10 +431,10 @@ class ProjectionCalculator(FinancialCalculator):
                                     val = self._clean_number(texto_celda)
                                     if val is not None:
                                         consumed.add((t_idx, r_idx, kw_col))
-                                        return float(val), row_text
+                                        return Decimal(str(val)), row_text
         return None, ""
 
-    def _get_all_matches_sum(self, ocr_data: Dict[str, Any], keywords: List[str], target_col_index: int = None, target_relative_index: int = 0, consumed_set: set = None) -> float:
+    def _get_all_matches_sum(self, ocr_data: Dict[str, Any], keywords: List[str], target_col_index: int = None, target_relative_index: int = 0, consumed_set: set = None) -> Decimal:
         """
         Busca y suma TODOS los valores numéricos de filas que coincidan con 
         cualquiera de las palabras clave, sin duplicar filas.
@@ -335,7 +443,7 @@ class ProjectionCalculator(FinancialCalculator):
         """
         tablas_ocr = ocr_data.get("tables_data", []) or []
         kws = [k.lower() for k in keywords]
-        total_sum = 0.0
+        total_sum = Decimal("0.00")
         consumed = consumed_set if consumed_set is not None else ocr_data.setdefault("used_rows", set())
         last_extracted_value = None  # Guard jerárquico: evita sumar subcuentas redundantes
 
@@ -386,9 +494,9 @@ class ProjectionCalculator(FinancialCalculator):
                                 if texto_celda:
                                     val = self._clean_number(texto_celda)
                                     if val is not None:
-                                        found_values.append(float(val))
+                                        found_values.append(Decimal(str(val)))
                                         if target_col_index is not None and c_idx == target_col_index:
-                                            val_estricto = float(val)
+                                            val_estricto = Decimal(str(val))
                         
                         valor_actual = val_estricto
                         if valor_actual is None and found_values:
@@ -422,7 +530,7 @@ class ProjectionCalculator(FinancialCalculator):
         """
         tablas_ocr = ocr_data.get("tables_data", []) or []
         kws = [k.lower() for k in keywords]
-        total_sum = 0.0
+        total_sum = Decimal("0.00")
         combined_text = ""
         consumed = consumed_set if consumed_set is not None else ocr_data.setdefault("used_rows", set())
         last_extracted_value = None  # Guard jerárquico
@@ -478,9 +586,9 @@ class ProjectionCalculator(FinancialCalculator):
                                 if texto_celda:
                                     val = self._clean_number(texto_celda)
                                     if val is not None:
-                                        found_values.append(float(val))
+                                        found_values.append(Decimal(str(val)))
                                         if target_col_index is not None and c_idx == target_col_index:
-                                            val_estricto = float(val)
+                                            val_estricto = Decimal(str(val))
                                             
                         valor_actual = val_estricto
                         if valor_actual is None and found_values:
@@ -502,6 +610,39 @@ class ProjectionCalculator(FinancialCalculator):
                             if not sum_all:
                                 return (total_sum, combined_text.strip())
         return (total_sum, combined_text.strip()) if combined_text else (None, "")
+
+    def _detectar_tipo_periodo(self, periodo_base: str) -> str:
+        """
+        Detecta si el periodo base es anual, trimestral o mensual.
+        Retorna: "anual", "trimestral" o "mensual"
+        """
+        if not periodo_base:
+            return "anual"  # fallback conservador
+
+        texto = periodo_base.lower().strip()
+
+        meses = ["enero","febrero","marzo","abril","mayo","junio",
+                 "julio","agosto","septiembre","octubre","noviembre","diciembre"]
+
+        # Anual: contiene "ejercicio" o año completo (enero a diciembre)
+        if "ejercicio" in texto:
+            return "anual"
+
+        meses_encontrados = [m for m in meses if m in texto]
+
+        if len(meses_encontrados) >= 2:
+            if "enero" in meses_encontrados and "diciembre" in meses_encontrados:
+                return "anual"
+            return "trimestral"
+
+        if len(meses_encontrados) == 1:
+            return "mensual"
+
+        # Solo tiene año (ej. "2025") → anual
+        if any(w.isdigit() and len(w) == 4 for w in texto.split()):
+            return "anual"
+
+        return "anual"  # fallback conservador
 
     def _detectar_columna_periodo(self, tablas_ocr, periodo_base):
         """
@@ -574,9 +715,9 @@ class ProjectionCalculator(FinancialCalculator):
 
         return None
 
-    def _redondear(self, valor: float) -> float:
+    def _redondear(self, valor: Decimal) -> Decimal:
         """Redondeo matemático tradicional (0.5 siempre sube). Evita redondeo bancario de Python."""
-        return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        return Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     def calcular_proyeccion_edo_resultados(
         self,
@@ -604,46 +745,52 @@ class ProjectionCalculator(FinancialCalculator):
             kw_ventas = self.concept_keywords.get("Ventas netas / Ingresos por servicios", self.kw_ventas_netas)
             ventas_base = self._find_value(tablas_ocr, kw_ventas, take_last=False)
             
-        ventas_base = abs(ventas_base) if ventas_base else 0.0
+        ventas_base = abs(Decimal(str(ventas_base))) if ventas_base else Decimal("0.00")
 
         # 2. Calcular Ventas Proyectadas (Combinando crecimiento real + inflación)
         sup_v = next((s for s in supuestos_ingresos if s.concepto == "Ventas netas / Ingresos por servicios"), None)
         
         if sup_v and not sup_v.mantener_igual:
-            ventas_proy = ventas_base * (1 + (sup_v.variacion / 100)) * (1 + (inflacion_esperada / 100))
+            ventas_proy = Decimal(str(ventas_base)) * (Decimal("1") + (Decimal(str(sup_v.variacion)) / Decimal("100"))) * (Decimal("1") + (Decimal(str(inflacion_esperada)) / Decimal("100")))
         else:
-            ventas_proy = ventas_base * (1 + (inflacion_esperada / 100))
+            ventas_proy = Decimal(str(ventas_base)) * (Decimal("1") + (Decimal(str(inflacion_esperada)) / Decimal("100")))
 
         val = {
-            "ventas": float(ventas_proy),
-            "costo_ventas": 0.0,
-            "gastos_operativos": 0.0,
-            "gastos_financieros": 0.0,
-            "otros_ingresos": 0.0,
-            "otros_gastos": 0.0,
-            "productos_financieros": 0.0,  # ← agregar esta llave
-            "tasa_impuestos": 0.0
+            "ventas": ventas_proy,
+            "costo_ventas": Decimal("0.00"),
+            "gastos_operativos": Decimal("0.00"),
+            "gastos_financieros": Decimal("0.00"),
+            "otros_ingresos": Decimal("0.00"),
+            "otros_gastos": Decimal("0.00"),
+            "productos_financieros": Decimal("0.00"),
+            "tasa_impuestos": Decimal("0.00")
         }
         filas_tabla = []
         filas_consumidas = set()
 
         def solve_rubro(sup, v_base, v_proy_sales, b_sales):
+            v_b = Decimal(str(v_base))
+            v_p_s = Decimal(str(v_proy_sales))
+            b_s = Decimal(str(b_sales))
+            infl_esp = Decimal(str(inflacion_esperada))
+            
             if sup.mantener_igual or sup.variacion == 0.0 or sup.variacion == 0:
-                # Fijo: solo crece con inflación
-                return self._redondear(v_base * (1 + (inflacion_esperada / 100)))
+                # Fijo: solo crece con inflación — SIN redondear (acumulación exacta)
+                return v_b * (Decimal("1") + (infl_esp / Decimal("100")))
+            
             elif sup.variacion is None:
-                # Variable: sigue proporción de ventas (inflación ya integrada en v_proy_sales)
-                if b_sales > 0:
-                    proporcion = v_base / b_sales
-                    return self._redondear(proporcion * v_proy_sales)
+                # Variable: proporción exacta sobre ventas proyectadas
+                if b_s > Decimal("0"):
+                    proporcion = v_b / b_s  # máxima precisión Decimal
+                    return proporcion * v_p_s
                 else:
-                    return self._redondear(v_base)
+                    return v_b
+            
             else:
-                # Manual: el usuario definió su % de crecimiento real
-                # Se aplica inflación encima para ser consistente con las ventas
-                return self._redondear(v_base * (1 + (sup.variacion / 100.0)) * (1 + (inflacion_esperada / 100)))
+                # Manual: % del usuario + inflación — SIN redondear
+                var_usr = Decimal(str(sup.variacion))
+                return v_b * (Decimal("1") + (var_usr / Decimal("100"))) * (Decimal("1") + (infl_esp / Decimal("100")))
 
-        # --- FUNCIÓN DE EXTRACCIÓN ROBUSTA (Con Bucle y take_last=False) ---
         def extract_value(kw_list):
             v = None
             for keyword in kw_list:
@@ -652,7 +799,9 @@ class ProjectionCalculator(FinancialCalculator):
                     break
             if v is None:
                 v = self._find_value(tablas_ocr, kw_list, take_last=False)
-            return float(v) if v is not None else 0.0
+            if v is not None:
+                return Decimal(str(v))
+            return Decimal("0.00")
 
         # --- PROCESAR INGRESOS ---
         for sup in supuestos_ingresos:
@@ -678,8 +827,8 @@ class ProjectionCalculator(FinancialCalculator):
             filas_tabla.append({
                 "concepto": sup.concepto,
                 "valor_base": float(v_base),
-                "variacion_aplicada": ((v_proy/v_base)-1)*100 if v_base != 0 else 0,
-                "valor_proyectado": float(v_proy)
+                "variacion_aplicada": ((float(v_proy) / float(v_base)) - 1) * 100 if v_base != Decimal("0.00") and v_base != Decimal("0") else 0.0,
+                "valor_proyectado": float(self._redondear(v_proy))
             })
 
         # --- PROCESAR COSTOS Y GASTOS (CON BYPASS EXTENDIDO) ---
@@ -689,7 +838,7 @@ class ProjectionCalculator(FinancialCalculator):
             if sup.concepto == "Gastos de administración":
                 v_admin = abs(extract_value(["gastos de administración", "gastos de administracion"]))
                 v_grales = self._get_exact_first(ocr_data, "gastos generales", target_col_index=target_col_index, consumed_set=filas_consumidas)
-                v_grales = abs(v_grales) if v_grales is not None else 0.0
+                v_grales = abs(Decimal(str(v_grales))) if v_grales is not None else Decimal("0.00")
                 
                 # Insertar Gastos Generales como fila independiente si existe
                 if v_grales > 0:
@@ -698,8 +847,8 @@ class ProjectionCalculator(FinancialCalculator):
                     filas_tabla.append({
                         "concepto": "Gastos generales",
                         "valor_base": float(v_grales),
-                        "variacion_aplicada": ((v_grales_proy/v_grales)-1)*100 if v_grales != 0 else 0,
-                        "valor_proyectado": float(v_grales_proy)
+                        "variacion_aplicada": ((float(v_grales_proy) / float(v_grales)) - 1) * 100 if v_grales != Decimal("0.00") and v_grales != Decimal("0") else 0.0,
+                        "valor_proyectado": float(self._redondear(v_grales_proy))
                     })
                 
                 v_base = v_admin
@@ -712,15 +861,15 @@ class ProjectionCalculator(FinancialCalculator):
             elif sup.concepto == "Costo de ventas/Costo por servicios":
                 v_base = abs(extract_value(self.kw_costo_de_ventas))
                 
-                if v_base > 0 and ventas_base > 0 and (v_base / ventas_base) < 0.10: 
+                if v_base > Decimal("0") and ventas_base > Decimal("0") and (v_base / ventas_base) < Decimal("0.10"): 
                     # Extraemos la primera compra directamente del texto
                     v_compras = self._get_exact_first(ocr_data, "compras", target_col_index=target_col_index, consumed_set=filas_consumidas)
                     v_dev = self._get_exact_first(ocr_data, "devoluciones, descuentos o bonificaciones sobre compras", target_col_index=target_col_index, consumed_set=filas_consumidas)
                     
-                    v_compras = abs(v_compras) if v_compras is not None else 0.0
-                    v_dev = abs(v_dev) if v_dev is not None else 0.0
+                    v_compras = abs(Decimal(str(v_compras))) if v_compras is not None else Decimal("0.00")
+                    v_dev = abs(Decimal(str(v_dev))) if v_dev is not None else Decimal("0.00")
                     
-                    if v_compras > 0:
+                    if v_compras > Decimal("0"):
                         v_base = v_base + v_compras - v_dev
             
             else:
@@ -741,24 +890,22 @@ class ProjectionCalculator(FinancialCalculator):
             filas_tabla.append({
                 "concepto": sup.concepto,
                 "valor_base": float(v_base),
-                "variacion_aplicada": ((v_proy/v_base)-1)*100 if v_base != 0 else 0,
-                "valor_proyectado": float(v_proy)
+                "variacion_aplicada": ((float(v_proy) / float(v_base)) - 1) * 100 if v_base != Decimal("0.00") and v_base != Decimal("0") else 0.0,
+                "valor_proyectado": float(self._redondear(v_proy))
             })
 
         # 4. Cálculo de cascada parcial (Utilidad Antes de Impuestos)
-        utilidad_bruta = self._redondear(val["ventas"] - val["costo_ventas"])
-        utilidad_operativa = self._redondear(
-            utilidad_bruta 
-            - val["gastos_operativos"] 
-            + val["otros_ingresos"] 
+        # Cascada exacta — SIN _redondear() en pasos intermedios
+        # Los acumuladores val[] ya contienen Decimals de precisión máxima
+        utilidad_bruta = val["ventas"] - val["costo_ventas"]
+        utilidad_operativa = (
+            utilidad_bruta
+            - val["gastos_operativos"]
+            + val["otros_ingresos"]
             - val["otros_gastos"]
         )
-        resultado_financiero = self._redondear(
-            val["gastos_financieros"] - val["productos_financieros"]  # neto financiero
-        )
-        utilidad_antes_impuestos = self._redondear(
-            utilidad_operativa - resultado_financiero
-        )
+        resultado_financiero = val["gastos_financieros"] - val["productos_financieros"]
+        utilidad_antes_impuestos = utilidad_operativa - resultado_financiero
 
         uai_proy = utilidad_antes_impuestos
 
@@ -806,7 +953,7 @@ class ProjectionCalculator(FinancialCalculator):
                         for cell in row_cells:
                             if int(cell.get("col", 0)) > 0:
                                 val = self._clean_number(str(cell.get("text", "")))
-                                if val is not None and val != 0:
+                                if val is not None and val != Decimal("0"):
                                     v_ptu_base = abs(val)
                                     break
                     if v_ptu_base is not None:
@@ -814,35 +961,29 @@ class ProjectionCalculator(FinancialCalculator):
                 if v_ptu_base is not None:
                     break
 
-        v_ptu_base = abs(v_ptu_base) if v_ptu_base else 0.0
+        v_ptu_base = abs(v_ptu_base) if v_ptu_base else Decimal("0.00")
 
         # --- CÁLCULO DE PTU ---
-        # Solo calcular PTU si el documento base lo traía Y el usuario definió una tasa
-        # O si el usuario lo activó explícitamente con un % manual
-        ptu_viene_del_doc = v_ptu_base > 0
+        ptu_viene_del_doc = v_ptu_base > Decimal("0")
         ptu_activado_por_usuario = sup_ptu is not None and sup_ptu.variacion is not None and sup_ptu.variacion > 0
 
-        if uai_proy > 0 and (ptu_viene_del_doc or ptu_activado_por_usuario):
+        if uai_proy > Decimal("0") and (ptu_viene_del_doc or ptu_activado_por_usuario):
             if sup_ptu and sup_ptu.variacion is not None and sup_ptu.variacion > 0:
-                # El usuario definió una tasa explícita — usarla
-                tasa_ptu = sup_ptu.variacion / 100.0
+                tasa_ptu = Decimal(str(sup_ptu.variacion)) / Decimal("100")
             elif ptu_viene_del_doc:
-                # El doc lo trae pero el usuario no definió tasa
-                # NO asumir 10% — dejar que el usuario lo defina
-                ptu_proy = 0.0
+                ptu_proy = Decimal("0.00")
                 tasa_ptu_aplicada = 0.0
-                # Agregar fila y continuar sin calcular
                 filas_tabla.append({
                     "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
                     "valor_base": float(v_ptu_base),
                     "variacion_aplicada": 0.0,
                     "valor_proyectado": 0.0
                 })
-                tasa_ptu = None  # señal para saltar el cálculo
+                tasa_ptu = None
             
             if tasa_ptu is not None:
-                ptu_proy = uai_proy * tasa_ptu
-                tasa_ptu_aplicada = tasa_ptu * 100
+                ptu_proy = self._redondear(uai_proy * tasa_ptu)
+                tasa_ptu_aplicada = float(tasa_ptu * Decimal("100"))
                 filas_tabla.append({
                     "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
                     "valor_base": float(v_ptu_base),
@@ -850,7 +991,7 @@ class ProjectionCalculator(FinancialCalculator):
                     "valor_proyectado": float(ptu_proy)
                 })
         else:
-            ptu_proy = 0.0
+            ptu_proy = Decimal("0.00")
             tasa_ptu_aplicada = 0.0
             filas_tabla.append({
                 "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
@@ -864,22 +1005,20 @@ class ProjectionCalculator(FinancialCalculator):
         kw_isr = self.er_keywords.get("ISR", ["isr"])
         v_isr_base = abs(extract_value(kw_isr))
 
-        isr_viene_del_doc = v_isr_base > 0
+        isr_viene_del_doc = v_isr_base > Decimal("0")
         isr_activado_por_usuario = sup_isr is not None and sup_isr.variacion is not None and sup_isr.variacion > 0
 
-        if uai_proy > 0 and (isr_viene_del_doc or isr_activado_por_usuario):
+        if uai_proy > Decimal("0") and (isr_viene_del_doc or isr_activado_por_usuario):
             if sup_isr and sup_isr.variacion is not None and sup_isr.variacion > 0:
-                # El usuario definió una tasa explícita — usarla
                 base_isr = uai_proy - ptu_proy
-                tasa_isr = sup_isr.variacion / 100.0
-                isr_proy = base_isr * tasa_isr
-                tasa_isr_aplicada = tasa_isr * 100
+                tasa_isr = Decimal(str(sup_isr.variacion)) / Decimal("100")
+                isr_proy = self._redondear(base_isr * tasa_isr)
+                tasa_isr_aplicada = float(tasa_isr * Decimal("100"))
             else:
-                # El doc lo trae pero el usuario no definió tasa — no asumir 30%
-                isr_proy = 0.0
+                isr_proy = Decimal("0.00")
                 tasa_isr_aplicada = 0.0
         else:
-            isr_proy = 0.0
+            isr_proy = Decimal("0.00")
             tasa_isr_aplicada = 0.0
 
         filas_tabla.append({
@@ -890,24 +1029,61 @@ class ProjectionCalculator(FinancialCalculator):
         })
 
         total_impuestos_proyectados = ptu_proy + isr_proy
+        utilidad_neta = utilidad_antes_impuestos - total_impuestos_proyectados
 
-        # Restamos la suma de todos los impuestos extraídos e impactados por la regla de proyección
-        utilidad_neta = self._redondear(utilidad_antes_impuestos - total_impuestos_proyectados)
+        # Calcular utilidad neta base del documento OCR
+        # Buscamos directamente el valor de utilidad neta/total del documento base
+        # Es más preciso que reconstruirlo desde las filas
+
+        # Intento 1: buscar "utilidad neta" o "utilidad total" directamente del OCR
+        kw_utilidad_base = [
+            "utilidad neta", "utilidad total", "utilidad del ejercicio",
+            "utilidad (pérdida) neta", "utilidad (perdida) neta",
+            "resultado del ejercicio", "resultado neto"
+        ]
+
+        utilidad_neta_base_ocr = None
+        for kw in kw_utilidad_base:
+            val_encontrado = self._get_exact_first(
+                ocr_data, kw,
+                target_col_index=target_col_index,
+                consumed_set=None  # ← No consumir — solo leer
+            )
+            if val_encontrado is not None:
+                utilidad_neta_base_ocr = val_encontrado
+                break
+
+        # Intento 2: si no encontró, reconstruir desde filas (incluyendo impuestos)
+        if utilidad_neta_base_ocr is None:
+            utilidad_reconstruida = Decimal(str(ventas_base))
+            for f in filas_tabla:
+                if f["concepto"] == "Ventas netas / Ingresos por servicios":
+                    continue
+                v_f = Decimal(str(f["valor_base"]))
+                if v_f > Decimal("0"):
+                    if f["concepto"] in ["Otros ingresos", "Productos financieros"]:
+                        utilidad_reconstruida += v_f
+                    else:
+                        utilidad_reconstruida -= v_f
+            utilidad_neta_base_ocr = self._redondear(utilidad_reconstruida)
+
+        utilidad_neta_base_ocr = self._redondear(Decimal(str(utilidad_neta_base_ocr)))
 
         return {
             "tablas_proyectadas": filas_tabla,
-            "ventas": float(val["ventas"]),
-            "costo_ventas": float(val["costo_ventas"]),
-            "utilidad_bruta": float(utilidad_bruta),
-            "gastos_operativos": float(val["gastos_operativos"]),
-            "utilidad_operativa": float(utilidad_operativa),
-            "gastos_financieros": float(val["gastos_financieros"]),
-            "productos_financieros": float(val["productos_financieros"]),  # ← agregar
-            "resultado_financiero_neto": float(resultado_financiero),       # ← agregar
-            "utilidad_antes_impuestos": float(utilidad_antes_impuestos),
-            "impuestos": float(total_impuestos_proyectados),
-            "utilidad_neta": float(utilidad_neta),
-            "impuestos_totales": float(total_impuestos_proyectados)
+            "ventas": float(self._redondear(val["ventas"])),
+            "costo_ventas": float(self._redondear(val["costo_ventas"])),
+            "utilidad_bruta": float(self._redondear(utilidad_bruta)),
+            "gastos_operativos": float(self._redondear(val["gastos_operativos"])),
+            "utilidad_operativa": float(self._redondear(utilidad_operativa)),
+            "gastos_financieros": float(self._redondear(val["gastos_financieros"])),
+            "productos_financieros": float(self._redondear(val.get("productos_financieros", Decimal("0.00")))),
+            "resultado_financiero_neto": float(self._redondear(resultado_financiero)),
+            "utilidad_antes_impuestos": float(self._redondear(utilidad_antes_impuestos)),
+            "impuestos": float(self._redondear(total_impuestos_proyectados)),
+            "utilidad_neta": float(self._redondear(utilidad_neta)),
+            "impuestos_totales": float(self._redondear(total_impuestos_proyectados)),
+            "utilidad_neta_base": float(self._redondear(Decimal(str(utilidad_neta_base_ocr)))),  # ← nuevo campo
         }
 
     def calcular_proyeccion_balance(
@@ -922,45 +1098,49 @@ class ProjectionCalculator(FinancialCalculator):
         utilidad_neta_proforma: float,
         ventas_proy_incremento_pct: float,
         inflacion_esperada: float = 0.0,
-        periodo_base: str = None
+        periodo_base: str = None,
+        total_impuestos_proforma: float = 0.0,
+        gasto_depreciacion_proforma: float = 0.0,
+        utilidad_neta_base: float = 0.0,
+        periodicidad: str = "mensual",
     ) -> Dict[str, Any]:
         
         self._preprocess_ocr_data(ocr_data)
         tablas_ocr = ocr_data.get("tables_data", []) or []
         filas_tabla = []
 
-        # ESCANEO DINÁMICO DE CABECERAS PARA EXTRACCIÓN ESTRICTA
-        target_col_index = None
+        # DETECCIÓN DE COLUMNA — usa el detector en cascada del ER
+        target_col_index = self._detectar_columna_periodo(tablas_ocr, periodo_base)
+        
+        # Detectar tipo de periodo para cuentas especiales anuales
+        es_anual = periodicidad == "anual"
+        
         target_relative_index = 0
-        if periodo_base:
-            texto_limpio = str(periodo_base).lower().replace('ejercicio', '').replace('periodo', '').strip()
-            p_base_lower = texto_limpio.split()[0] if texto_limpio else ""
-            if p_base_lower:
-                for table in tablas_ocr:
-                    rows = {}
-                    for cell in table:
-                        r_idx = int(cell.get("row", 0))
-                        rows.setdefault(r_idx, []).append(cell)
-                    for r_idx in sorted(rows.keys())[:5]: # Primeras 5 filas
-                        row_cells = sorted(rows[r_idx], key=lambda c: int(c.get("col", 0)))
-                        for cell in row_cells:
-                            if p_base_lower in str(cell.get("text", "")).strip().lower():
-                                target_col_index = int(cell.get("col", 0))
-                                periodos = [c for c in row_cells if int(c.get("col", 0)) > 0 and len(str(c.get("text", "")).strip()) > 0]
-                                for p_idx, p_cell in enumerate(periodos):
-                                    if p_base_lower in str(p_cell.get("text", "")).strip().lower():
-                                        target_relative_index = p_idx
-                                        break
-                                break
-                        if target_col_index is not None: break
-                    if target_col_index is not None: break
+
+        # Calcular target_relative_index para compatibilidad con _get_all_matches_sum
+        if target_col_index is not None:
+            for table in tablas_ocr:
+                rows = {}
+                for cell in table:
+                    rows.setdefault(int(cell.get("row", 0)), []).append(cell)
+                for r_idx in sorted(rows.keys())[:5]:
+                    row_cells = sorted(rows[r_idx], key=lambda c: int(c.get("col", 0)))
+                    cols_numericas = [c for c in row_cells if int(c.get("col", 0)) > 0 
+                                    and str(c.get("text", "")).strip()]
+                    for p_idx, p_cell in enumerate(cols_numericas):
+                        if int(p_cell.get("col", 0)) == target_col_index:
+                            target_relative_index = p_idx
+                            break
+                    if target_relative_index > 0:
+                        break
+                if target_relative_index > 0:
+                    break
         
-        print(f"DEBUG OCR Balance - target_col_index: {target_col_index}, relative_index: {target_relative_index}")
-        
+
         # --- BLOQUE DE EXTRACCIÓN CON CORRECCIÓN DE SIGNO ---
         def extraer_valor_con_signo(v_extraido, row_text, concepto_nombre, seccion):
-            if v_extraido is None: return 0.0
-            valor = abs(v_extraido)
+            if v_extraido is None: return Decimal("0.00")
+            valor = abs(Decimal(str(v_extraido)))
             row_lower = row_text.lower()
             
             # 1. Naturaleza inicial por palabras negativas
@@ -984,41 +1164,110 @@ class ProjectionCalculator(FinancialCalculator):
 
         # Totales por sección
         totales = {
-            "total_activo_circulante": 0.0,
-            "total_activo_no_circulante": 0.0,
-            "total_pasivo_corto": 0.0,
-            "total_pasivo_largo": 0.0,
-            "total_capital_contribuido": 0.0,
-            "total_capital_ganado": 0.0
+            "total_activo_circulante": Decimal("0.00"),
+            "total_activo_no_circulante": Decimal("0.00"),
+            "total_pasivo_corto": Decimal("0.00"),
+            "total_pasivo_largo": Decimal("0.00"),
+            "total_capital_contribuido": Decimal("0.00"),
+            "total_capital_ganado": Decimal("0.00")
         }
         
         filas_consumidas = set()
 
+        # Cuentas con CÁLCULO ESPECIAL — se manejan en procesar_seccion
+        CUENTAS_ESPECIALES = {
+            "Reserva legal",
+            "Utilidades o pérdidas de ejercicios anteriores",
+            "Utilidad o pérdida del ejercicio",
+            "Impuestos a la utilidad por pagar",
+        }
+
         def solve_balance_rubro(sup, v_base):
-            # CORRECCIÓN A (NIF/IFRS - Costo Histórico):
-            # En el Balance General, "Mantener igual" congela el saldo absoluto.
-            # Los Activos Fijos NO se re-expresan por inflación en un balance proyectado
-            # porque se registran a costo histórico, no a valor de reposición.
-            # (La inflación solo aplica en el ER para proteger el poder adquisitivo de gastos.)
+            v_b = Decimal(str(v_base))
+            # PRIORIDAD 1: Usuario marcó "mantener igual" -> congela siempre
             if sup.mantener_igual:
-                return self._redondear(v_base)
-            elif sup.variacion != 0:
-                return self._redondear(v_base * (1 + (sup.variacion / 100)))
-            else:
-                # Método Porcentaje de Ventas por defecto (Escalabilidad operativa)
-                # Esto asegura que rubros como Proveedores, IVA por causar e Impuestos retenidos
-                # crezcan en la misma proporción que las ventas.
-                return self._redondear(v_base * (1 + (ventas_proy_incremento_pct / 100)))
+                return self._redondear(v_b)
+            
+            # PRIORIDAD 2: Usuario definió % manual (Su Juicio Crítico) -> aplica ese %
+            if sup.variacion is not None and sup.variacion != 0:
+                # Variación manual pura
+                var_usr = Decimal(str(sup.variacion))
+                return self._redondear(v_b * (Decimal("1") + (var_usr / Decimal("100"))))
+
+            # PRIORIDAD 3: Automático si variacion==0 -> Se congela
+            return self._redondear(v_b)
 
         def procesar_seccion(lista_sups, key_total):
             for sup in lista_sups:
                 # Casos especiales automáticos (Capital Ganado)
                 if sup.concepto == "Utilidad o pérdida del ejercicio":
-                    v_base = 0.0
-                    v_proy = utilidad_neta_proforma
+                    v_base = Decimal("0.00")
+                    v_proy = Decimal(str(utilidad_neta_proforma))
+
+                elif sup.concepto == "Impuestos a la utilidad por pagar":
+                    # Juicio crítico: esta cuenta = ISR + PTU del ER proforma
+                    kw = self.bg_keywords.get(sup.concepto, [sup.concepto.lower()])
+                    v_base_ocr, row_text_lower = self._get_all_matches_sum_with_text(
+                        ocr_data, kw,
+                        force_abs=True,
+                        sum_all=True,
+                        target_col_index=target_col_index,
+                        target_relative_index=target_relative_index,
+                        consumed_set=filas_consumidas
+                    )
+                    v_base = abs(Decimal(str(v_base_ocr))) if v_base_ocr else Decimal("0.00")
+                    
+                    if sup.mantener_igual:
+                        v_proy = self._redondear(v_base)
+                    elif sup.variacion != 0:
+                        v_proy = self._redondear(v_base * (Decimal("1") + (Decimal(str(sup.variacion)) / Decimal("100"))))
+                    else:
+                        if total_impuestos_proforma > 0:
+                            # Hay ISR+PTU proyectados del ER → usar ese valor exacto
+                            v_proy = self._redondear(Decimal(str(total_impuestos_proforma)))
+                        elif utilidad_neta_proforma < 0:
+                            # Hay pérdida → definitivamente no hay impuestos que pagar
+                            v_proy = Decimal("0.00")
+                        else:
+                            # Hay utilidad pero el usuario no activó ISR/PTU → conservar valor histórico
+                            v_proy = self._redondear(v_base)
+
+                elif sup.concepto == "Reserva legal":
+                    kw = self.bg_keywords.get(sup.concepto, ["reserva legal"])
+                    v_b_val = self._get_all_matches_sum(
+                        ocr_data, kw,
+                        target_col_index=target_col_index,
+                        target_relative_index=target_relative_index,
+                        consumed_set=filas_consumidas
+                    )
+                    v_base = abs(Decimal(str(v_b_val))) if v_b_val else Decimal("0.00")
+                    
+                    if sup.mantener_igual:
+                        v_proy = self._redondear(v_base)
+                    elif sup.variacion != 0:
+                        v_proy = self._redondear(v_base * (Decimal("1") + (Decimal(str(sup.variacion)) / Decimal("100"))))
+                    else:
+                        # Art. 20 LGSM: solo aplica cálculo automático para ER anual
+                        if es_anual and utilidad_neta_proforma > 0:
+                            incremento_reserva = self._redondear(Decimal(str(utilidad_neta_proforma)) * Decimal("0.05"))
+                            capital_social_proy = Decimal(str(next(
+                                (f["valor_proyectado"] for f in filas_tabla if f["concepto"] == "Capital social"),
+                                0.0
+                            )))
+                            limite_reserva = self._redondear(capital_social_proy * Decimal("0.20"))
+                            
+                            if v_base + incremento_reserva <= limite_reserva:
+                                v_proy = v_base + incremento_reserva
+                            elif v_base < limite_reserva:
+                                v_proy = limite_reserva
+                            else:
+                                v_proy = v_base
+                        else:
+                            # Mensual o sin utilidad -> se congela la reserva legal
+                            v_proy = self._redondear(v_base)
 
                 elif sup.concepto == "Impuestos y derechos":
-                    v_base = 0.0
+                    v_base = Decimal("0.00")
                     
                     # 1. Intentar Modo GCMK (sumar rubros sueltos de impuestos del activo)
                     # Excluimos estrictamente "impuestos a favor" para no chocar con el IVA Acreditable
@@ -1027,62 +1276,102 @@ class ProjectionCalculator(FinancialCalculator):
                     
                     if v_gcmk > 0:
                         # Estamos en GCMK, tomamos la suma y le agregamos el IVA retenido
-                        v_base = abs(v_gcmk)
+                        v_base = abs(Decimal(str(v_gcmk)))
                         v_iva_ret = self._get_exact_first(ocr_data, "iva retenido", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                         if v_iva_ret is not None and v_iva_ret > 0:
-                            v_base += v_iva_ret
+                            v_base += Decimal(str(v_iva_ret))
                     else:
                         # 2. Estamos en TAAS. Tomamos subcuentas específicas sin tocar la cuenta padre del IVA
                         kw_taas = ["impuestos acreditables por pagar", "impuestos y derechos"]
-                        v_base = abs(self._get_all_matches_sum(ocr_data, kw_taas, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas))
+                        v_base = abs(Decimal(str(self._get_all_matches_sum(ocr_data, kw_taas, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas))))
                         
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "IVA causado o trasladado":
                     # SUMATORIA SEGURA: Suma 'iva cobrado' + 'i.v.a trasladado' + variantes
                     kw_iva = self.concept_keywords.get("IVA causado o trasladado", ["iva causado o trasladado"])
-                    v_base = abs(self._get_all_matches_sum(ocr_data, kw_iva, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas))
+                    v_base = abs(Decimal(str(self._get_all_matches_sum(ocr_data, kw_iva, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas))))
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Mobiliario y equipo de oficina":
-                    v_mob = self._get_exact_first(ocr_data, "mobiliario y equipo de oficina", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
-                    if v_mob is None:
+                    kw_mob = self.bg_keywords.get("Mobiliario", ["mobiliario", "muebles y enseres"])
+                    v_mob = self._get_all_matches_sum(ocr_data, kw_mob, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
+                    if v_mob == Decimal("0"):
                         v_mob = self._get_exact_first(ocr_data, "muebles y enseres", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     v_comunicacion = self._get_exact_first(ocr_data, "equipo de comunicación", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     
-                    v_base = (v_mob or 0.0) + (v_comunicacion or 0.0)
-                    v_base = extraer_valor_con_signo(v_base, "mobiliario y comunicación", sup.concepto, key_total)
-                    v_base = v_base if v_base is not None else 0.0
+                    v_base_raw = (v_mob or Decimal("0.00")) + (v_comunicacion or Decimal("0.00"))
+                    v_base_extraido = extraer_valor_con_signo(v_base_raw, "mobiliario y comunicación", sup.concepto, key_total)
+                    v_base = Decimal(str(v_base_extraido)) if v_base_extraido is not None else Decimal("0.00")
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Equipo de cómputo":
                     kw_comp = self.bg_keywords.get("Equipo de cómputo", ["equipo de cómputo"])
                     v_computo = self._get_all_matches_sum(ocr_data, kw_comp, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
-                    v_base = extraer_valor_con_signo(v_computo or 0.0, "equipo de cómputo", sup.concepto, key_total)
-                    v_base = v_base if v_base is not None else 0.0
+                    v_base_extraido = extraer_valor_con_signo(v_computo or Decimal("0.00"), "equipo de cómputo", sup.concepto, key_total)
+                    v_base = Decimal(str(v_base_extraido)) if v_base_extraido is not None else Decimal("0.00")
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Depreciación acumulada":
                     kw_dep = self.concept_keywords.get("Depreciación acumulada", ["(-) deprec. acum.", "deprec. acum.", "dep. acum.", "depreciacion acumulada", "depreciacion", "deprec acum"])
-                    v_base = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
+                    v_base_val = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     
-                    if v_base == 0:
-                        v_base = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
+                    if v_base_val == Decimal("0"):
+                        v_base_val = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                         
-                    v_base = v_base if v_base is not None else 0.0
-                    v_base = -abs(v_base) if v_base != 0 else 0.0
-                    v_proy = solve_balance_rubro(sup, v_base)
+                    v_base = Decimal(str(v_base_val)) if v_base_val is not None else Decimal("0.00")
+                    v_base = -abs(v_base) if v_base != Decimal("0") else Decimal("0.00")
+                    
+                    # JUICIO CRÍTICO: Base histórica (-) Nuevo Gasto del ER
+                    # Ambos son negativos contablemente, la resta aumenta el saldo negativo
+                    v_proy = self._redondear(v_base - abs(Decimal(str(gasto_depreciacion_proforma))))
+
 
                 elif sup.concepto == "Utilidades o pérdidas de ejercicios anteriores":
-                    kw = self.bg_keywords.get(sup.concepto, [sup.concepto.lower()])
-                    # Usamos _get_all_matches_sum para sumar TODAS las subcuentas históricas
-                    # Esto preserva el signo negativo matemático nativo sin forzar un abs()
-                    v_base = self._get_all_matches_sum(ocr_data, kw, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
-                    
-                    if v_base == 0:
-                        v_base = self._find_value(tablas_ocr, kw, take_last=False) or 0.0
-                        
-                    v_proy = solve_balance_rubro(sup, v_base)
+                    kw = self.bg_keywords.get(sup.concepto, [])
+                    v_base = None
+
+                    # Estrategia 1: keywords específicos sin problema de subcuentas
+                    kw_seguros = [k for k in kw if k != "resultado del ejercicio"]
+                    for keyword in kw_seguros:
+                        v_b = self._get_exact_first(
+                            ocr_data, keyword,
+                            target_col_index=target_col_index,
+                            target_relative_index=target_relative_index,
+                            consumed_set=filas_consumidas
+                        )
+                        if v_b is not None:
+                            v_base = Decimal(str(v_b))
+                            break
+
+                    # Estrategia 2: "resultado del ejercicio" con row mínimo (Contalink)
+                    if v_base is None:
+                        v_b = self._get_first_row_match(
+                            ocr_data, "resultado del ejercicio",
+                            target_col_index=target_col_index,
+                            target_relative_index=target_relative_index,
+                            consumed_set=filas_consumidas
+                        )
+                        if v_b is not None:
+                            v_base = Decimal(str(v_b))
+
+                    if v_base is None:
+                        v_base = Decimal("0.00")
+
+                    # Juicio crítico: acumular utilidad del ejercicio base
+                    if sup.mantener_igual:
+                        v_proy = self._redondear(v_base)
+                    elif sup.variacion != 0:
+                        v_proy = self._redondear(v_base * (Decimal("1") + (Decimal(str(sup.variacion)) / Decimal("100"))))
+                    else:
+                        # Solo acumula utilidad base para ER anual
+                        # Para mensual/trimestral el año no cerró → conservar histórico
+                        if es_anual and utilidad_neta_base != 0:
+                            v_proy = self._redondear(v_base + Decimal(str(utilidad_neta_base)))
+                        else:
+                            # Mensual/trimestral → valor histórico conservador
+                            # La utilidad del periodo no "pasó" aún a utilidades acumuladas
+                            v_proy = self._redondear(v_base)
 
                 else:
                     kw = self.bg_keywords.get(sup.concepto, [sup.concepto.lower()])
@@ -1092,7 +1381,7 @@ class ProjectionCalculator(FinancialCalculator):
                     _ACTIVOS_FIJOS = ["edificio", "maquinaria", "transporte", "mobiliario", "cómputo", "computo", "herramienta"]
                     _is_fixed_asset = any(x in sup.concepto.lower() for x in _ACTIVOS_FIJOS)
                     
-                    v_base, row_text_lower = self._get_all_matches_sum_with_text(
+                    v_base_ocr, row_text_lower = self._get_all_matches_sum_with_text(
                         ocr_data, kw,
                         force_abs=_is_pasivo,
                         exclude_dep=_is_fixed_asset,
@@ -1101,13 +1390,14 @@ class ProjectionCalculator(FinancialCalculator):
                         target_relative_index=target_relative_index,
                         consumed_set=filas_consumidas
                     )
+                    v_base_val = v_base_ocr
                     
-                    if v_base is None:
+                    if v_base_val is None:
                         if sup.concepto not in ["Marcas", "Patentes"]:
-                            v_base = self._find_value(tablas_ocr, kw, take_last=False)
+                            v_base_val = self._find_value(tablas_ocr, kw, take_last=False)
                     
-                    v_base = extraer_valor_con_signo(v_base, row_text_lower, sup.concepto, key_total)
-                    v_base = v_base if v_base is not None else 0.0
+                    v_base_extraido = extraer_valor_con_signo(v_base_val, row_text_lower, sup.concepto, key_total)
+                    v_base = Decimal(str(v_base_extraido)) if v_base_extraido is not None else Decimal("0.00")
                     v_proy = solve_balance_rubro(sup, v_base)
                 
                 totales[key_total] += v_proy
@@ -1115,7 +1405,7 @@ class ProjectionCalculator(FinancialCalculator):
                 filas_tabla.append({
                     "concepto": sup.concepto,
                     "valor_base": float(v_base),
-                    "variacion_aplicada": ((v_proy/v_base)-1)*100 if v_base != 0 else 0,
+                    "variacion_aplicada": ((float(v_proy) / float(v_base)) - 1) * 100 if v_base != Decimal("0.00") and v_base != Decimal("0") else 0.0,
                     "valor_proyectado": float(v_proy)
                 })
 
@@ -1128,22 +1418,23 @@ class ProjectionCalculator(FinancialCalculator):
         # Solo lo hacemos de manera manual si NO fue inyectada ni procesada previamente
         if not any(f["concepto"] == "Depreciación acumulada" for f in filas_tabla):
             kw_dep = self.concept_keywords.get("Depreciación acumulada", ["(-) deprec. acum.", "deprec. acum.", "dep. acum.", "depreciacion acumulada", "depreciacion", "deprec acum"])
-            v_dep_base = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index)
+            v_dep_base_val = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index)
             
-            if v_dep_base == 0:
-                v_dep_base = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index)
+            if v_dep_base_val == Decimal("0"):
+                v_dep_base_val = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index)
             
-            v_dep_base = v_dep_base if v_dep_base is not None else 0.0
+            v_dep_base = Decimal(str(v_dep_base_val)) if v_dep_base_val is not None else Decimal("0.00")
             
-            if v_dep_base == 0:
-                v_dep_base = self._find_value(tablas_ocr, kw_dep, take_last=True) or 0.0
+            if v_dep_base == Decimal("0"):
+                v_dep_val = self._find_value(tablas_ocr, kw_dep, take_last=True)
+                v_dep_base = Decimal(str(v_dep_val)) if v_dep_val is not None else Decimal("0.00")
             
             # Forzar a negativo para que descuente del activo
-            v_dep_base = -abs(v_dep_base) if v_dep_base != 0 else 0.0
+            v_dep_base = -abs(v_dep_base) if v_dep_base != Decimal("0") else Decimal("0.00")
             v_dep_proy = v_dep_base 
             totales["total_activo_no_circulante"] += v_dep_proy
             
-            if v_dep_base != 0:
+            if v_dep_base != Decimal("0"):
                 filas_tabla.append({
                     "concepto": "Depreciación acumulada",
                     "valor_base": float(v_dep_base),
@@ -1151,19 +1442,45 @@ class ProjectionCalculator(FinancialCalculator):
                     "valor_proyectado": float(v_dep_proy)
                 })
         procesar_seccion(pasivo_corto_plazo, "total_pasivo_corto")
+
+        # --- AJUSTE AUTOMÁTICO: IMPUESTOS RETENIDOS ---
+        # Captura retenciones fiscales usando _get_exact_first para tomar
+        # solo el renglón padre — evita doble suma de subcuentas.
+        v_ret_val = None
+        for kw_ret in ["impuestos retenidos", "retenciones por enterar"]:
+            v_ret_val = self._get_exact_first(
+                ocr_data, kw_ret,
+                target_col_index=target_col_index,
+                target_relative_index=target_relative_index,
+                consumed_set=filas_consumidas
+            )
+            if v_ret_val is not None:
+                break
+
+        v_ret = abs(Decimal(str(v_ret_val))) if v_ret_val else Decimal("0.00")
+
+        if v_ret > Decimal("0"):
+            totales["total_pasivo_corto"] += v_ret
+            filas_tabla.append({
+                "concepto": "Impuestos retenidos por enterar",
+                "valor_base": float(v_ret),
+                "variacion_aplicada": 0.0,
+                "valor_proyectado": float(v_ret)
+            })
+
         procesar_seccion(pasivo_largo_plazo, "total_pasivo_largo")
         procesar_seccion(capital_contribuido, "total_capital_contribuido")
         procesar_seccion(capital_ganado, "total_capital_ganado")
 
         # Cálculos finales
-        total_activo = totales["total_activo_circulante"] + totales["total_activo_no_circulante"]
-        total_pasivo = totales["total_pasivo_corto"] + totales["total_pasivo_largo"]
-        total_capital = totales["total_capital_contribuido"] + totales["total_capital_ganado"]
+        total_activo = self._redondear(totales["total_activo_circulante"] + totales["total_activo_no_circulante"])
+        total_pasivo = self._redondear(totales["total_pasivo_corto"] + totales["total_pasivo_largo"])
+        total_capital = self._redondear(totales["total_capital_contribuido"] + totales["total_capital_ganado"])
         
         # FER = variable de holgura para cuadrar el balance
         # FER > 0 → se requiere financiamiento externo adicional
         # FER < 0 → hay excedente de fondos
-        fer = total_activo - (total_pasivo + total_capital)
+        fer = self._redondear(total_activo - (total_pasivo + total_capital))
         
         return {
             "tablas_proyectadas": filas_tabla,

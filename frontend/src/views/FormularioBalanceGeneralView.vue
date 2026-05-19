@@ -31,6 +31,8 @@ const projectConfig = ref({
   resultsUrl: "",
   utilidadNetaProforma: 0,
   ventasIncrementoPct: 0,
+  totalImpuestosProforma: 0,
+  utilidadNetaBase: 0,
 });
 
 const bgDocIdRef = ref(null);
@@ -53,7 +55,7 @@ onMounted(async () => {
       const projectDocRef = doc(db, "proyectos", projectId);
       const projectDocSnap = await getDoc(projectDocRef);
       if (projectDocSnap.exists()) {
-        projectConfig.value.periodicidad = projectDocSnap.data().periodicidad || "mensual";
+        projectConfig.value.periodicidad = projectDocSnap.data().periodicidad || "anual";
       }
 
       // 2. Obtener URL del Balance General (PDF Base) del periodo configurado
@@ -113,6 +115,7 @@ onMounted(async () => {
         projectConfig.value.periodoProyectado = proyData.periodo_proyectado;
         projectConfig.value.inflacionEsperada = proyData.inflacion_esperada || proyData.inflacion_especada || 0;
         projectConfig.value.utilidadNetaProforma = proyData.resultados?.utilidad_neta || 0;
+        projectConfig.value.totalImpuestosProforma = proyData.resultados?.impuestos_totales || 0;
         
         // FIX 1: Buscar la fila de ventas por concepto en vez de asumir el índice 0
         const tablas = proyData.resultados?.tablas_proyectadas || [];
@@ -123,6 +126,9 @@ onMounted(async () => {
         if (filaVentas && filaVentas.valor_base !== 0) {
           projectConfig.value.ventasIncrementoPct = ((filaVentas.valor_proyectado / filaVentas.valor_base) - 1) * 100;
         }
+
+        // BLOQUE 2: Calcular utilidad neta del periodo BASE para acumular en Utilidades anteriores
+        projectConfig.value.utilidadNetaBase = proyData.resultados?.utilidad_neta_base || 0;
       } else {
         errorBanner.value = "Atención: No se encontró una proyección de Estado de Resultados previa para este proyecto.";
       }
@@ -299,6 +305,9 @@ async function generarProyeccion() {
     inflacion_esperada: parseFloat(projectConfig.value.inflacionEsperada) || 0,
     utilidad_neta_proforma: parseFloat(projectConfig.value.utilidadNetaProforma) || 0,
     ventas_proy_incremento_pct: parseFloat(projectConfig.value.ventasIncrementoPct) || 0,
+    total_impuestos_proforma: parseFloat(projectConfig.value.totalImpuestosProforma) || 0,
+    utilidad_neta_base: parseFloat(projectConfig.value.utilidadNetaBase) || 0,
+    periodicidad: projectConfig.value.periodicidad,
     activo_circulante: activoCirculante.value.map(s => ({
       concepto: s.concepto,
       variacion: parseFloat(s.variacion) || 0,
@@ -330,7 +339,7 @@ async function generarProyeccion() {
         variacion: parseFloat(s.variacion) || 0,
         mantener_igual: s.mantener_igual
       })),
-      { concepto: "Utilidades o pérdidas de ejercicios anteriores", variacion: 0, mantener_igual: true },
+      { concepto: "Utilidades o pérdidas de ejercicios anteriores", variacion: 0, mantener_igual: false },
       { concepto: "Utilidad o pérdida del ejercicio", variacion: 0, mantener_igual: true }
     ]
   };
@@ -518,7 +527,7 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="Auto" :disabled="item.mantener_igual" />
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
@@ -537,7 +546,7 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="Auto" :disabled="item.mantener_igual" />
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
@@ -569,7 +578,7 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="Auto" :disabled="item.mantener_igual" />
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
@@ -588,7 +597,7 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="Auto" :disabled="item.mantener_igual" />
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
@@ -620,7 +629,7 @@ async function generarProyeccion() {
           </div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="Auto" :disabled="item.mantener_igual" />
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
@@ -645,7 +654,7 @@ async function generarProyeccion() {
           <div class="col-concepto"><div class="concept-text">{{ item.concepto }}</div></div>
           <div class="col-variacion">
             <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="Auto" :disabled="item.mantener_igual" />
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>

@@ -346,7 +346,8 @@ async function generarProyeccion() {
         utilidad_antes_impuestos: resultados.utilidad_antes_impuestos,
         impuestos: resultados.impuestos,
         impuestos_totales: resultados.impuestos_totales,
-        utilidad_neta: resultados.utilidad_neta
+        utilidad_neta: resultados.utilidad_neta,
+        utilidad_neta_base: resultados.utilidad_neta_base || 0
       },
       created_at: serverTimestamp()
     };

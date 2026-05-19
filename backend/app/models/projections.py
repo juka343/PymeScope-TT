@@ -45,6 +45,9 @@ class ProyeccionBalanceRequest(BaseModel):
     inflacion_esperada: float
     utilidad_neta_proforma: float
     ventas_proy_incremento_pct: float
+    total_impuestos_proforma: float = 0.0
+    utilidad_neta_base: float = 0.0
+    periodicidad: str = "mensual"
     activo_circulante: List[LineaSupuesto]
     activo_no_circulante: List[LineaSupuesto]
     pasivo_corto_plazo: List[LineaSupuesto]

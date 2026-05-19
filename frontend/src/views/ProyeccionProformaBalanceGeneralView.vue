@@ -126,10 +126,10 @@ const pct = (val) => {
 // Listas de conceptos para categorización (Basado en el formulario)
 const catActivoCirculante = ["Caja", "Bancos", "Inversiones temporales", "Cuentas por cobrar a clientes", "Otras cuentas por cobrar (deudores diversos)", "IVA por acreditar", "IVA acreditable", "Inventarios", "Anticipo a proveedores", "Papelería y artículos de escritorio", "Propaganda y publicidad", "Seguros y fianzas", "Rentas pagadas por anticipado", "Intereses pagados por anticipado", "Impuestos y derechos"];
 const catActivoNoCirculante = ["Terrenos", "Edificios", "Maquinaria y equipo", "Equipo de transporte", "Mobiliario y equipo de oficina", "Equipo de cómputo", "Patentes", "Marcas", "Crédito mercantil", "Franquicias", "Licencias de software", "Depósitos en garantía", "Depreciación acumulada"];
-const catPasivoCorto = ["Cuentas por pagar a proveedores", "Préstamo bancario / Deuda a corto plazo", "Acreedores diversos", "Impuestos a la utilidad por pagar", "IVA por causar o trasladar", "IVA causado o trasladado", "Anticipo de clientes", "Rentas cobradas por anticipado", "Intereses cobrados por anticipado"];
+const catPasivoCorto = ["Cuentas por pagar a proveedores", "Préstamo bancario / Deuda a corto plazo", "Acreedores diversos", "Impuestos a la utilidad por pagar", "IVA por causar o trasladar", "IVA causado o trasladado", "Anticipo de clientes", "Rentas cobradas por anticipado", "Intereses cobrados por anticipado", "Impuestos retenidos por enterar"];
 const catPasivoLargo = ["Acreedores diversos a largo plazo", "Cuentas por pagar a largo plazo", "Cobros anticipados a largo plazo"];
 const catCapitalContribuido = ["Capital social", "Aportaciones para futuros aumentos de capital", "Prima en venta de acciones", "Donaciones"];
-const catCapitalGanado = ["Reserva legal", "Otros resultados integrales", "Utilidades de ejercicios anteriores", "Utilidad neta proforma"];
+const catCapitalGanado = ["Reserva legal", "Otros resultados integrales", "Utilidades o pérdidas de ejercicios anteriores", "Utilidad o pérdida del ejercicio"];
 
 onMounted(async () => {
   window.scrollTo(0, 0);
