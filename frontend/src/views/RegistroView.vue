@@ -183,12 +183,10 @@ async function handleGoogle() {
         <div class="pattern" aria-hidden="true"></div>
 
         <div class="side-inner">
-          <div class="brand">
-            <div class="brand-icon">
-              <span class="material-symbols-outlined">analytics</span>
-            </div>
+          <RouterLink to="/" class="brand" style="text-decoration: none; color: inherit;">
+            <img src="/logo.png" alt="Logo PymeScope" class="brand-icon" />
             <h1 class="brand-name">PymeScope</h1>
-          </div>
+          </RouterLink>
 
           <div class="side-copy">
             <h2>Potencia el crecimiento de tu empresa.</h2>
@@ -403,17 +401,10 @@ async function handleGoogle() {
 }
 
 .brand-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--primary);
-  color: white;
-  display: grid;
-  place-items: center;
-}
-
-.brand-icon span {
-  font-size: 24px;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
 }
 
 .brand-name {

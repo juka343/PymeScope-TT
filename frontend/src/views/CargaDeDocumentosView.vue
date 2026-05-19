@@ -221,6 +221,13 @@ const availableMonths = [
   { value: "12", label: "Diciembre" },
 ];
 
+const availableQuarters = [
+  { value: "03", label: "Q1 (Ene - Mar)" },
+  { value: "06", label: "Q2 (Abr - Jun)" },
+  { value: "09", label: "Q3 (Jul - Sep)" },
+  { value: "12", label: "Q4 (Oct - Dic)" },
+];
+
 const openDropdown = ref(null);
 
 function toggleDropdown(id) {
@@ -228,12 +235,17 @@ function toggleDropdown(id) {
 }
 
 function getMonthLabel(periodDate) {
-  if (!periodDate) return "Mes";
+  if (!periodDate) return periodicity.value === "trimestral" ? "Trimestre" : "Mes";
 
   const parts = String(periodDate).split("-");
   const month = parts[1] || "";
-  const found = availableMonths.find((x) => x.value === month);
 
+  if (periodicity.value === "trimestral") {
+    const found = availableQuarters.find((x) => x.value === month);
+    return found ? found.label : "Trimestre";
+  }
+
+  const found = availableMonths.find((x) => x.value === month);
   return found ? found.label : "Mes";
 }
 
@@ -269,6 +281,16 @@ function handleDateChange(p) {
   if (periodicity.value === "anual") {
     if (safeDate.length === 4) {
       p.label = `Ejercicio ${safeDate}`;
+    }
+  } else if (periodicity.value === "trimestral") {
+    if (safeDate.length >= 6) {
+      const [year, month] = safeDate.split("-");
+      if (year && month) {
+        const monthInt = parseInt(month, 10);
+        const quarter = Math.ceil(monthInt / 3);
+        const ordinals = ["1er", "2do", "3er", "4to"];
+        p.label = `${ordinals[quarter - 1]} Trimestre ${year}`;
+      }
     }
   } else {
     if (safeDate.length >= 6) {
@@ -647,6 +669,13 @@ function getColIndex(period) {
         indiceColumna = indexEncontrado;
       }
     }
+  } else if (periodicity.value === "trimestral" && period.periodDate) {
+    // Q1→0, Q2→1, Q3→2, Q4→3
+    const parts = String(period.periodDate).split("-");
+    if (parts.length > 1) {
+      const month = parseInt(parts[1], 10);
+      indiceColumna = Math.ceil(month / 3) - 1;
+    }
   }
 
   if (Number.isNaN(indiceColumna) || indiceColumna < 0) return 0;
@@ -931,7 +960,7 @@ async function generateAnalysis() {
                       @mousedown.prevent
                     >
                       <li
-                        v-for="m in availableMonths"
+                        v-for="m in (periodicity === 'trimestral' ? availableQuarters : availableMonths)"
                         :key="m.value"
                         @click="updatePeriodDate(p, 'month', m.value); openDropdown = null"
                         :class="{

@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { ref as storageRef, deleteObject } from "firebase/storage";
 import { useConfirm } from "@/composables/useConfirm";
 import { useToast } from "@/composables/useToast";
+import UserProfileModal from "@/components/app/UserProfileModal.vue";
 
 import { auth, db, storage } from "@/firebase/config";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -37,8 +38,46 @@ const userDisplayName = computed(() => {
 });
 
 const userEmail = computed(() => (user.value?.email ? user.value.email : ""));
-const userRole = computed(() => "Usuario");
 const userPhotoURL = computed(() => user.value?.photoURL || "");
+
+const userInitials = computed(() => {
+  const name = userDisplayName.value?.trim();
+  if (!name) return "U";
+  if (name.includes("@")) return name[0].toUpperCase();
+  const parts = name.split(" ").filter(Boolean);
+  const initials = parts.slice(0, 2).map((p) => p[0]).join("");
+  return (initials || name[0]).toUpperCase();
+});
+
+const showUserMenu = ref(false);
+
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value;
+}
+
+function handleClickOutside(e) {
+  const menu = document.querySelector('.user-dropdown-wrap');
+  if (menu && !menu.contains(e.target)) {
+    showUserMenu.value = false;
+  }
+}
+
+const isProfileModalOpen = ref(false);
+
+function openProfileModal() {
+  showUserMenu.value = false;
+  isProfileModalOpen.value = true;
+}
+
+function handleProfileUpdated(newData) {
+  if (user.value) {
+    user.value = {
+      ...user.value,
+      displayName: newData.displayName,
+      photoURL: newData.photoURL
+    };
+  }
+}
 
 // ====== ONBOARDING ======
 const showOnboarding = ref(false);
@@ -163,14 +202,17 @@ onMounted(() => {
   });
 
   window.addEventListener("keydown", onKeydown);
+  document.addEventListener('click', handleClickOutside);
 });
 
 onBeforeUnmount(() => {
   if (authUnsub.value) authUnsub.value();
   window.removeEventListener("keydown", onKeydown);
+  document.removeEventListener('click', handleClickOutside);
 });
 
 async function handleLogout() {
+  showUserMenu.value = false;
   try {
     await signOut(auth);
     router.replace("/");
@@ -459,26 +501,47 @@ async function guardarNombre(p) {
           <h1 class="brand-name">PymeScope</h1>
         </div>
 
-        <div class="user">
-          <div
-            class="avatar"
-            :style="userPhotoURL ? { backgroundImage: `url('${userPhotoURL}')` } : {}"
-            aria-hidden="true"
-          ></div>
-
-          <div class="user-text">
-            <span class="user-name">{{ userDisplayName }}</span>
-            <span class="user-role">
-              {{ userRole }}<template v-if="userEmail"> · {{ userEmail }}</template>
-            </span>
-          </div>
-
-          <div class="divider"></div>
-
-          <button class="logout" type="button" @click="handleLogout">
-            <span class="material-symbols-outlined">logout</span>
-            <span class="logout-text">Cerrar sesión</span>
+        <div class="user-dropdown-wrap">
+          <button class="avatar-btn" type="button" @click.stop="toggleUserMenu">
+            <div
+              class="avatar"
+              :style="userPhotoURL ? { backgroundImage: `url('${userPhotoURL}')` } : {}"
+            >
+              <span v-if="!userPhotoURL">{{ userInitials }}</span>
+            </div>
+            <div class="user-text">
+              <span class="user-name">{{ userDisplayName }}</span>
+              <span class="user-role">
+                Usuario<template v-if="userEmail"> · {{ userEmail }}</template>
+              </span>
+            </div>
           </button>
+
+          <Transition name="dropdown">
+            <div v-if="showUserMenu" class="user-dropdown">
+              <div class="dropdown-header">
+                <div
+                  class="dropdown-avatar"
+                  :style="userPhotoURL ? { backgroundImage: `url('${userPhotoURL}')` } : {}"
+                >
+                  <span v-if="!userPhotoURL">{{ userInitials }}</span>
+                </div>
+                <div class="dropdown-info">
+                  <p class="dropdown-name">{{ userDisplayName }}</p>
+                  <p class="dropdown-email" v-if="userEmail">{{ userEmail }}</p>
+                </div>
+              </div>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item" @click="openProfileModal">
+                <span class="material-symbols-outlined">person</span>
+                Mi Perfil
+              </button>
+              <button class="dropdown-item dropdown-logout" @click="handleLogout">
+                <span class="material-symbols-outlined">logout</span>
+                Cerrar sesión
+              </button>
+            </div>
+          </Transition>
         </div>
       </div>
     </header>
@@ -816,6 +879,12 @@ async function guardarNombre(p) {
         </div>
       </div>
     </div>
+    
+    <UserProfileModal 
+      :isOpen="isProfileModalOpen" 
+      @close="isProfileModalOpen = false" 
+      @profile-updated="handleProfileUpdated" 
+    />
   </div>
 </template>
 
@@ -883,17 +952,27 @@ async function guardarNombre(p) {
   letter-spacing: -0.02em;
 }
 
-.user {
+.avatar-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
   display: flex;
   align-items: center;
   gap: 12px;
+  text-align: left;
 }
 
 .avatar {
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: rgba(41, 157, 224, 0.1);
+  color: #299de0;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 12px;
   background-size: cover;
   background-position: center;
 }
@@ -907,6 +986,7 @@ async function guardarNombre(p) {
 .user-name {
   font-size: 13px;
   font-weight: 800;
+  color: var(--text);
 }
 
 .user-role {
@@ -915,34 +995,114 @@ async function guardarNombre(p) {
   font-weight: 700;
 }
 
-.divider {
-  width: 1px;
-  height: 28px;
-  background: #e2e8f0;
-  display: none;
+/* User dropdown */
+.user-dropdown-wrap {
+  position: relative;
 }
 
-.logout {
-  display: inline-flex;
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  background: #fff;
+  border: 1px solid #e8eff3;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  overflow: hidden;
+}
+
+.dropdown-header {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--muted);
+  gap: 12px;
+  padding: 16px;
+}
+
+.dropdown-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(41, 157, 224, 0.1);
+  color: #299de0;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 14px;
+  flex-shrink: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.dropdown-info {
+  min-width: 0;
+}
+
+.dropdown-name {
+  margin: 0;
+  font-size: 14px;
   font-weight: 800;
-  background: transparent;
+  color: #0e161b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-email {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #507c95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #e8eff3;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
   border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.logout:hover {
-  color: var(--primary);
+.dropdown-logout {
+  color: #ef4444;
 }
 
-.logout span.material-symbols-outlined {
+.dropdown-logout:hover {
+  background: #fef2f2;
+}
+
+.dropdown-logout .material-symbols-outlined {
   font-size: 20px;
 }
 
-.logout-text {
-  display: none;
+/* Dropdown transitions */
+.dropdown-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.dropdown-leave-active {
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+.dropdown-enter-from {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+}
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
 }
 
 /* Main */
