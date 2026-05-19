@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import Any, Dict
 import json
 import asyncio
+import traceback
 from google import genai
 from google.genai import types
 from app.models.projections import (
@@ -98,7 +99,8 @@ async def generar_proyeccion_estado_resultados(payload: ProyeccionSupuestosReque
             "utilidad_antes_impuestos": res_proy["utilidad_antes_impuestos"],
             "impuestos": res_proy["impuestos"],
             "impuestos_totales": res_proy["impuestos_totales"],
-            "utilidad_neta": res_proy["utilidad_neta"]
+            "utilidad_neta": res_proy["utilidad_neta"],
+            "utilidad_neta_base": res_proy.get("utilidad_neta_base", 0.0)
         }
 
     except Exception as e:
@@ -139,18 +141,25 @@ async def generar_proyeccion_balance_general(payload: ProyeccionBalanceRequest) 
 
         # 2. Calcular la proyección
         print(f"\n-> Calculando proyección de Balance General (FER / Plug Account)...")
-        res_proy = _projection_calculator.calcular_proyeccion_balance(
-            ocr_data=ocr_data,
-            activo_circulante=payload.activo_circulante,
-            activo_no_circulante=payload.activo_no_circulante,
-            pasivo_corto_plazo=payload.pasivo_corto_plazo,
-            pasivo_largo_plazo=payload.pasivo_largo_plazo,
-            capital_contribuido=payload.capital_contribuido,
-            capital_ganado=payload.capital_ganado,
-            utilidad_neta_proforma=payload.utilidad_neta_proforma,
-            ventas_proy_incremento_pct=payload.ventas_proy_incremento_pct,
-            inflacion_esperada=payload.inflacion_esperada
-        )
+        try:
+            res_proy = _projection_calculator.calcular_proyeccion_balance(
+                ocr_data=ocr_data,
+                activo_circulante=payload.activo_circulante,
+                activo_no_circulante=payload.activo_no_circulante,
+                pasivo_corto_plazo=payload.pasivo_corto_plazo,
+                pasivo_largo_plazo=payload.pasivo_largo_plazo,
+                capital_contribuido=payload.capital_contribuido,
+                capital_ganado=payload.capital_ganado,
+                utilidad_neta_proforma=payload.utilidad_neta_proforma,
+                ventas_proy_incremento_pct=payload.ventas_proy_incremento_pct,
+                inflacion_esperada=payload.inflacion_esperada,
+                total_impuestos_proforma=payload.total_impuestos_proforma,
+                utilidad_neta_base=payload.utilidad_neta_base,
+                periodicidad=payload.periodicidad
+            )
+        except Exception as e:
+            traceback.print_exc()  # ← imprime el traceback completo en la terminal uvicorn
+            raise e
 
         filas_proyectadas = res_proy["tablas_proyectadas"]
 
