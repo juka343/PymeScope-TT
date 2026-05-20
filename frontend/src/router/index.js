@@ -13,6 +13,10 @@ const router = createRouter({
     { path: "/registro", name: "registro", component: () => import("../views/RegistroView.vue") },
     { path: "/recuperar-password", name: "recuperarPassword", component: () => import("../views/RecuperarPasswordView.vue") },
 
+    // DOCUMENTOS LEGALES
+    { path: "/aviso-privacidad", name: "avisoPrivacidad", component: () => import("../views/AvisoPrivacidadView.vue") },
+    { path: "/terminos", name: "terminos", component: () => import("../views/TerminosCondicionesView.vue") },
+
     {
       path: "/proyecto/:id_proyecto/cargar",
       name: "cargaDeDocumentos",

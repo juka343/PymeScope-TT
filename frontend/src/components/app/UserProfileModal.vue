@@ -1,9 +1,12 @@
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
-import { auth, storage } from "@/firebase/config";
-import { updateProfile } from "firebase/auth";
+import { auth, storage, db } from "@/firebase/config";
+import { updateProfile, deleteUser } from "firebase/auth";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, query, where, getDocs, deleteDoc, doc } from "firebase/firestore";
 import { useToast } from "@/composables/useToast";
+import { useConfirm } from "@/composables/useConfirm";
+import { useRouter } from "vue-router";
 
 const props = defineProps({
   isOpen: Boolean
@@ -12,6 +15,8 @@ const props = defineProps({
 const emit = defineEmits(["close", "profile-updated"]);
 
 const { toast } = useToast();
+const { confirm } = useConfirm();
+const router = useRouter();
 
 const user = computed(() => auth.currentUser);
 
@@ -19,6 +24,7 @@ const displayName = ref("");
 const previewUrl = ref("");
 const selectedFile = ref(null);
 const isSaving = ref(false);
+const isDeleting = ref(false);
 
 const userInitials = computed(() => {
   const name = displayName.value?.trim() || user.value?.displayName?.trim();
@@ -100,6 +106,8 @@ async function handleSave() {
 }
 
 function closeModal() {
+  if (isDeleting.value) return;
+
   // Reset fields if cancelled without saving
   if (!isSaving.value) {
     displayName.value = user.value?.displayName || "";
@@ -107,6 +115,52 @@ function closeModal() {
     selectedFile.value = null;
   }
   emit("close");
+}
+
+async function handleDeleteAccount() {
+  const confirmed = await confirm({
+    title: "Eliminar cuenta",
+    message: "¿Estás seguro que deseas borrar tu cuenta? Esta acción no se puede deshacer.",
+    confirmText: "Sí, borrar cuenta",
+    cancelText: "Cancelar",
+    variant: "danger",
+  });
+  
+  if (!confirmed) return;
+  if (!user.value) return;
+  
+  isDeleting.value = true;
+  try {
+    const uid = user.value.uid;
+    
+    // Eliminar documentos/proyectos (prototipo)
+    const q = query(collection(db, "proyectos"), where("userId", "==", uid));
+    const snapshot = await getDocs(q);
+    
+    const deletePromises = [];
+    snapshot.forEach((docSnap) => {
+      deletePromises.push(deleteDoc(docSnap.ref));
+    });
+    
+    deletePromises.push(deleteDoc(doc(db, "user_onboarding", uid)));
+    await Promise.all(deletePromises);
+    
+    // Borrar cuenta
+    await deleteUser(user.value);
+    
+    toast({ message: "Tu cuenta ha sido eliminada.", type: "info" });
+    closeModal();
+    router.push("/");
+  } catch (error) {
+    console.error("Error eliminando cuenta:", error);
+    if (error.code === 'auth/requires-recent-login') {
+      toast({ message: "Por seguridad, cierra sesión y vuelve a entrar antes de borrar tu cuenta.", type: "warning" });
+    } else {
+      toast({ message: "No se pudo eliminar la cuenta.", type: "error" });
+    }
+  } finally {
+    isDeleting.value = false;
+  }
 }
 </script>
 
@@ -163,6 +217,25 @@ function closeModal() {
               type="text"
               placeholder="Tu nombre completo"
             />
+          </div>
+
+          <!-- Danger Zone -->
+          <div class="danger-zone">
+            <h4>Zona de peligro</h4>
+            <div class="danger-content">
+              <div class="danger-text">
+                <strong>Eliminar cuenta</strong>
+                <p>Se borrarán tus proyectos y no podrás recuperar el acceso.</p>
+              </div>
+              <button 
+                class="btn-danger" 
+                type="button" 
+                @click="handleDeleteAccount" 
+                :disabled="isDeleting"
+              >
+                {{ isDeleting ? "Borrando..." : "Borrar cuenta" }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -430,5 +503,78 @@ function closeModal() {
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Danger Zone */
+.danger-zone {
+  margin-top: 12px;
+  padding-top: 24px;
+  border-top: 1px solid #fee2e2;
+}
+
+.danger-zone h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #ef4444;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.danger-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #fef2f2;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #fecaca;
+}
+
+.danger-text strong {
+  color: #991b1b;
+  font-size: 14px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.danger-text p {
+  margin: 0;
+  font-size: 13px;
+  color: #b91c1c;
+  line-height: 1.4;
+}
+
+.btn-danger {
+  height: 38px;
+  padding: 0 16px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .danger-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .btn-danger {
+    width: 100%;
+  }
 }
 </style>

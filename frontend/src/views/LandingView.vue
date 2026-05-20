@@ -1,9 +1,11 @@
 <script setup>
 import { RouterLink } from "vue-router";
+import { ref } from "vue";
 
 import heroImage from "@/assets/images/Gemini_Generated_Image_7n5p397n5p397n5p.png";
-
 import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7l4.png";
+
+const isMenuOpen = ref(false);
 
 </script>
 
@@ -16,17 +18,17 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
           <span class="brand-name">PymeScope</span>
         </div>
 
-        <div class="nav-links">
-          <a href="#features">Características</a>
-          <a href="#process">Cómo funciona</a>
+        <div class="nav-links" :class="{ 'nav-open': isMenuOpen }">
+          <a href="#features" @click="isMenuOpen = false">Características</a>
+          <a href="#process" @click="isMenuOpen = false">Cómo funciona</a>
 
-          <RouterLink to="/login" class="btn btn-primary btn-sm">
+          <RouterLink to="/login" class="btn btn-primary btn-sm" @click="isMenuOpen = false">
             Iniciar sesión
           </RouterLink>
         </div>
 
-        <button class="nav-menu-btn" type="button" aria-label="Menú">
-          <span class="material-symbols-outlined">menu</span>
+        <button class="nav-menu-btn" type="button" aria-label="Menú" @click="isMenuOpen = !isMenuOpen">
+          <span class="material-symbols-outlined">{{ isMenuOpen ? 'close' : 'menu' }}</span>
         </button>
       </div>
     </nav>
@@ -262,9 +264,8 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
         </div>
 
         <div class="footer-links">
-          <a href="#">Términos y Condiciones</a>
-          <a href="#">Abiso de privacidad</a>
-
+          <RouterLink to="/terminos">Términos y Condiciones</RouterLink>
+          <RouterLink to="/aviso-privacidad">Aviso de Privacidad</RouterLink>
         </div>
       </div>
 
@@ -331,13 +332,13 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
   gap: 28px;
   align-items: center;
 }
-.nav-links a {
+.nav-links a:not(.btn) {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
   text-decoration: none;
 }
-.nav-links a:hover {
+.nav-links a:not(.btn):hover {
   color: var(--primary);
 }
 .nav-menu-btn {
@@ -801,6 +802,36 @@ import benefitsImage from "@/assets/images/Gemini_Generated_Image_v7l4fgv7l4fgv7
 @media (max-width: 760px) {
   .nav-links {
     display: none;
+    flex-direction: column;
+    position: absolute;
+    top: 64px;
+    left: 0;
+    right: 0;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(12px);
+    padding: 32px 24px;
+    border-bottom: 1px solid #e8eff3;
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+    align-items: center;
+    gap: 24px;
+  }
+  .nav-links.nav-open {
+    display: flex;
+    animation: slideDown 0.3s ease;
+  }
+  .nav-links a:not(.btn) {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .nav-links .btn {
+    width: 100%;
+    margin-top: 8px;
+    height: 48px;
+    font-size: 15px;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .nav-menu-btn {
     display: inline-flex;
