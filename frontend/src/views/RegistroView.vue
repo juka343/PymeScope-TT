@@ -299,8 +299,8 @@ async function handleGoogle() {
               <input id="terms" v-model="acceptTerms" type="checkbox" :disabled="loading" @change="markTouched('terms')" />
               <label for="terms">
                 Acepto los
-                <a href="#" class="link">términos y condiciones</a>
-                y la política de privacidad de PymeScope.
+                <RouterLink to="/terminos" class="link" target="_blank">términos y condiciones</RouterLink>
+                y la <RouterLink to="/aviso-privacidad" class="link" target="_blank">política de privacidad</RouterLink> de PymeScope.
               </label>
             </div>
             <small v-if="showError('terms') && termsError" class="field-error terms-error">

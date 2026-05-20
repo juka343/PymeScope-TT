@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict, Any, Optional
 
+
 class FinancialCalculator:
     """
     Motor universal para extraer cuentas de estados financieros a partir de tablas OCR.
@@ -8,9 +9,26 @@ class FinancialCalculator:
       tables_data: List[table]
       table: List[cell]
       cell: Dict con al menos 'row', 'col', 'text'
+    
+    Incluye un fallback semántico basado en embeddings (Gemini API) que se activa
+    automáticamente cuando el diccionario de keywords no encuentra un concepto.
     """
 
     def __init__(self) -> None:
+        # ===== Servicio de Embeddings (fallback semántico) =====
+        self._embedding_service = None
+        try:
+            from app.core.config import settings
+            from app.services.embedding_service import EmbeddingService
+            if settings.GEMINI_API_KEY:
+                self._embedding_service = EmbeddingService(
+                    api_key=settings.GEMINI_API_KEY,
+                    model=getattr(settings, "GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
+                )
+        except Exception as e:
+            print(f"⚠️ FinancialCalculator: Embedding service no disponible: {e}")
+            self._embedding_service = None
+
         # ===== Rentabilidad =====
         self.kw_utilidad_neta = [
             "utilidad neta", "resultado neto", "ganancia neta",
@@ -33,7 +51,9 @@ class FinancialCalculator:
 
         self.kw_impuestos = [
             "isr", "impuestos a la utilidad", "impuesto sobre la renta", 
-            "provisión para isr", "ptu", "impuestos y ptu"
+            "provisión para isr", "ptu", "impuestos y ptu",
+            # Entidades gubernamentales: "Provisión de I.S.R."
+            "provisión de i.s.r",
         ]
 
         self.kw_ventas_netas = [
@@ -43,7 +63,9 @@ class FinancialCalculator:
             "importe de ventas", "productos y servicios",
             "ingresos por venta", "venta de inmuebles",
             "ingresos por arrendamiento", "ingresos por rentas",
-            "ingresos por donativos/servicios", "ingresos por donativos"
+            "ingresos por donativos/servicios", "ingresos por donativos",
+            # Entidades gubernamentales (PRONABIVE)
+            "ingresos propios",
             # "ingresos", <--- ELIMINADO PARA EVITAR FALSOS POSITIVOS CON "OTROS INGRESOS"
         ]
 
@@ -51,7 +73,7 @@ class FinancialCalculator:
             "total de activos", "activo total", "suma del activo",
             "activos totales", "total del activo", "activo general",
             "activo circulante y fijo", "activo corriente y no corriente",
-            "total activos:", "total activos", "total activo"
+            "total activos:", "total activos", "total activo",
         ]
 
         # CORRECCIÓN 1: Quitamos "capital social" para obligar a buscar el CONTABLE
@@ -59,6 +81,8 @@ class FinancialCalculator:
             "capital contable", "total capital contable", "patrimonio neto",
             "total patrimonio", "total capital", "capital y reservas",
             "capital propio", "capital financiero", "patrimonio",
+            # Entidades gubernamentales: "Hacienda Pública" = equivalente de Capital Contable
+            "hacienda pública", "hacienda publica",
             # "capital social", <--- ELIMINADO: Causaba error al tomar el valor nominal y no el real
         ]
 
@@ -87,7 +111,7 @@ class FinancialCalculator:
         # CORRECCIÓN 2: Quitamos "total pasivo" para que no lea la línea "Total Pasivo + Capital"
         self.kw_pasivo_total = [
             "pasivo total", "total del pasivo", "suma del pasivo", 
-            "pasivos totales", "total pasivos", "total pasivo"
+            "pasivos totales", "total pasivos", "total pasivo",
             # "total pasivo", <--- ELIMINADO: Peligroso en formatos que suman Capital
         ]
         
@@ -237,7 +261,24 @@ class FinancialCalculator:
     # -------------------------------------------------------------------------
     # Búsqueda de valores en tablas OCR (Proximidad Inteligente + Columnas)
     # -------------------------------------------------------------------------
-    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None) -> float:
+    def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None, concept_key: str = None) -> float:
+        """Busca un valor en las tablas OCR. Primero por keywords, luego por similitud semántica."""
+        # --- Paso 1: Búsqueda por keywords (rápida, determinística, gratis) ---
+        result = self._keyword_search(tables_data, keywords, take_last, col_index, skip_if_row_contains)
+        if result != 0.0:
+            return result
+        
+        # --- Paso 2: Fallback semántico con embeddings (solo si el diccionario falló) ---
+        if concept_key and self._embedding_service and self._embedding_service.is_available():
+            semantic_result = self._semantic_search(tables_data, concept_key, take_last, col_index, skip_if_row_contains)
+            if semantic_result != 0.0:
+                print(f"  🧠 Embedding fallback: '{concept_key}' encontrado por similitud semántica → {semantic_result}")
+                return semantic_result
+        
+        return 0.0
+
+    def _keyword_search(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None) -> float:
+        """Búsqueda original por substring de keywords en las filas OCR."""
         for table in reversed(tables_data):
             rows: Dict[int, List[Dict[str, Any]]] = {}
             for cell in table:
@@ -303,6 +344,78 @@ class FinancialCalculator:
                                     return float(val)
         return 0.0
 
+    def _semantic_search(self, tables_data: List[List[Dict[str, Any]]], concept_key: str, take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None) -> float:
+        """Búsqueda semántica: compara cada fila de texto contra el concepto canónico usando embeddings."""
+        THRESHOLD = 0.85
+        best_score = 0.0
+        best_values = []
+        
+        for table in reversed(tables_data):
+            rows: Dict[int, List[Dict[str, Any]]] = {}
+            for cell in table:
+                r_idx = int(cell.get("row", 0))
+                rows.setdefault(r_idx, []).append(cell)
+
+            for r_idx in sorted(rows.keys(), reverse=True):
+                row_cells = rows[r_idx]
+                row_cells.sort(key=lambda x: int(x.get("col", 0)))
+                
+                # Extraer solo las celdas de texto (no numéricas) para el embedding
+                text_cells = []
+                for c in row_cells:
+                    txt = str(c.get("text", "")).strip()
+                    if txt and self._clean_number(txt) is None:
+                        text_cells.append(txt)
+                
+                row_label = " ".join(text_cells).strip()
+                if not row_label or len(row_label) < 3:
+                    continue
+                
+                row_text = " ".join([str(c.get("text", "")).lower() for c in row_cells])
+                
+                # Saltar filas veneno
+                if skip_if_row_contains and any(poison in row_text for poison in skip_if_row_contains):
+                    continue
+                
+                # Calcular similitud semántica
+                score = self._embedding_service.find_match_for_concept(row_label, concept_key, threshold=THRESHOLD)
+                
+                if score > best_score:
+                    best_score = score
+                    # Extraer valores numéricos de la fila
+                    # Encontrar la última celda de texto para usarla como referencia de columna
+                    text_col_max = -1
+                    for c in row_cells:
+                        txt = str(c.get("text", "")).strip()
+                        if txt and self._clean_number(txt) is None:
+                            text_col_max = max(text_col_max, int(c.get("col", 0)))
+                    
+                    found_values = []
+                    for cell in row_cells:
+                        c_idx = int(cell.get("col", 0))
+                        if c_idx > text_col_max:
+                            cell_text = str(cell.get("text", "")).strip()
+                            val = self._clean_number(cell_text)
+                            if val is not None:
+                                found_values.append(float(val))
+                            elif cell_text and val is None:
+                                break
+                    
+                    if found_values:
+                        max_magnitude = max(abs(v) for v in found_values)
+                        val_monetarios = [v for v in found_values if abs(v) > 100 or abs(v) == max_magnitude or v == 0]
+                        best_values = val_monetarios if val_monetarios else found_values
+        
+        if best_values and best_score >= THRESHOLD:
+            lista_final = best_values
+            if take_last:
+                return lista_final[-1]
+            if col_index < len(lista_final):
+                return lista_final[col_index]
+            return lista_final[-1]
+        
+        return 0.0
+
 
     # -------------------------------------------------------------------------
     # KPIs
@@ -312,15 +425,15 @@ class FinancialCalculator:
         tablas_resultados = self._get_tables(resultados_data)
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
-        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index)
+        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas")
         if ventas_netas == 0:
             ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index)
 
-        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index)
+        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_neta")
         
         # Fallback 1: buscar utilidad antes de impuestos en el Estado de Resultados
         if utilidad_neta == 0:
-            utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index)
+            utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos")
 
         # Fallback 2: buscar utilidad neta en el Balance General
         if utilidad_neta == 0:
@@ -330,8 +443,8 @@ class FinancialCalculator:
                 utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=0)
 
         # 3) Balance
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0)
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital"])
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable")
 
         # 4) Cálculos
         margen_utilidad = (utilidad_neta / ventas_netas) if ventas_netas else 0
@@ -377,9 +490,9 @@ class FinancialCalculator:
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
 
-        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante, take_last=usar_acumulado, col_index=0)
-        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0)
-        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0)
+        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante, take_last=usar_acumulado, col_index=0, concept_key="activo_circulante")
+        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0, concept_key="pasivo_circulante")
+        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario")
 
         if pasivo_circulante < 0:
             pasivo_circulante = abs(pasivo_circulante)
@@ -420,11 +533,11 @@ class FinancialCalculator:
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
 
         # --- EXTRACCIÓN DEL BALANCE ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0)
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
         
         # Renombramos a capital_contable para evitar confusiones y asegurar la fórmula
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital"])
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "+ capital"])
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable")
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "+ capital", "y hacienda"], concept_key="pasivo_total")
 
         # Lógica de rescate para Pasivo Total (Ecuación Contable: P = A - C)
         # Si no lo encuentra (0) o si captura la fila "Total Pasivo + Capital" (>= activo_total)
@@ -439,10 +552,10 @@ class FinancialCalculator:
 
 
         # --- EXTRACCIÓN DEL ESTADO DE RESULTADOS ---
-        utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=usar_acumulado, col_index=col_index)
-        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=col_index)
-        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index)
-        impuestos = self._find_value(tablas_resultados, self.kw_impuestos, take_last=usar_acumulado, col_index=col_index)
+        utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_operacion")
+        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=col_index, concept_key="gastos_financieros")
+        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_neta")
+        impuestos = self._find_value(tablas_resultados, self.kw_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="impuestos")
         
         if intereses < 0: intereses = abs(intereses)
         if impuestos < 0: impuestos = abs(impuestos)
@@ -450,7 +563,7 @@ class FinancialCalculator:
         # --- LÓGICA DE RESCATE (100% UNIVERSAL Y MATEMÁTICA) ---
         if utilidad_operacion == 0 or utilidad_operacion == intereses:
             # Rescate Nivel 1: EBT + Intereses
-            util_antes_imp = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index)
+            util_antes_imp = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos")
             
             if util_antes_imp != 0:
                 utilidad_operacion = util_antes_imp + intereses
@@ -497,18 +610,18 @@ class FinancialCalculator:
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
 
         # --- EXTRACCIÓN BÁSICA ---
-        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, take_last=usar_acumulado, col_index=0)
-        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0)
-        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0)
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0)
+        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, take_last=usar_acumulado, col_index=0, concept_key="cuentas_por_cobrar")
+        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario")
+        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo")
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
 
         # Usamos nuestra variable dinámica 'usar_acumulado' en lugar del True hardcodeado
-        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index)
+        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas")
         
         if ventas_netas == 0:
             ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index)
 
-        costo_directo = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=usar_acumulado, col_index=col_index)
+        costo_directo = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=usar_acumulado, col_index=col_index, concept_key="costo_de_ventas")
         compras = self._find_value(tablas_resultados, self.kw_compras, take_last=usar_acumulado, col_index=col_index)
         devoluciones = self._find_value(tablas_resultados, self.kw_devoluciones_costo, take_last=usar_acumulado, col_index=col_index)
         
@@ -584,14 +697,14 @@ class FinancialCalculator:
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
 
         # --- 1. EXTRACCIÓN BÁSICA ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0)
-        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0) 
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital"])
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital"])
-        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=0)
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
+        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo") 
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "y hacienda"], concept_key="pasivo_total")
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable")
+        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=0, concept_key="pasivo_largo_plazo")
 
         # --- 2. LÓGICA INTELIGENTE PARA CAPITAL SOCIAL ---
-        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, take_last=usar_acumulado, col_index=0)
+        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_social")
         capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"], take_last=usar_acumulado, col_index=0)
         capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"], take_last=usar_acumulado, col_index=0)
         

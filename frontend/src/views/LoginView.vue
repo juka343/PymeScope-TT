@@ -40,6 +40,8 @@ function mapFirebaseError(code) {
       return "Demasiados intentos. Intenta más tarde.";
     case "auth/popup-closed-by-user":
       return "Cerraste la ventana de Google antes de terminar.";
+    case "auth/popup-blocked":
+      return "El navegador bloqueó la ventana emergente. Intenta de nuevo.";
     default:
       return "No se pudo iniciar sesión.";
   }
@@ -71,12 +73,16 @@ async function handleGoogle() {
   loading.value = true;
 
   try {
-    await setPersistence(
+    const provider = new GoogleAuthProvider();
+    
+    // NOTA: En dispositivos móviles, usar 'await setPersistence' justo antes de 'signInWithPopup'
+    // provoca que el navegador pierda el contexto del "click" del usuario y bloquee el popup
+    // asumiendo que es publicidad. Por eso ejecutamos la promesa sin bloquear el hilo.
+    setPersistence(
       auth,
       rememberMe.value ? browserLocalPersistence : browserSessionPersistence
     );
 
-    const provider = new GoogleAuthProvider();
     await signInWithPopup(auth, provider);
 
     router.push("/misProyectos");
@@ -220,8 +226,8 @@ async function handleGoogle() {
         </div>
 
         <div class="mobile-links">
-          <a href="#">Aviso de Privacidad</a>
-          <a href="#">Términos y Condiciones</a>
+          <RouterLink to="/aviso-privacidad">Aviso de Privacidad</RouterLink>
+          <RouterLink to="/terminos">Términos y Condiciones</RouterLink>
         </div>
       </main>
     </div>
