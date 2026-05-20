@@ -46,6 +46,10 @@ const kpis = ref([
 ]);
 
 const projectionRows = ref([]);
+const esMultiperiodo = ref(false);
+const periodosER = ref([]);      // [{periodo, numero, er: {tablas_proyectadas, utilidad_neta, ...}}]
+const configMulti = ref({});
+const tabActivoMulti = ref(0);   // tab activo en la vista multiperiodo
 
 // Textos dinámicos
 const utilidadNetaStr = ref("$0");
@@ -70,6 +74,29 @@ const pct = (val) => {
 
 onMounted(async () => {
   window.scrollTo(0, 0);
+
+  // ── Detectar si viene de proyección multiperiodo ──────────────────────────
+  const multiResultadosRaw = localStorage.getItem("multiperiodo_er_resultados");
+  const multiConfigRaw = localStorage.getItem("multiperiodo_config");
+
+  if (multiResultadosRaw && multiConfigRaw) {
+    const multiData = JSON.parse(multiResultadosRaw);
+    const multiConfig = JSON.parse(multiConfigRaw);
+    
+    // Verificar que sea una respuesta del endpoint /multiperiodo/er
+    if (multiData.periodos_er && multiData.periodos_er.length > 0) {
+      // Solo activar multi si la navegación fue intencional desde generarProyeccionMulti()
+      const esNavegacionMulti = sessionStorage.getItem("navegacion_multiperiodo") === "true";
+      if (esNavegacionMulti) {
+        sessionStorage.removeItem("navegacion_multiperiodo"); // limpiar flag inmediatamente
+        esMultiperiodo.value = true;
+        periodosER.value = multiData.periodos_er;
+        configMulti.value = multiConfig;
+        return;
+      }
+    }
+  }
+  // Si llega aquí → flujo monoperiodo normal (código existente sin cambios)
 
   if (projectId) {
     try {
@@ -425,11 +452,36 @@ async function continueToBalance() {
   });
 }
 
+function continueToBalanceMulti() {
+  // Verificar si ya existe BG multiperiodo calculado
+  const bgExistente = localStorage.getItem("multiperiodo_bg_resultados");
+  if (bgExistente) {
+    router.push({
+      name: "ProyeccionProformaBalanceGeneralMulti",
+      params: { id_proyecto: projectId }
+    });
+    return;
+  }
+  
+  sessionStorage.setItem("navegacion_multiperiodo_bg", "true");
+  // Navegar al formulario BG multiperiodo
+  router.push({
+    name: "FormularioBalanceGeneralMulti",
+    params: { id_proyecto: projectId },
+    query: {
+      periodoBaseId: configMulti.value.periodoBaseId || "",
+      label: configMulti.value.periodoBase || "",
+      periodDate: configMulti.value.periodDate || "",
+    }
+  });
+}
+
 </script>
 
 <template>
   <PdfLoadingModal :isOpen="isExporting" documentName="tu Estado de Resultados Proforma" />
-  <div class="page-container">
+  <!-- Sección mono — solo cuando NO es multiperiodo -->
+  <div v-if="!esMultiperiodo" class="page-container">
     <div class="wrap" :class="{ 'is-exporting': isExporting }" ref="pdfZone">
       <div class="pdf-brand">
         <div class="pdf-brand-left">
@@ -563,6 +615,87 @@ async function continueToBalance() {
         </button>
       </div>
     </section>
+  </div>
+
+  <!-- ── VISTA MULTIPERIODO ── -->
+  <div v-if="esMultiperiodo" class="multi-results-wrap">
+    
+    <!-- Header -->
+    <div class="multi-results-header">
+      <div>
+        <h2>Estado de Resultados Proforma — Multiperiodo</h2>
+        <p class="multi-subtitle">
+          Base: <strong>{{ configMulti.periodoBase }}</strong> · 
+          {{ periodosER.length }} periodos proyectados · 
+          {{ configMulti.periodicidad }}
+        </p>
+      </div>
+      <button class="btn-primary" type="button" @click="continueToBalanceMulti">
+        <span>Continuar al Balance General</span>
+        <span class="material-symbols-outlined">arrow_forward</span>
+      </button>
+    </div>
+
+    <!-- Tabs de periodos -->
+    <div class="multi-tabs">
+      <button
+        v-for="(p, idx) in periodosER"
+        :key="p.periodo"
+        class="multi-tab"
+        :class="{ active: tabActivoMulti === idx }"
+        type="button"
+        @click="tabActivoMulti = idx"
+      >
+        {{ p.periodo }}
+      </button>
+    </div>
+
+    <!-- Resultados del periodo activo -->
+    <div v-for="(periodoData, idx) in periodosER" :key="`res-${idx}`" v-show="tabActivoMulti === idx">
+      <div class="multi-kpis">
+        <div class="kpi-card">
+          <span class="kpi-label">Ventas</span>
+          <span class="kpi-value">${{ periodoData.er.ventas?.toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Utilidad Bruta</span>
+          <span class="kpi-value">${{ periodoData.er.utilidad_bruta?.toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Utilidad Operativa</span>
+          <span class="kpi-value">${{ periodoData.er.utilidad_operativa?.toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</span>
+        </div>
+        <div class="kpi-card" :class="{ negative: periodoData.er.utilidad_neta < 0 }">
+          <span class="kpi-label">Utilidad Neta</span>
+          <span class="kpi-value">${{ periodoData.er.utilidad_neta?.toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</span>
+        </div>
+      </div>
+
+      <!-- Tabla de resultados -->
+      <div class="multi-tabla-card">
+        <table class="multi-tabla">
+          <thead>
+            <tr>
+              <th>Concepto</th>
+              <th>Base</th>
+              <th>Var %</th>
+              <th>Proyectado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="fila in periodoData.er.tablas_proyectadas" :key="fila.concepto">
+              <td>{{ fila.concepto }}</td>
+              <td>${{ fila.valor_base?.toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</td>
+              <td>{{ fila.variacion_aplicada?.toFixed(1) }}%</td>
+              <td :class="{ negative: fila.valor_proyectado < 0 }">
+                ${{ fila.valor_proyectado?.toLocaleString('es-MX', {minimumFractionDigits: 2}) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -1173,4 +1306,26 @@ async function continueToBalance() {
 .btn-edit .material-symbols-outlined {
   font-size: 17px;
 }
+
+.multi-results-wrap { display: flex; flex-direction: column; gap: 16px; padding: 24px; max-width: 1100px; margin: 0 auto; }
+.multi-results-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; }
+.multi-results-header h2 { margin: 0 0 6px; font-size: 22px; font-weight: 900; color: #0e161b; }
+.multi-subtitle { margin: 0; font-size: 13px; color: #507c95; font-weight: 600; }
+.multi-tabs { display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 2px solid #e8eff3; padding-bottom: 0; }
+.multi-tab { padding: 10px 18px; border: none; background: none; font-size: 13px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+.multi-tab.active { color: #0e161b; border-bottom-color: #299de0; }
+.multi-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.kpi-card { background: white; border: 1px solid #e8eff3; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.kpi-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi-value { font-size: 20px; font-weight: 900; color: #0e161b; }
+.kpi-card.negative .kpi-value { color: #dc2626; }
+.multi-tabla-card { background: white; border: 1px solid #e8eff3; border-radius: 12px; overflow: hidden; }
+.multi-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.multi-tabla th { text-align: left; padding: 10px 16px; background: #f8fafc; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #e8eff3; }
+.multi-tabla th:not(:first-child) { text-align: right; }
+.multi-tabla td { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: #0e161b; }
+.multi-tabla td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.multi-tabla tr:last-child td { border-bottom: none; }
+.multi-tabla td.negative { color: #dc2626; }
+.btn-primary { display: flex; align-items: center; gap: 8px; padding: 10px 20px; background: #0e161b; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 </style>

@@ -3,6 +3,10 @@ from typing import Any, Dict
 import json
 import asyncio
 import traceback
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
 from google import genai
 from google.genai import types
 from app.models.projections import (
@@ -10,7 +14,10 @@ from app.models.projections import (
     ProyeccionBalanceRequest, 
     LineaSupuesto,
     SolicitudAnalisisFER,
-    RespuestaFERIA
+    RespuestaFERIA,
+    MultiPeriodoRequest,
+    MultiPeriodoBGRequest,
+    ERPeriodoResultado,
 )
 from app.services.azure_document_service import AzureDocumentService
 from app.services.projection_calculator import ProjectionCalculator
@@ -313,3 +320,291 @@ async def generar_analisis_fer_ia(payload: SolicitudAnalisisFER) -> Dict[str, An
             raise HTTPException(status_code=503, detail="Gemini está temporalmente saturado. Intenta nuevamente.")
             
         raise HTTPException(status_code=500, detail=f"Error en Gemini: {error_text}")
+
+# ── ENDPOINT MULTIPERIODO ───────────────────────────────────────────────────
+
+@router.post("/projections/multiperiodo")
+async def generar_proyeccion_multiperiodo(payload: MultiPeriodoRequest):
+    """
+    Endpoint orquestador para proyecciones de hasta 5 periodos futuros.
+    
+    Flujo:
+    1. Descarga OCR real de los PDFs base (ER y BG) una sola vez
+    2. Para cada periodo: calcula ER → calcula BG
+    3. Para trimestral/anual: construye OCR sintético para el siguiente periodo
+    4. Para mensual: siempre usa el OCR real como base
+    5. Retorna todos los periodos proyectados en una sola respuesta
+    """
+    try:
+        resultados = []
+
+        # ── PASO 1: Descargar OCR real UNA SOLA VEZ ────────────────────────
+        print(f"\n-> Descargando OCR base para proyección multiperiodo...")
+        print(f"   ER base: {payload.url_er_base}")
+        print(f"   BG base: {payload.url_bg_base}")
+
+        ocr_er = await _azure_service.process_financial_document_async(payload.url_er_base)
+        ocr_bg = await _azure_service.process_financial_document_async(payload.url_bg_base)
+
+        print(f"   ✅ OCR ER completado. Tablas: {len(ocr_er.get('tables_data', []))}")
+        print(f"   ✅ OCR BG completado. Tablas: {len(ocr_bg.get('tables_data', []))}")
+
+        # utilidad_neta_base viene del Firebase (guardada al generar el ER histórico)
+        utilidad_neta_base_actual = payload.utilidad_neta_base
+
+        # ── PASO 2: Bucle por cada periodo ─────────────────────────────────
+        for i in range(payload.n_periodos):
+            periodo_label = payload.periodos[i]
+            col_er = payload.columnas_er[i]
+            col_bg = payload.columnas_bg[i]
+
+            print(f"\n-> Calculando periodo {i+1}/{payload.n_periodos}: {periodo_label}")
+
+            # ── Calcular ER del periodo i ───────────────────────────────────
+            er_result = _projection_calculator.calcular_proyeccion_edo_resultados(
+                ocr_data=ocr_er,
+                supuestos_ingresos=col_er.ingresos,
+                supuestos_costos=col_er.costos,
+                supuestos_impuestos=col_er.impuestos if col_er.impuestos else [],
+                inflacion_esperada=col_er.inflacion_esperada,
+                periodo_base=periodo_label,
+            )
+
+            print(f"   ✅ ER calculado. Utilidad neta: ${er_result.get('utilidad_neta', 0):,.2f}")
+
+            # ── Calcular BG del periodo i ───────────────────────────────────
+            bg_result = _projection_calculator.calcular_proyeccion_balance(
+                ocr_data=ocr_bg,
+                activo_circulante=col_bg.activo_circulante,
+                activo_no_circulante=col_bg.activo_no_circulante,
+                pasivo_corto_plazo=col_bg.pasivo_corto_plazo,
+                pasivo_largo_plazo=col_bg.pasivo_largo_plazo,
+                capital_contribuido=col_bg.capital_contribuido,
+                capital_ganado=col_bg.capital_ganado,
+                utilidad_neta_proforma=er_result.get("utilidad_neta", 0.0),
+                ventas_proy_incremento_pct=col_er.ventas_incremento_pct,
+                total_impuestos_proforma=er_result.get("impuestos_totales", 0.0),
+                utilidad_neta_base=utilidad_neta_base_actual,
+                periodicidad=payload.periodicidad,
+                periodo_base=periodo_label,
+            )
+
+            print(f"   ✅ BG calculado. FER: ${bg_result.get('fer', 0):,.2f}")
+
+            # ── Guardar resultado del periodo ───────────────────────────────
+            resultados.append({
+                "periodo": periodo_label,
+                "numero": i + 1,
+                "er": er_result,
+                "bg": bg_result,
+            })
+
+            # ── PASO 3: Base rodante para trimestral y anual ────────────────
+            if payload.periodicidad != "mensual":
+                print(f"   -> Construyendo OCR sintético para siguiente periodo...")
+
+                ocr_er = _projection_calculator.construir_ocr_sintetico(
+                    tablas_proyectadas=er_result.get("tablas_proyectadas", []),
+                    periodo_label=periodo_label
+                )
+                ocr_bg = _projection_calculator.construir_ocr_sintetico(
+                    tablas_proyectadas=bg_result.get("tablas_proyectadas", []),
+                    periodo_label=periodo_label
+                )
+
+                # Para anual: la utilidad base del siguiente periodo
+                # es la utilidad neta proyectada del periodo actual
+                if payload.periodicidad == "anual":
+                    utilidad_neta_base_actual = er_result.get("utilidad_neta", 0.0)
+
+                print(f"   ✅ OCR sintético construido para {periodo_label}")
+            # Para mensual: ocr_er y ocr_bg no cambian — siempre el real
+
+        print(f"\n✅ Proyección multiperiodo completada. {len(resultados)} periodos generados.")
+
+        return {
+            "success": True,
+            "periodicidad": payload.periodicidad,
+            "n_periodos": payload.n_periodos,
+            "periodos_proyectados": resultados
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en proyección multiperiodo: {str(e)}"
+        )
+
+
+# ── ENDPOINT MULTIPERIODO PASO 1: solo ER ──────────────────────────────────
+
+@router.post("/projections/multiperiodo/er")
+async def generar_multiperiodo_er(payload: MultiPeriodoRequest):
+    """
+    Paso 1 del flujo multiperiodo: calcula solo los ERs.
+    El BG se calculará en un segundo paso cuando el usuario
+    configure los supuestos del Balance General.
+    """
+    try:
+        resultados_er = []
+
+        print(f"\n-> [MULTI-ER] Descargando OCR base del ER...")
+        ocr_er = await _azure_service.process_financial_document_async(payload.url_er_base)
+        print(f"   [OK] OCR ER completado. Tablas: {len(ocr_er.get('tables_data', []))}")
+
+        utilidad_neta_base_actual = payload.utilidad_neta_base
+
+        for i in range(payload.n_periodos):
+            periodo_label = payload.periodos[i]
+            col_er = payload.columnas_er[i]
+
+            print(f"\n-> [MULTI-ER] Calculando periodo {i+1}/{payload.n_periodos}: {periodo_label}")
+
+            periodo_base_para_motor = (
+                payload.periodo_base_label
+                if str(payload.periodicidad).lower() == "mensual"
+                else periodo_label
+            )
+
+            er_result = _projection_calculator.calcular_proyeccion_edo_resultados(
+                ocr_data=ocr_er,
+                supuestos_ingresos=col_er.ingresos,
+                supuestos_costos=col_er.costos,
+                supuestos_impuestos=col_er.impuestos if col_er.impuestos else [],
+                inflacion_esperada=col_er.inflacion_esperada,
+                periodo_base=periodo_base_para_motor,
+            )
+
+            print(f"\n{'='*60}")
+            print(f"PERIODO {i+1}/{payload.n_periodos}: {periodo_label}")
+            print(f"{'='*60}")
+            print(f"  periodo_base_para_motor: '{periodo_base_para_motor}'")
+            print(f"  ventas:                  ${er_result.get('ventas', 0):,.2f}")
+            print(f"  costo_ventas:            ${er_result.get('costo_ventas', 0):,.2f}")
+            print(f"  utilidad_bruta:          ${er_result.get('utilidad_bruta', 0):,.2f}")
+            print(f"  gastos_operativos:       ${er_result.get('gastos_operativos', 0):,.2f}")
+            print(f"  utilidad_operativa:      ${er_result.get('utilidad_operativa', 0):,.2f}")
+            print(f"  gastos_financieros:      ${er_result.get('gastos_financieros', 0):,.2f}")
+            print(f"  uai:                     ${er_result.get('utilidad_antes_impuestos', 0):,.2f}")
+            print(f"  impuestos:               ${er_result.get('impuestos', 0):,.2f}")
+            print(f"  utilidad_neta:           ${er_result.get('utilidad_neta', 0):,.2f}")
+            print(f"  utilidad_neta_base:      ${er_result.get('utilidad_neta_base', 0):,.2f}")
+            print(f"  tablas_count:            {len(er_result.get('tablas_proyectadas', []))}")
+            print(f"{'='*60}\n")
+
+            print(f"   [OK] ER calculado. Utilidad neta: ${er_result.get('utilidad_neta', 0):,.2f}")
+
+            resultados_er.append({
+                "periodo": periodo_label,
+                "numero": i + 1,
+                "er": er_result,
+            })
+
+            # Base rodante solo para trimestral y anual
+            if payload.periodicidad != "mensual":
+                ocr_er = _projection_calculator.construir_ocr_sintetico(
+                    tablas_proyectadas=er_result.get("tablas_proyectadas", []),
+                    periodo_label=periodo_label
+                )
+                if payload.periodicidad == "anual":
+                    utilidad_neta_base_actual = er_result.get("utilidad_neta", 0.0)
+
+        print(f"\n[OK] MULTI-ER Completado. {len(resultados_er)} periodos generados.")
+
+        return {
+            "success": True,
+            "periodicidad": payload.periodicidad,
+            "n_periodos": payload.n_periodos,
+            "periodos_er": resultados_er
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en proyección multiperiodo ER: {str(e)}"
+        )
+
+
+# ── ENDPOINT MULTIPERIODO PASO 2: solo BG ──────────────────────────────────
+
+@router.post("/projections/multiperiodo/bg")
+async def generar_multiperiodo_bg(payload: MultiPeriodoBGRequest):
+    """
+    Paso 2 del flujo multiperiodo: calcula los BGs usando los
+    resultados del ER ya calculados en el paso 1.
+    """
+    try:
+        resultados_bg = []
+
+        print(f"\n-> [MULTI-BG] Descargando OCR base del BG...")
+        ocr_bg = await _azure_service.process_financial_document_async(payload.url_bg_base)
+        print(f"   [OK] OCR BG completado. Tablas: {len(ocr_bg.get('tables_data', []))}")
+
+        utilidad_neta_base_actual = payload.utilidad_neta_base
+
+        for i in range(payload.n_periodos):
+            periodo_label = payload.periodos[i]
+            col_bg = payload.columnas_bg[i]
+            er_periodo = payload.resultados_er[i]
+
+            print(f"\n-> [MULTI-BG] Calculando periodo {i+1}/{payload.n_periodos}: {periodo_label}")
+
+            periodo_base_para_motor = (
+                payload.periodo_base_label
+                if str(payload.periodicidad).lower() == "mensual"
+                else periodo_label
+            )
+
+            bg_result = _projection_calculator.calcular_proyeccion_balance(
+                ocr_data=ocr_bg,
+                activo_circulante=col_bg.activo_circulante,
+                activo_no_circulante=col_bg.activo_no_circulante,
+                pasivo_corto_plazo=col_bg.pasivo_corto_plazo,
+                pasivo_largo_plazo=col_bg.pasivo_largo_plazo,
+                capital_contribuido=col_bg.capital_contribuido,
+                capital_ganado=col_bg.capital_ganado,
+                utilidad_neta_proforma=er_periodo.utilidad_neta,
+                ventas_proy_incremento_pct=0.0,
+                total_impuestos_proforma=er_periodo.impuestos_totales,
+                utilidad_neta_base=utilidad_neta_base_actual,
+                periodicidad=payload.periodicidad,
+                periodo_base=periodo_base_para_motor,
+            )
+
+            print(f"   [OK] BG calculado. FER: ${bg_result.get('fer', 0):,.2f}")
+
+            resultados_bg.append({
+                "periodo": periodo_label,
+                "numero": i + 1,
+                "bg": bg_result,
+            })
+
+            # Base rodante para trimestral y anual
+            if payload.periodicidad != "mensual":
+                ocr_bg = _projection_calculator.construir_ocr_sintetico(
+                    tablas_proyectadas=bg_result.get("tablas_proyectadas", []),
+                    periodo_label=periodo_label
+                )
+                if payload.periodicidad == "anual":
+                    utilidad_neta_base_actual = er_periodo.utilidad_neta
+
+        print(f"\n[OK] MULTI-BG Completado. {len(resultados_bg)} periodos generados.")
+
+        return {
+            "success": True,
+            "periodicidad": payload.periodicidad,
+            "n_periodos": payload.n_periodos,
+            "periodos_bg": resultados_bg
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en proyección multiperiodo BG: {str(e)}"
+        )

@@ -39,6 +39,36 @@ const bgDocIdRef = ref(null);
 
 onMounted(async () => {
   window.scrollTo(0, 0);
+
+  // ── Detectar si viene de flujo multiperiodo ────────────────────────────
+  const multiERRaw = localStorage.getItem("multiperiodo_er_resultados");
+  const multiConfigRaw = localStorage.getItem("multiperiodo_config");
+  const esNavegacionMultiBG = sessionStorage.getItem("navegacion_multiperiodo_bg") === "true";
+
+  if (multiERRaw && multiConfigRaw && esNavegacionMultiBG) {
+    sessionStorage.removeItem("navegacion_multiperiodo_bg");
+    const multiER = JSON.parse(multiERRaw);
+    const multiConfig = JSON.parse(multiConfigRaw);
+
+    if (multiER.periodos_er && multiER.periodos_er.length > 0) {
+      esMultiperiodoBG.value = true;
+      configMultiBG.value = multiConfig;
+      periodosMultiBG.value = multiConfig.periodos || [];
+      resultadosERMulti.value = multiER.periodos_er;
+
+      // Inicializar columnas intermedias (todos los periodos excepto el último)
+      const nIntermedios = periodosMultiBG.value.length - 1;
+      columnasIntermediasBG.value = Array.from({ length: nIntermedios }, () => clonarSupuestosBG());
+
+      // Leer URL del BG base desde multiConfig
+      projectConfig.value.resultsUrl = multiConfig.urlBgBase || "";
+      projectConfig.value.periodoBaseId = multiConfig.periodoBaseId || "";
+      projectConfig.value.periodicidad = multiConfig.periodicidad || "mensual";
+
+      return; // No continuar con lógica mono
+    }
+  }
+  // Si llega aquí → flujo monoperiodo normal sin cambios
   projectConfig.value.periodoBase = route.query.label || "Último disponible";
 
   const isHistory = route.query.isHistory === 'true';
@@ -262,8 +292,33 @@ const capitalGanadoEditable = ref([
   { concepto: "Otros resultados integrales", variacion: "", mantener_igual: false },
 ]);
 
+// ── MULTIPERIODO ──────────────────────────────────────────────────────────
+const esMultiperiodoBG = ref(false);
+const configMultiBG = ref({});
+const periodosMultiBG = ref([]);        // ["Febrero 2026", "Marzo 2026", "Abril 2026"]
+const resultadosERMulti = ref([]);      // [{periodo, numero, er: {...}}]
+
+// Columnas de supuestos BG — una por periodo
+// Se inicializan con copia de los arrays base
+function clonarSupuestosBG() {
+  return {
+    activo_circulante: activoCirculante.value.map(r => ({ ...r })),
+    activo_no_circulante: activoNoCirculante.value.map(r => ({ ...r })),
+    pasivo_corto_plazo: pasivoCorto.value.map(r => ({ ...r })),
+    pasivo_largo_plazo: pasivoLargo.value.map(r => ({ ...r })),
+    capital_contribuido: capitalContribuido.value.map(r => ({ ...r })),
+    capital_ganado: capitalGanadoEditable.value.map(r => ({ ...r })),
+  }
+}
+
+const columnasIntermediasBG = ref([]);  // columnas para periodos intermedios
+
 function cancelar() {
   router.push({ name: getRouteName("proyecciones") });
+}
+
+function copiarSupuestosBGAIntermedios() {
+  columnasIntermediasBG.value = columnasIntermediasBG.value.map(() => clonarSupuestosBG())
 }
 
 function isFilaVacia(item) {
@@ -271,6 +326,11 @@ function isFilaVacia(item) {
 }
 
 async function generarProyeccion() {
+  if (esMultiperiodoBG.value) {
+    await generarProyeccionMultiBG();
+    return;
+  }
+
   if (!projectConfig.value.resultsUrl) {
     errorBanner.value = "No se encontró el PDF base del Balance General.";
     return;
@@ -434,6 +494,98 @@ async function generarProyeccion() {
     isProcessing.value = false;
   }
 }
+
+async function generarProyeccionMultiBG() {
+  isProcessing.value = true;
+  errorBanner.value = "";
+  try {
+    const mapRows = (rows) => rows.map(r => ({
+      concepto: r.concepto,
+      variacion: parseFloat(r.variacion) || 0,
+      mantener_igual: r.mantener_igual,
+    }));
+
+    // Construir columnas BG: intermedias + periodo final
+    const todosLosPeriodosBG = periodosMultiBG.value;
+    const columnasBG = [
+      ...columnasIntermediasBG.value.map(col => ({
+        activo_circulante: mapRows(col.activo_circulante),
+        activo_no_circulante: mapRows(col.activo_no_circulante),
+        pasivo_corto_plazo: mapRows(col.pasivo_corto_plazo),
+        pasivo_largo_plazo: mapRows(col.pasivo_largo_plazo),
+        capital_contribuido: mapRows(col.capital_contribuido),
+        capital_ganado: [
+          ...mapRows(col.capital_ganado),
+          { concepto: "Utilidades o pérdidas de ejercicios anteriores", variacion: 0, mantener_igual: false },
+          { concepto: "Utilidad o pérdida del ejercicio", variacion: 0, mantener_igual: true },
+        ],
+      })),
+      // Periodo final usa los arrays principales del formulario
+      {
+        activo_circulante: mapRows(activoCirculante.value),
+        activo_no_circulante: mapRows(activoNoCirculante.value),
+        pasivo_corto_plazo: mapRows(pasivoCorto.value),
+        pasivo_largo_plazo: mapRows(pasivoLargo.value),
+        capital_contribuido: mapRows(capitalContribuido.value),
+        capital_ganado: [
+          ...mapRows(capitalGanadoEditable.value),
+          { concepto: "Utilidades o pérdidas de ejercicios anteriores", variacion: 0, mantener_igual: false },
+          { concepto: "Utilidad o pérdida del ejercicio", variacion: 0, mantener_igual: true },
+        ],
+      }
+    ];
+
+    // Construir resultados_er para el endpoint
+    const resultadosER = resultadosERMulti.value.map(p => ({
+      periodo: p.periodo,
+      numero: p.numero,
+      utilidad_neta: p.er?.utilidad_neta || 0,
+      impuestos_totales: p.er?.impuestos_totales || 0,
+      utilidad_neta_base: p.er?.utilidad_neta_base || 0,
+      tablas_proyectadas: p.er?.tablas_proyectadas || [],
+    }));
+
+    const payload = {
+      periodicidad: configMultiBG.value.periodicidad || "mensual",
+      n_periodos: todosLosPeriodosBG.length,
+      periodos: todosLosPeriodosBG,
+      url_bg_base: projectConfig.value.resultsUrl,
+      utilidad_neta_base: configMultiBG.value.utilidadNetaBase || 0,
+      periodo_base_label: configMultiBG.value.periodoBase || "",
+      columnas_bg: columnasBG,
+      resultados_er: resultadosER,
+    };
+
+    const response = await fetch(`${API_BASE_URL}/projections/multiperiodo/bg`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || "Error en el servidor");
+    }
+
+    const data = await response.json();
+
+    // Guardar resultados en localStorage
+    localStorage.setItem("multiperiodo_bg_resultados", JSON.stringify(data));
+
+    // Navegar a resultados BG multiperiodo
+    sessionStorage.setItem("navegacion_multiperiodo_bg_resultado", "true");
+    router.push({
+      name: getRouteName("ProyeccionProformaBalanceGeneral"),
+      params: { id_proyecto: projectId },
+    });
+
+  } catch (error) {
+    console.error("Error BG multiperiodo:", error);
+    errorBanner.value = `Error: ${error.message}`;
+  } finally {
+    isProcessing.value = false;
+  }
+}
 </script>
 
 <template>
@@ -504,9 +656,15 @@ async function generarProyeccion() {
     </section>
 
     <section class="card">
-      <div class="section-title">
-        <span class="material-symbols-outlined section-icon icon-blue">account_balance_wallet</span>
-        <h3>Supuestos por cuenta – Activos</h3>
+      <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-outlined section-icon icon-blue">account_balance_wallet</span>
+          <h3>Supuestos por cuenta – Activos</h3>
+        </div>
+        <button v-if="esMultiperiodoBG" class="btn-copy-all" type="button" @click="copiarSupuestosBGAIntermedios" style="display:flex;align-items:center;gap:4px;padding:6px 12px;background:#f1f5f9;border:none;border-radius:6px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">
+          <span class="material-symbols-outlined" style="font-size:15px">content_copy</span>
+          Aplicar periodo final a todos
+        </button>
       </div>
       <p class="method-hint">
         <span class="material-symbols-outlined" style="font-size:13px;vertical-align:-2px">info</span>
@@ -517,24 +675,79 @@ async function generarProyeccion() {
       <div class="assumptions-table">
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
-          <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
+          <template v-if="esMultiperiodoBG">
+            <!-- Columnas intermedias -->
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`head-bg-inter-${cidx}`">
+              <div class="col-variacion center periodo-header intermedio">
+                {{ periodosMultiBG[cidx] }}<br>
+                <span style="font-size:10px;">Variación (%)</span>
+              </div>
+              <div class="col-check right periodo-header intermedio">
+                <span style="font-size:10px;">Mantener igual</span>
+              </div>
+            </template>
+            <!-- Columna final -->
+            <div class="col-variacion center periodo-header final">
+              {{ periodosMultiBG[periodosMultiBG.length - 1] }}<br>
+              <span style="font-size:10px;">Variación (%)</span>
+            </div>
+            <div class="col-check right periodo-header final">
+              <span style="font-size:10px;">Mantener igual</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion center">Variación (%)</div>
+            <div class="col-check right">Mantener igual</div>
+          </template>
         </div>
 
         <div v-for="(item, idx) in activoCirculante" :key="`ac-${idx}`" class="assumptions-row">
           <div class="col-concepto">
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
-          <div class="col-variacion">
+          <template v-if="esMultiperiodoBG">
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`activoCirculante-inter-${idx}-${cidx}`">
+              <div class="col-variacion">
+                <div class="input-with-suffix">
+                  <input v-model="col.activo_circulante[idx].variacion" class="input" type="number" step="0.1" placeholder="0" :disabled="col.activo_circulante[idx].mantener_igual" />
+                  <span class="suffix">%</span>
+                </div>
+              </div>
+              <div class="col-check check-wrap">
+                <input v-model="col.activo_circulante[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.activo_circulante[idx].mantener_igual && (col.activo_circulante[idx].variacion !== null && col.activo_circulante[idx].variacion !== '' )" />
+              </div>
+            </template>
+            <div class="col-variacion">
+              
             <div class="input-with-suffix">
               <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap">
+          
+            </div>
+            <div class="col-check check-wrap">
+              
             <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
-          </div>
+          
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion">
+              
+            <div class="input-with-suffix">
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+              <span class="suffix">%</span>
+            </div>
+            <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
+          
+            </div>
+            <div class="col-check check-wrap">
+              
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+          
+            </div>
+          </template>
         </div>
       </div>
 
@@ -544,16 +757,49 @@ async function generarProyeccion() {
           <div class="col-concepto">
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
-          <div class="col-variacion">
+          <template v-if="esMultiperiodoBG">
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`activoNoCirculante-inter-${idx}-${cidx}`">
+              <div class="col-variacion">
+                <div class="input-with-suffix">
+                  <input v-model="col.activo_no_circulante[idx].variacion" class="input" type="number" step="0.1" placeholder="0" :disabled="col.activo_no_circulante[idx].mantener_igual" />
+                  <span class="suffix">%</span>
+                </div>
+              </div>
+              <div class="col-check check-wrap">
+                <input v-model="col.activo_no_circulante[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.activo_no_circulante[idx].mantener_igual && (col.activo_no_circulante[idx].variacion !== null && col.activo_no_circulante[idx].variacion !== '' )" />
+              </div>
+            </template>
+            <div class="col-variacion">
+              
             <div class="input-with-suffix">
               <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap">
+          
+            </div>
+            <div class="col-check check-wrap">
+              
             <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
-          </div>
+          
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion">
+              
+            <div class="input-with-suffix">
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+              <span class="suffix">%</span>
+            </div>
+            <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
+          
+            </div>
+            <div class="col-check check-wrap">
+              
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+          
+            </div>
+          </template>
         </div>
       </div>
     </section>
@@ -568,24 +814,79 @@ async function generarProyeccion() {
       <div class="assumptions-table">
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
-          <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
+          <template v-if="esMultiperiodoBG">
+            <!-- Columnas intermedias -->
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`head-bg-inter-${cidx}`">
+              <div class="col-variacion center periodo-header intermedio">
+                {{ periodosMultiBG[cidx] }}<br>
+                <span style="font-size:10px;">Variación (%)</span>
+              </div>
+              <div class="col-check right periodo-header intermedio">
+                <span style="font-size:10px;">Mantener igual</span>
+              </div>
+            </template>
+            <!-- Columna final -->
+            <div class="col-variacion center periodo-header final">
+              {{ periodosMultiBG[periodosMultiBG.length - 1] }}<br>
+              <span style="font-size:10px;">Variación (%)</span>
+            </div>
+            <div class="col-check right periodo-header final">
+              <span style="font-size:10px;">Mantener igual</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion center">Variación (%)</div>
+            <div class="col-check right">Mantener igual</div>
+          </template>
         </div>
 
         <div v-for="(item, idx) in pasivoCorto" :key="`pc-${idx}`" class="assumptions-row">
           <div class="col-concepto">
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
-          <div class="col-variacion">
+          <template v-if="esMultiperiodoBG">
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`pasivoCorto-inter-${idx}-${cidx}`">
+              <div class="col-variacion">
+                <div class="input-with-suffix">
+                  <input v-model="col.pasivo_corto_plazo[idx].variacion" class="input" type="number" step="0.1" placeholder="0" :disabled="col.pasivo_corto_plazo[idx].mantener_igual" />
+                  <span class="suffix">%</span>
+                </div>
+              </div>
+              <div class="col-check check-wrap">
+                <input v-model="col.pasivo_corto_plazo[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.pasivo_corto_plazo[idx].mantener_igual && (col.pasivo_corto_plazo[idx].variacion !== null && col.pasivo_corto_plazo[idx].variacion !== '' )" />
+              </div>
+            </template>
+            <div class="col-variacion">
+              
             <div class="input-with-suffix">
               <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap">
+          
+            </div>
+            <div class="col-check check-wrap">
+              
             <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
-          </div>
+          
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion">
+              
+            <div class="input-with-suffix">
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+              <span class="suffix">%</span>
+            </div>
+            <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
+          
+            </div>
+            <div class="col-check check-wrap">
+              
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+          
+            </div>
+          </template>
         </div>
       </div>
 
@@ -595,16 +896,49 @@ async function generarProyeccion() {
           <div class="col-concepto">
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
-          <div class="col-variacion">
+          <template v-if="esMultiperiodoBG">
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`pasivoLargo-inter-${idx}-${cidx}`">
+              <div class="col-variacion">
+                <div class="input-with-suffix">
+                  <input v-model="col.pasivo_largo_plazo[idx].variacion" class="input" type="number" step="0.1" placeholder="0" :disabled="col.pasivo_largo_plazo[idx].mantener_igual" />
+                  <span class="suffix">%</span>
+                </div>
+              </div>
+              <div class="col-check check-wrap">
+                <input v-model="col.pasivo_largo_plazo[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.pasivo_largo_plazo[idx].mantener_igual && (col.pasivo_largo_plazo[idx].variacion !== null && col.pasivo_largo_plazo[idx].variacion !== '' )" />
+              </div>
+            </template>
+            <div class="col-variacion">
+              
             <div class="input-with-suffix">
               <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap">
+          
+            </div>
+            <div class="col-check check-wrap">
+              
             <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
-          </div>
+          
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion">
+              
+            <div class="input-with-suffix">
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+              <span class="suffix">%</span>
+            </div>
+            <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
+          
+            </div>
+            <div class="col-check check-wrap">
+              
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+          
+            </div>
+          </template>
         </div>
       </div>
     </section>
@@ -619,24 +953,79 @@ async function generarProyeccion() {
       <div class="assumptions-table">
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
-          <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
+          <template v-if="esMultiperiodoBG">
+            <!-- Columnas intermedias -->
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`head-bg-inter-${cidx}`">
+              <div class="col-variacion center periodo-header intermedio">
+                {{ periodosMultiBG[cidx] }}<br>
+                <span style="font-size:10px;">Variación (%)</span>
+              </div>
+              <div class="col-check right periodo-header intermedio">
+                <span style="font-size:10px;">Mantener igual</span>
+              </div>
+            </template>
+            <!-- Columna final -->
+            <div class="col-variacion center periodo-header final">
+              {{ periodosMultiBG[periodosMultiBG.length - 1] }}<br>
+              <span style="font-size:10px;">Variación (%)</span>
+            </div>
+            <div class="col-check right periodo-header final">
+              <span style="font-size:10px;">Mantener igual</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion center">Variación (%)</div>
+            <div class="col-check right">Mantener igual</div>
+          </template>
         </div>
 
         <div v-for="(item, idx) in capitalContribuido" :key="`cc-${idx}`" class="assumptions-row">
           <div class="col-concepto">
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
-          <div class="col-variacion">
+          <template v-if="esMultiperiodoBG">
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`capitalContribuido-inter-${idx}-${cidx}`">
+              <div class="col-variacion">
+                <div class="input-with-suffix">
+                  <input v-model="col.capital_contribuido[idx].variacion" class="input" type="number" step="0.1" placeholder="0" :disabled="col.capital_contribuido[idx].mantener_igual" />
+                  <span class="suffix">%</span>
+                </div>
+              </div>
+              <div class="col-check check-wrap">
+                <input v-model="col.capital_contribuido[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.capital_contribuido[idx].mantener_igual && (col.capital_contribuido[idx].variacion !== null && col.capital_contribuido[idx].variacion !== '' )" />
+              </div>
+            </template>
+            <div class="col-variacion">
+              
             <div class="input-with-suffix">
               <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap">
+          
+            </div>
+            <div class="col-check check-wrap">
+              
             <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
-          </div>
+          
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion">
+              
+            <div class="input-with-suffix">
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+              <span class="suffix">%</span>
+            </div>
+            <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
+          
+            </div>
+            <div class="col-check check-wrap">
+              
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+          
+            </div>
+          </template>
         </div>
       </div>
 
@@ -652,14 +1041,45 @@ async function generarProyeccion() {
 
         <div v-for="(item, idx) in capitalGanadoEditable" :key="`cg-${idx}`" class="assumptions-row">
           <div class="col-concepto"><div class="concept-text">{{ item.concepto }}</div></div>
-          <div class="col-variacion">
+          <template v-if="esMultiperiodoBG">
+            <template v-for="(col, cidx) in columnasIntermediasBG" :key="`capitalGanadoEditable-inter-${idx}-${cidx}`">
+              <div class="col-variacion">
+                <div class="input-with-suffix">
+                  <input v-model="col.capital_ganado[idx].variacion" class="input" type="number" step="0.1" placeholder="0" :disabled="col.capital_ganado[idx].mantener_igual" />
+                  <span class="suffix">%</span>
+                </div>
+              </div>
+              <div class="col-check check-wrap">
+                <input v-model="col.capital_ganado[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.capital_ganado[idx].mantener_igual && (col.capital_ganado[idx].variacion !== null && col.capital_ganado[idx].variacion !== '' )" />
+              </div>
+            </template>
+            <div class="col-variacion">
+              
             <div class="input-with-suffix">
               <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
               <span class="suffix">%</span>
             </div>
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap"><input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" /></div>
+          
+            </div>
+            <div class="col-check check-wrap">
+              <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+            </div>
+          </template>
+          <template v-else>
+            <div class="col-variacion">
+              
+            <div class="input-with-suffix">
+              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+              <span class="suffix">%</span>
+            </div>
+            <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
+          
+            </div>
+            <div class="col-check check-wrap">
+              <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+            </div>
+          </template>
         </div>
 
         <div class="assumptions-row">

@@ -251,6 +251,13 @@ function iniciarNuevaProyeccion() {
   localStorage.removeItem('current_balance_config');
   localStorage.removeItem('current_balance_supuestos');
   
+  localStorage.removeItem('multiperiodo_er_resultados');
+  localStorage.removeItem('multiperiodo_bg_resultados');
+  localStorage.removeItem('multiperiodo_config');
+  
+  sessionStorage.removeItem("navegacion_multiperiodo_bg");
+  sessionStorage.removeItem("navegacion_multiperiodo_bg_resultado");
+  
   hasExistingBalanceProjection.value = false;
   balanceDisponible.value = false;
 

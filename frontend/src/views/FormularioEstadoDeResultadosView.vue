@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
@@ -28,6 +28,40 @@ const projectConfig = ref({
 const erDocIdRef = ref(null);
 
 const periodOptions = ref([]);
+
+// ── MULTIPERIODO ──────────────────────────────────────────────────────────
+const periodosIntermedios = computed(() => {
+  const idx = periodOptions.value.indexOf(projectConfig.value.periodoProyectado)
+  if (idx <= 0) return []
+  return periodOptions.value.slice(0, idx)
+})
+
+const esMultiperiodo = computed(() => periodosIntermedios.value.length > 0)
+
+const todosLosPeriodos = computed(() => [
+  ...periodosIntermedios.value,
+  projectConfig.value.periodoProyectado
+].filter(Boolean))
+
+const columnasIntermedias = ref([])
+
+function clonarSupuestos() {
+  return {
+    ingresos: ingresosRows.value.map(r => ({ ...r })),
+    costos: costosRows.value.map(r => ({ ...r })),
+    impuestos: impuestosRows.value.map(r => ({ ...r })),
+    inflacionEsperada: projectConfig.value.inflacionEsperada,
+    incluirImpuestos: incluirImpuestos.value,
+  }
+}
+
+watch(() => projectConfig.value.periodoProyectado, () => {
+  const nIntermedios = periodosIntermedios.value.length
+  while (columnasIntermedias.value.length < nIntermedios) {
+    columnasIntermedias.value.push(clonarSupuestos())
+  }
+  columnasIntermedias.value = columnasIntermedias.value.slice(0, nIntermedios)
+})
 
 function generateNextPeriods(baseDate, periodicity) {
   const options = [];
@@ -290,6 +324,11 @@ async function generarProyeccion() {
     return;
   }
 
+  if (esMultiperiodo.value) {
+    await generarProyeccionMulti();
+    return;
+  }
+
   isProcessing.value = true;
 
   try {
@@ -402,10 +441,127 @@ async function generarProyeccion() {
     isProcessing.value = false;
   }
 }
+
+function copiarSupuestosAIntermedios() {
+  if (!esMultiperiodo.value) return;
+  columnasIntermedias.value.forEach(col => {
+    col.ingresos.forEach((r, idx) => {
+      r.variacion = ingresosRows.value[idx].variacion;
+      r.mantener_igual = ingresosRows.value[idx].mantener_igual;
+    });
+    col.costos.forEach((r, idx) => {
+      r.variacion = costosRows.value[idx].variacion;
+      r.mantener_igual = costosRows.value[idx].mantener_igual;
+    });
+    col.impuestos.forEach((r, idx) => {
+      r.variacion = impuestosRows.value[idx].variacion;
+      r.mantener_igual = impuestosRows.value[idx].mantener_igual;
+    });
+  });
+}
+
+async function generarProyeccionMulti() {
+  isProcessing.value = true;
+  try {
+    const mapSupuestos = (col) => ({
+      inflacion_esperada: parseFloat(col.inflacionEsperada) || 0,
+      ventas_incremento_pct: parseFloat(
+        col.ingresos.find(r => r.concepto === "Ventas netas / Ingresos por servicios")?.variacion
+      ) || 0,
+      ingresos: col.ingresos.map(r => ({
+        concepto: r.concepto,
+        variacion: r.isVariable ? null : (parseFloat(r.variacion) || 0),
+        mantener_igual: r.mantener_igual,
+      })),
+      costos: col.costos.map(r => ({
+        concepto: r.concepto,
+        variacion: r.isVariable ? null : (parseFloat(r.variacion) || 0),
+        mantener_igual: r.mantener_igual,
+      })),
+      impuestos: col.incluirImpuestos ? col.impuestos.map(r => ({
+        concepto: r.concepto,
+        variacion: parseFloat(r.variacion) || null,
+        mantener_igual: false,
+      })) : [],
+    });
+
+    const columnasER = [
+      ...columnasIntermedias.value.map(mapSupuestos),
+      mapSupuestos({
+        ingresos: ingresosRows.value,
+        costos: costosRows.value,
+        impuestos: impuestosRows.value,
+        inflacionEsperada: projectConfig.value.inflacionEsperada,
+        incluirImpuestos: incluirImpuestos.value,
+      })
+    ];
+
+    const columnasBG = todosLosPeriodos.value.map(() => ({
+      activo_circulante: [], activo_no_circulante: [],
+      pasivo_corto_plazo: [], pasivo_largo_plazo: [],
+      capital_contribuido: [], capital_ganado: [],
+    }));
+
+    const payload = {
+      periodicidad: projectConfig.value.periodicidad || "mensual",
+      n_periodos: todosLosPeriodos.value.length,
+      periodos: todosLosPeriodos.value,
+      url_er_base: projectConfig.value.resultsUrl,
+      url_bg_base: "",
+      utilidad_neta_base: 0,
+      project_id: projectId,
+      periodo_base_label: projectConfig.value.periodoBaseLabel,
+      columnas_er: columnasER,
+      columnas_bg: columnasBG,
+    };
+
+    const response = await fetch(`${API_BASE_URL}/projections/multiperiodo/er`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const detailMsg = typeof err.detail === 'object' 
+        ? JSON.stringify(err.detail) 
+        : err.detail;
+      throw new Error(detailMsg || "Error en el servidor al calcular proyecciones multiperiodo");
+    }
+
+    const data = await response.json();
+
+    // Guardar resultados del ER multiperiodo
+    localStorage.setItem("multiperiodo_er_resultados", JSON.stringify(data));
+    localStorage.setItem("multiperiodo_config", JSON.stringify({
+      periodicidad: projectConfig.value.periodicidad,
+      periodoBase: projectConfig.value.periodoBaseLabel,
+      periodos: todosLosPeriodos.value,
+      periodoBaseId: projectConfig.value.periodoBaseId,
+      periodDate: projectConfig.value.periodDateBase,
+      urlBgBase: projectConfig.value.urlBgBase,           // ← para el BG
+      utilidadNetaBase: projectConfig.value.utilidadNetaBase, // ← para el BG
+    }));
+
+    // Limpiar resultados BG anteriores para forzar recálculo
+    localStorage.removeItem("multiperiodo_bg_resultados");
+
+    sessionStorage.setItem("navegacion_multiperiodo", "true"); // ← agregar
+    router.push({ 
+      name: "ProyeccionProformaEdoMulti",
+      params: { id_proyecto: projectId }
+    });
+  } catch (error) {
+    console.error("Error multiperiodo:", error);
+    errorBanner.value = `Error: ${error.message}`;
+  } finally {
+    isProcessing.value = false;
+  }
+}
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="wrap" :class="{ 'wrap-multi': esMultiperiodo }">
     <!-- Overlay de Carga -->
     <div v-if="isProcessing" class="loading-overlay">
       <div class="loading-content">
@@ -475,31 +631,63 @@ async function generarProyeccion() {
     </section>
 
     <section class="card">
-      <div class="section-title">
-        <span class="material-symbols-outlined section-icon icon-green">trending_up</span>
-        <h3>Supuestos por cuenta – Ingresos</h3>
+      <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-outlined section-icon icon-green">trending_up</span>
+          <h3>Supuestos por cuenta – Ingresos</h3>
+        </div>
+        <button v-if="esMultiperiodo" class="btn-edit" type="button" @click="copiarSupuestosAIntermedios">
+          <span class="material-symbols-outlined">content_copy</span>
+          Aplicar periodo final a todos
+        </button>
       </div>
 
-      <div class="assumptions-table">
-        <div class="assumptions-head">
-          <div class="col-concepto">Concepto</div>
-          <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
-        </div>
+      <div class="table-responsive" style="overflow-x: auto; padding-bottom: 4px;">
+        <div class="assumptions-table" :class="{ 'is-multi': esMultiperiodo }" :style="esMultiperiodo ? { '--cols-grid': `minmax(250px, 2.5fr) repeat(${todosLosPeriodos.length}, minmax(130px, 1.2fr) minmax(90px, 0.8fr))` } : {}">
+          <div class="assumptions-head">
+            <div class="col-concepto">Concepto</div>
+            
+            <template v-if="esMultiperiodo">
+              <template v-for="p in todosLosPeriodos" :key="`h-ing-${p}`">
+                <div class="col-variacion center">Variación (%) <br><span style="font-size: 10px; color: #299de0;">{{ p }}</span></div>
+                <div class="col-check right">Mantener igual <br><span style="font-size: 10px; color: #299de0;">{{ p }}</span></div>
+              </template>
+            </template>
+            <template v-else>
+              <div class="col-variacion center">Variación (%)</div>
+              <div class="col-check right">Mantener igual</div>
+            </template>
+          </div>
 
-        <div v-for="(row, idx) in ingresosRows" :key="`ingreso-${idx}`" class="assumptions-row">
-          <div class="col-concepto">
-            <div class="concept-text">{{ row.concepto }}</div>
-          </div>
-          <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
-              <span class="suffix">%</span>
+          <div v-for="(row, idx) in ingresosRows" :key="`ingreso-${idx}`" class="assumptions-row">
+            <div class="col-concepto">
+              <div class="concept-text">{{ row.concepto }}</div>
             </div>
-            <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap">
-            <input v-if="!row.isMotor" v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+            
+            <template v-if="esMultiperiodo">
+              <template v-for="(col, cidx) in columnasIntermedias" :key="`ing-i-${idx}-${cidx}`">
+                <div class="col-variacion">
+                  <div class="input-with-suffix">
+                    <input v-model="col.ingresos[idx].variacion" class="input" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="col.ingresos[idx].mantener_igual" />
+                    <span class="suffix">%</span>
+                  </div>
+                </div>
+                <div class="col-check check-wrap">
+                  <input v-if="!row.isMotor" v-model="col.ingresos[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.ingresos[idx].mantener_igual && (col.ingresos[idx].variacion !== null && col.ingresos[idx].variacion !== '' )" />
+                </div>
+              </template>
+            </template>
+
+            <div class="col-variacion">
+              <div class="input-with-suffix">
+                <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
+                <span class="suffix">%</span>
+              </div>
+              <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
+            </div>
+            <div class="col-check check-wrap">
+              <input v-if="!row.isMotor" v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+            </div>
           </div>
         </div>
       </div>
@@ -511,27 +699,52 @@ async function generarProyeccion() {
         <h3>Supuestos por cuenta – Costos y gastos</h3>
       </div>
 
-      <div class="assumptions-table">
-        <div class="assumptions-head">
-          <div class="col-concepto">Concepto</div>
-          <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
-        </div>
+      <div class="table-responsive" style="overflow-x: auto; padding-bottom: 4px;">
+        <div class="assumptions-table" :class="{ 'is-multi': esMultiperiodo }" :style="esMultiperiodo ? { '--cols-grid': `minmax(250px, 2.5fr) repeat(${todosLosPeriodos.length}, minmax(130px, 1.2fr) minmax(90px, 0.8fr))` } : {}">
+          <div class="assumptions-head">
+            <div class="col-concepto">Concepto</div>
+            <template v-if="esMultiperiodo">
+              <template v-for="p in todosLosPeriodos" :key="`h-cos-${p}`">
+                <div class="col-variacion center">Variación (%) <br><span style="font-size: 10px; color: #299de0;">{{ p }}</span></div>
+                <div class="col-check right">Mantener igual <br><span style="font-size: 10px; color: #299de0;">{{ p }}</span></div>
+              </template>
+            </template>
+            <template v-else>
+              <div class="col-variacion center">Variación (%)</div>
+              <div class="col-check right">Mantener igual</div>
+            </template>
+          </div>
 
-        <div v-for="(row, idx) in costosRows" :key="`costo-${idx}`" class="assumptions-row">
-          <div class="col-concepto">
-            <div class="concept-text">{{ row.concepto }}</div>
-            <p v-if="row.subtitulo" class="concept-sub">{{ row.subtitulo }}</p>
-          </div>
-          <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
-              <span class="suffix">%</span>
+          <div v-for="(row, idx) in costosRows" :key="`costo-${idx}`" class="assumptions-row">
+            <div class="col-concepto">
+              <div class="concept-text">{{ row.concepto }}</div>
+              <p v-if="row.subtitulo" class="concept-sub">{{ row.subtitulo }}</p>
             </div>
-            <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap">
-            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+            
+            <template v-if="esMultiperiodo">
+              <template v-for="(col, cidx) in columnasIntermedias" :key="`cos-i-${idx}-${cidx}`">
+                <div class="col-variacion">
+                  <div class="input-with-suffix">
+                    <input v-model="col.costos[idx].variacion" class="input" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="col.costos[idx].mantener_igual" />
+                    <span class="suffix">%</span>
+                  </div>
+                </div>
+                <div class="col-check check-wrap">
+                  <input v-model="col.costos[idx].mantener_igual" class="checkbox" type="checkbox" :disabled="!col.costos[idx].mantener_igual && (col.costos[idx].variacion !== null && col.costos[idx].variacion !== '' )" />
+                </div>
+              </template>
+            </template>
+
+            <div class="col-variacion">
+              <div class="input-with-suffix">
+                <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
+                <span class="suffix">%</span>
+              </div>
+              <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
+            </div>
+            <div class="col-check check-wrap">
+              <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+            </div>
           </div>
         </div>
       </div>
@@ -543,34 +756,59 @@ async function generarProyeccion() {
         <h3>Impuestos</h3>
       </div>
 
-      <div class="assumptions-table">
-        <div class="assumptions-head">
-          <div class="col-concepto">Concepto</div>
-          <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
-        </div>
-        <div v-for="(row, idx) in impuestosRows" :key="`impuesto-${idx}`" class="assumptions-row">
-          <div class="col-concepto">
-            <div class="concept-text">{{ row.concepto }}</div>
-            <div class="leyenda-fiscal" v-if="row.concepto === 'ISR'" style="font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;">
-              💡 Para personas morales en México se recomienda <strong>30%</strong> (Art. 9 LISR). 
-              Verifica la tasa aplicable según el régimen fiscal de tu empresa.
-            </div>
-            <div class="leyenda-fiscal" v-if="row.concepto.includes('PTU')" style="font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;">
-              💡 La tasa estándar en México es <strong>10%</strong> (Art. 123 Constitucional). 
-              No aplica si la empresa tuvo pérdidas fiscales o es de nueva creación.
-            </div>
+      <div class="table-responsive" style="overflow-x: auto; padding-bottom: 4px;">
+        <div class="assumptions-table" :class="{ 'is-multi': esMultiperiodo }" :style="esMultiperiodo ? { '--cols-grid': `minmax(250px, 2.5fr) repeat(${todosLosPeriodos.length}, minmax(130px, 1.2fr) minmax(90px, 0.8fr))` } : {}">
+          <div class="assumptions-head">
+            <div class="col-concepto">Concepto</div>
+            <template v-if="esMultiperiodo">
+              <template v-for="p in todosLosPeriodos" :key="`h-imp-${p}`">
+                <div class="col-variacion center">Tasa (%) <br><span style="font-size: 10px; color: #299de0;">{{ p }}</span></div>
+                <div class="col-check right">N/A <br><span style="font-size: 10px; color: #299de0;">{{ p }}</span></div>
+              </template>
+            </template>
+            <template v-else>
+              <div class="col-variacion center">Variación (%)</div>
+              <div class="col-check right">Mantener igual</div>
+            </template>
           </div>
-          <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" placeholder="" :disabled="row.mantener_igual" />
-              <span class="suffix">%</span>
+          <div v-for="(row, idx) in impuestosRows" :key="`impuesto-${idx}`" class="assumptions-row">
+            <div class="col-concepto">
+              <div class="concept-text">{{ row.concepto }}</div>
+              <div class="leyenda-fiscal" v-if="row.concepto === 'ISR'" style="font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;">
+                💡 Para personas morales en México se recomienda <strong>30%</strong> (Art. 9 LISR). 
+                Verifica la tasa aplicable según el régimen fiscal de tu empresa.
+              </div>
+              <div class="leyenda-fiscal" v-if="row.concepto.includes('PTU')" style="font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;">
+                💡 La tasa estándar en México es <strong>10%</strong> (Art. 123 Constitucional). 
+                No aplica si la empresa tuvo pérdidas fiscales o es de nueva creación.
+              </div>
             </div>
-            <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
-          </div>
-          <div class="col-check check-wrap" style="flex-direction: column; align-items: flex-end;">
-            <span style="font-size: 12px; color: #94a3b8; font-weight: 700; user-select: none;">N/A</span>
-            <span style="font-size: 10px; color: #94a3b8; text-align: right; max-width: 140px; margin-top: 4px; line-height: 1.3;">Los impuestos dependen de la utilidad proyectada, no pueden mantenerse fijos.</span>
+
+            <template v-if="esMultiperiodo">
+              <template v-for="(col, cidx) in columnasIntermedias" :key="`imp-i-${idx}-${cidx}`">
+                <div class="col-variacion">
+                  <div class="input-with-suffix">
+                    <input v-model="col.impuestos[idx].variacion" class="input" type="number" step="0.1" placeholder="" />
+                    <span class="suffix">%</span>
+                  </div>
+                </div>
+                <div class="col-check check-wrap" style="flex-direction: column; align-items: flex-end;">
+                  <span style="font-size: 12px; color: #94a3b8; font-weight: 700; user-select: none;">N/A</span>
+                </div>
+              </template>
+            </template>
+
+            <div class="col-variacion">
+              <div class="input-with-suffix">
+                <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" placeholder="" :disabled="row.mantener_igual" />
+                <span class="suffix">%</span>
+              </div>
+              <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
+            </div>
+            <div class="col-check check-wrap" style="flex-direction: column; align-items: flex-end;">
+              <span style="font-size: 12px; color: #94a3b8; font-weight: 700; user-select: none;">N/A</span>
+              <span style="font-size: 10px; color: #94a3b8; text-align: right; max-width: 140px; margin-top: 4px; line-height: 1.3;">Los impuestos dependen de la utilidad proyectada, no pueden mantenerse fijos.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -602,6 +840,11 @@ async function generarProyeccion() {
   flex-direction: column;
   gap: 18px;
 }
+
+.wrap-multi {
+  width: min(1400px, 100%);
+}
+
 
 .loading-overlay {
   position: fixed;
@@ -985,9 +1228,18 @@ async function generarProyeccion() {
   display: inline-block;
 }
 
-.input-error {
-  border-color: #ef4444 !important;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18) !important;
-  background: #fff5f5 !important;
-}
-</style>
+  .input-error {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18) !important;
+    background: #fff5f5 !important;
+  }
+  
+  /* OVERRIDE DINÁMICO PARA MULTIPERIODO */
+  .assumptions-table.is-multi .assumptions-head {
+    display: grid !important;
+    grid-template-columns: var(--cols-grid) !important;
+  }
+  .assumptions-table.is-multi .assumptions-row {
+    grid-template-columns: var(--cols-grid) !important;
+  }
+  </style>

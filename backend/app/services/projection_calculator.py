@@ -644,6 +644,51 @@ class ProjectionCalculator(FinancialCalculator):
 
         return "anual"  # fallback conservador
 
+    def construir_ocr_sintetico(
+        self,
+        tablas_proyectadas: list,
+        periodo_label: str = "PERIODO SINTETICO"
+    ) -> dict:
+        """
+        Patrón Adaptador — convierte las tablas_proyectadas del periodo anterior
+        en un OCR sintético compatible con todos los métodos de búsqueda del motor.
+
+        Esto permite que en proyecciones base rodante (trimestral/anual), el motor
+        pueda leer los resultados del P1 como si fueran un PDF real para calcular P2.
+
+        La fila 0 es un header falso para que _detectar_columna_periodo
+        encuentre "PERIODO" en col:1 y retorne target_col_index = 1 correctamente.
+        """
+        tabla = []
+
+        # Fila 0 — header falso
+        # _detectar_columna_periodo busca "periodo" en las primeras 5 filas
+        # Al encontrarlo en col:1, retorna target_col_index = 1
+        tabla.append({"row": 0, "col": 0, "text": "CONCEPTO"})
+        tabla.append({"row": 0, "col": 1, "text": f"PERIODO {periodo_label.upper()}"})
+
+        # Filas de datos — una por cada cuenta proyectada
+        for i, fila in enumerate(tablas_proyectadas, start=1):
+            # Col 0 — nombre exacto de la cuenta
+            tabla.append({
+                "row": i,
+                "col": 0,
+                "text": str(fila.get("concepto", ""))
+            })
+            # Col 1 — valor proyectado como string numérico
+            # Formato sin comas para que _clean_number lo procese correctamente
+            valor = fila.get("valor_proyectado", 0.0)
+            tabla.append({
+                "row": i,
+                "col": 1,
+                "text": str(round(float(valor), 2))
+            })
+
+        return {
+            "tables_data": [tabla],
+            "es_sintetico": True  # flag informativo — el motor lo ignora
+        }
+
     def _detectar_columna_periodo(self, tablas_ocr, periodo_base):
         """
         Detecta la columna correcta del periodo base en cascada.
