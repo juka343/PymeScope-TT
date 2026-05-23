@@ -1,0 +1,369 @@
+{
+  "version": "1.1",
+  "fuente": "Normas de Información Financiera (NIF) + Catálogo Extendido de Subcuentas",
+  "estados_financieros": [
+    {
+      "estado": "Estado de Situación Financiera",
+      "norma": "NIF B-6",
+      "estructura": [
+        {
+          "elemento": "Activo",
+          "clasificaciones": [
+            {
+              "nombre": "Corto plazo, circulante o corriente",
+              "cuentas": [
+                {
+                  "nombre": "Efectivo y equivalentes de efectivo",
+                  "subcuentas": [
+                    "Caja", "Caja moneda nacional", "Caja moneda extranjera",
+                    "Bancos", "Bancos moneda nacional", "Bancos moneda extranjera"
+                  ]
+                },
+                {
+                  "nombre": "Instrumentos financieros de negociación",
+                  "subcuentas": ["Instrumentos de capital", "Instrumentos de deuda"]
+                },
+                {
+                  "nombre": "Inversiones temporales",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Cuentas por cobrar a clientes",
+                  "subcuentas": ["Clientes", "Clientes nacionales", "Clientes extranjeros"]
+                },
+                {
+                  "nombre": "Cuentas por cobrar a partes relacionadas",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Otras cuentas por cobrar (deudores diversos)",
+                  "subcuentas": ["Deudores diversos", "Deudores diversos nacionales", "Deudores diversos extranjeros"]
+                },
+                {
+                  "nombre": "Impuestos por recuperar",
+                  "subcuentas": [
+                    "IVA Acreditable", "IVA por acreditar", "IVA retenido a favor",
+                    "Impuestos a favor", "IVA por cobrar", "ISR por cobrar"
+                  ]
+                },
+                {
+                  "nombre": "IVA por acreditar",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "IVA acreditable",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Inventarios",
+                  "subcuentas": [
+                    "Materia prima y materiales", 
+                    "Inv. productos en procesos", "Inventario de productos en proceso",
+                    "Productos terminados", 
+                    "Mercancías en transito", 
+                    "Mercancías en poder de terceros"
+                  ]
+                },
+                {
+                  "nombre": "Pagos anticipados",
+                  "subcuentas": [
+                    "Anticipo a proveedores", "Anticipos a proveedores nacionales", "Anticipos a proveedores extranjeros",
+                    "Papelería y artículos de escritorio",
+                    "Propaganda y publicidad",
+                    "Seguros y fianzas",
+                    "Rentas pagadas por anticipado",
+                    "Intereses pagados por anticipado",
+                    "Impuestos y derechos"
+                  ]
+                },
+                {
+                  "nombre": "Otros activos a corto plazo",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Activos disponibles para la venta",
+                  "subcuentas": []
+                }
+              ]
+            },
+            {
+              "nombre": "Largo plazo (no circulante)",
+              "cuentas": [
+                {
+                  "nombre": "Propiedades, planta y equipo (activo fijo)",
+                  "subcuentas": [
+                    "Terrenos",
+                    "Edificios", "Depreciación de edificios",
+                    "Maquinaria", "Equipo de transporte", "Equipo de computo", "Equipo de cómputo",
+                    "Depreciación de maquinaria y equipo",
+                    "Mobiliario y equipo de oficina",
+                    "Herramientas y otros equipos de operación", "Depreciación de herramientas"
+                  ]
+                },
+                {
+                  "nombre": "Crédito mercantil",
+                  "subcuentas": ["Marcas y patentes"]
+                },
+                {
+                  "nombre": "Intangibles y Diferido",
+                  "subcuentas": [
+                    "Patentes",
+                    "Marcas",
+                    "Crédito mercantil",
+                    "Franquicias",
+                    "Licencias de software",
+                    "Otros activos intangibles",
+                    "Gastos de instalación",
+                    "Permisos pre operativos"
+                  ]
+                },
+                {
+                  "nombre": "Instrumentos financieros por cobrar a largo plazo",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Otros activos",
+                  "subcuentas": [
+                    "Depósitos en garantía"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "elemento": "Pasivo",
+          "clasificaciones": [
+            {
+              "nombre": "A corto plazo",
+              "cuentas": [
+                {
+                  "nombre": "Cuentas por pagar a proveedores",
+                  "subcuentas": ["Proveedores nacionales", "Proveedores extranjeros"]
+                },
+                {
+                  "nombre": "Préstamo bancario",
+                  "subcuentas": ["Préstamos bancarios", "Préstamos bancarios nacional", "Préstamos bancarios extranjero"]
+                },
+                {
+                  "nombre": "Acreedores diversos",
+                  "subcuentas": ["Acreedores diversos nacionales", "Acreedores diversos extranjeros"]
+                },
+                {
+                  "nombre": "Impuestos a la utilidad por pagar",
+                  "subcuentas": [
+                    "IVA trasladado", "IVA por trasladar",
+                    "Impuestos a cargo", "IVA por pagar",
+                    "ISR retenido", "ISR por pagar", "Impuesto sobre nominas"
+                  ]
+                },
+                {
+                  "nombre": "IVA por causar o trasladar",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "IVA causado o trasladado",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Cobros anticipados",
+                  "subcuentas": [
+                    "Anticipo de clientes", "Anticipo de clientes nacionales", "Anticipo de clientes extranjeros",
+                    "Rentas cobradas por anticipado",
+                    "Intereses cobrados por anticipado"
+                  ]
+                },
+                {
+                  "nombre": "Provisiones",
+                  "subcuentas": ["Provisión sueldos y salarios", "Provisión vacaciones", "Provisión aguinaldo"]
+                }
+              ]
+            },
+            {
+              "nombre": "A largo plazo",
+              "cuentas": [
+                {
+                  "nombre": "Deudas financieras",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Acreedores diversos a largo plazo",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Cuentas por pagar a largo plazo",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Cobros anticipados a largo plazo",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Impuesto a la utilidad diferido por pagar",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Beneficio a empleados",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Provisiones a largo plazo",
+                  "subcuentas": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "elemento": "Capital Contable",
+          "clasificaciones": [
+            {
+              "nombre": "Capital contribuido",
+              "cuentas": [
+                {
+                  "nombre": "Capital social",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Aportaciones para futuros aumentos de capital",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Prima en venta de acciones",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Donaciones",
+                  "subcuentas": []
+                }
+              ]
+            },
+            {
+              "nombre": "Capital ganado",
+              "cuentas": [
+                {
+                  "nombre": "Utilidades / pérdidas de ejercicios anteriores",
+                  "subcuentas": ["Utilidades acumuladas", "Pérdidas acumuladas", "Perdidas acumuladas"]
+                },
+                {
+                  "nombre": "Reserva legal",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Utilidad / pérdida del ejercicio",
+                  "subcuentas": ["Utilidad o perdida del ejercicio"]
+                },
+                {
+                  "nombre": "Otros resultados integrales",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Participación controladora",
+                  "subcuentas": []
+                },
+                {
+                  "nombre": "Participación no controladora",
+                  "subcuentas": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "estado": "Estado de Resultados",
+      "norma": "NIF B-3",
+      "nota": "La NIF B-3 obliga a presentar los rubros en este orden estricto para calcular las utilidades en cascada.",
+      "estructura": [
+        {
+          "elemento": "Ingresos",
+          "clasificaciones": [
+            {
+              "nombre": "Ventas o Ingresos netos",
+              "cuentas": [
+                { "nombre": "Ventas totales", "subcuentas": ["Ventas en territorio nacional", "Ventas en territorio extranjero"] },
+                { "nombre": "Descuentos sobre ventas", "subcuentas": [] },
+                { "nombre": "Devoluciones sobre ventas", "subcuentas": [] }
+              ]
+            }
+          ]
+        },
+        {
+          "elemento": "Costos",
+          "clasificaciones": [
+            {
+              "nombre": "Costo de ventas",
+              "cuentas": [
+                { "nombre": "Costo de mercancía vendida", "subcuentas": ["Costo de lo vendido"] },
+                { "nombre": "Costo de servicios prestados", "subcuentas": [] }
+              ]
+            }
+          ]
+        },
+        {
+          "elemento": "Gastos Generales (Operación)",
+          "clasificaciones": [
+            {
+              "nombre": "Gastos de venta",
+              "cuentas": [
+                { "nombre": "Sueldos y salarios (ventas)", "subcuentas": ["Gastos del personal"] },
+                { "nombre": "Comisiones sobre ventas", "subcuentas": [] },
+                { "nombre": "Propaganda y publicidad", "subcuentas": [] },
+                { "nombre": "Fletes y acarreos de entrega", "subcuentas": [] }
+              ]
+            },
+            {
+              "nombre": "Gastos de administración",
+              "cuentas": [
+                { "nombre": "Sueldos y salarios (administrativos)", "subcuentas": ["Gastos del personal", "Gastos generales administración"] },
+                { "nombre": "Honorarios profesionales", "subcuentas": [] },
+                { "nombre": "Renta de oficinas", "subcuentas": [] },
+                { "nombre": "Servicios (luz, agua, teléfono, internet)", "subcuentas": ["Gastos generales de operación"] }
+              ]
+            }
+          ]
+        },
+        {
+          "elemento": "Resultado Integral de Financiamiento (RIF)",
+          "clasificaciones": [
+            {
+              "nombre": "Gastos y productos financieros",
+              "cuentas": [
+                { "nombre": "Gastos financieros (Intereses a cargo)", "subcuentas": ["Intereses bancarios a cargo", "Gastos en comisiones bancarias", "Pérdida en venta de acciones", "Perdida en venta de acciones"] },
+                { "nombre": "Productos financieros (Intereses a favor)", "subcuentas": ["Intereses bancarios a favor", "Comisiones por prestamos", "Ganancia en venta de acciones"] },
+                { "nombre": "Pérdida cambiaria", "subcuentas": ["Perdida cambiaria"] },
+                { "nombre": "Utilidad cambiaria", "subcuentas": [] },
+                { "nombre": "Comisiones bancarias", "subcuentas": [] }
+              ]
+            }
+          ]
+        },
+        {
+          "elemento": "Otros ingresos y gastos",
+          "clasificaciones": [
+            {
+              "nombre": "Partidas no ordinarias",
+              "cuentas": [
+                { "nombre": "Otros gastos", "subcuentas": ["Pérdida en venta de propiedad planta y equipo", "Perdida en venta de propiedad planta y equipo", "Comisiones a cargo", "Otras actividades a cargo"] },
+                { "nombre": "Otros ingresos", "subcuentas": ["Otros productos", "Ganancia en venta de propiedad planta y equipo", "Comisiones a favor", "Otras actividades a favor"] }
+              ]
+            }
+          ]
+        },
+        {
+          "elemento": "Impuestos",
+          "clasificaciones": [
+            {
+              "nombre": "Impuestos a la utilidad",
+              "cuentas": [
+                { "nombre": "ISR (Impuesto Sobre la Renta)", "subcuentas": ["ISR"] },
+                { "nombre": "PTU (Participación de los Trabajadores en las Utilidades)", "subcuentas": [] }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
