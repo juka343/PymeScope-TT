@@ -1,0 +1,26 @@
+{
+  "datos_crudos": {
+    "utilidad_neta": 4735000000.0,
+    "ventas_netas": 70925000000.0,
+    "activo_total": 333116000000.0,
+    "capital_contable": 146870000000.0,
+    "multiplicador": 1000000
+  },
+  "kpis": [
+    {
+      "label": "Margen de Rentabilidad",
+      "value": "6.68%",
+      "status": "warn"
+    },
+    {
+      "label": "Rendimiento sobre Activos Totales (RAT)",
+      "value": "1.42%",
+      "status": "ok"
+    },
+    {
+      "label": "Rendimiento sobre el Patrimonio",
+      "value": "3.22%",
+      "status": "ok"
+    }
+  ]
+}

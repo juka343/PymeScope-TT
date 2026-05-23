@@ -92,7 +92,13 @@ class FinancialCalculator:
             "activo circulante", "total activo circulante",
             "total de activo circulante", "activos corrientes",
             "total de activos corrientes", "suma del activo circulante",
-            "activo a corto plazo", 
+            "activo a corto plazo",
+            # Variantes plurales con prefijo "total" (ej. Coca-Cola BMV: "Total activos circulantes")
+            # NOTA: "activos circulantes" sin "total" NO se agrega — coincide con
+            # encabezados de sección en balances corporativos (Bimbo, FEMSA) que tienen
+            # un número adyacente erróneo antes de la fila de total real.
+            "total activos circulantes",
+            "activos corrientes totales",
         ]
 
         self.kw_pasivo_circulante = [
@@ -171,7 +177,10 @@ class FinancialCalculator:
 
         # ===== Estructura =====
         self.kw_capital_social = [
-            "capital social", 
+            # Formas de total (más largas → prioridad en sort descendente)
+            "total de capital social",
+            "total capital social",
+            "capital social",
             "capital social fijo",      # Muy común en S.A. de C.V.
             "capital social variable",  # Muy común en S.A. de C.V.
             "capital aportado", 
@@ -201,6 +210,13 @@ class FinancialCalculator:
             "pasivos lp"
         ]
 
+        # ===== Telemetría de extracción =====
+        # _trace_buffer acumula cómo se obtuvo cada concepto en el módulo activo.
+        # _last_match_info es la "variable de salida" que _keyword_search/_semantic_search
+        # rellenan antes de retornar, para que _find_value la copie al buffer.
+        self._trace_buffer: Dict[str, dict] = {}
+        self._last_match_info: dict = {}
+
         # Cargar catálogo NIF y hacer merge con diccionarios
         self._load_nif_catalog()
 
@@ -221,9 +237,13 @@ class FinancialCalculator:
             print(f"⚠️ FinancialCalculator: Error al cargar catalogo_nif.json: {e}")
             return
 
-        # Mapeo estricto para Exact Match. 
-        # NOTA: Omitimos "A corto plazo" o "A largo plazo" porque como substring causan falsos positivos (ej. atrapan "Activo a largo plazo" al buscar pasivo).
+        # Mapeo estricto para Exact Match.
+        # NOTA: Omitimos "A corto plazo" o "A largo plazo" porque como substring causan falsos positivos
+        # (ej. "a corto plazo" matchea "Activo a Corto Plazo" al buscar pasivo).
+        # Para kw_pasivo_circulante y kw_pasivo_largo_plazo: el nombre NIF es peligroso como keyword;
+        # se omiten del mapping para no inyectar términos ambiguos en las listas de búsqueda.
         nif_mapping = {
+            # === NIF B-6 / B-3: conceptos que ya tenían sustento ===
             "kw_inventario": ["Inventarios"],
             "kw_capital_social": ["Capital social"],
             "kw_utilidad_neta": ["Utilidad / pérdida del ejercicio"],
@@ -232,7 +252,16 @@ class FinancialCalculator:
             "kw_cuentas_por_cobrar": ["Cuentas por cobrar a clientes", "Otras cuentas por cobrar (deudores diversos)"],
             "kw_activo_fijo": ["Propiedades, planta y equipo (activo fijo)"],
             "kw_impuestos": ["Impuestos a la utilidad", "ISR (Impuesto Sobre la Renta)", "PTU (Participación de los Trabajadores en las Utilidades)"],
-            "kw_capital": ["Capital Contable"]
+            "kw_capital": ["Capital Contable"],
+            # === NIF B-6: 3 conceptos que faltaban (solo términos seguros como keyword) ===
+            # "Corto plazo, circulante o corriente" es el nombre de clasificación NIF B-6 —
+            # demasiado verboso para aparecer en documentos reales, pero establece el vínculo normativo.
+            "kw_activo_circulante": ["Corto plazo, circulante o corriente"],
+            # === Extensiones NIF (totales estructurales de catalogo_nif.json#extensiones) ===
+            "kw_activo_total": ["Total del Activo"],
+            "kw_pasivo_total": ["Total del Pasivo"],
+            "kw_utilidad_operacion": ["Utilidad de operación"],
+            "kw_utilidad_antes_impuestos": ["Utilidad antes de impuestos a la utilidad"],
         }
 
         def extract_terms(data, target_names, current_terms):
@@ -319,18 +348,35 @@ class FinancialCalculator:
     # -------------------------------------------------------------------------
     def _find_value(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None, concept_key: str = None) -> float:
         """Busca un valor en las tablas OCR. Primero por keywords, luego por similitud semántica."""
+        self._last_match_info = {"method": "not_found"}
+
         # --- Paso 1: Búsqueda por keywords (rápida, determinística, gratis) ---
         result = self._keyword_search(tables_data, keywords, take_last, col_index, skip_if_row_contains)
         if result != 0.0:
+            if concept_key:
+                self._trace_buffer[concept_key] = dict(self._last_match_info)
             return result
-        
+
         # --- Paso 2: Fallback semántico con embeddings (solo si el diccionario falló) ---
         if concept_key and self._embedding_service and self._embedding_service.is_available():
             semantic_result = self._semantic_search(tables_data, concept_key, take_last, col_index, skip_if_row_contains)
             if semantic_result != 0.0:
-                print(f"  🧠 Embedding fallback: '{concept_key}' encontrado por similitud semántica → {semantic_result}")
+                info = dict(self._last_match_info)
+                score = info.get("score", 0.0)
+                zona = info.get("zone", "")
+                if zona == "gris":
+                    print(
+                        f"  ⚠️  Embedding zona gris: '{concept_key}' "
+                        f"raw={score:.3f} anti={info.get('score_anti', 0.0):.3f} "
+                        f"adj={info.get('score_adjusted', 0.0):.3f} → {semantic_result:,.2f}"
+                    )
+                else:
+                    print(f"  🧠 Embedding         : '{concept_key}' score={score:.3f} → {semantic_result:,.2f}")
+                self._trace_buffer[concept_key] = info
                 return semantic_result
-        
+
+        if concept_key:
+            self._trace_buffer[concept_key] = {"method": "not_found"}
         return 0.0
 
     def _keyword_search(self, tables_data: List[List[Dict[str, Any]]], keywords: List[str], take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None) -> float:
@@ -375,12 +421,19 @@ class FinancialCalculator:
                         if found_values:
                             # --- FILTRO ANTI-PORCENTAJES (Nivel Experto) ---
                             max_magnitude = max(abs(v) for v in found_values)
-                            
+
                             val_monetarios = [v for v in found_values if abs(v) > 100 or abs(v) == max_magnitude or v == 0]
-                            
+
                             # Determinamos la lista a usar
                             lista_final = val_monetarios if val_monetarios else found_values
-                            
+
+                            # Registrar match para telemetría (antes de cualquier return)
+                            self._last_match_info = {
+                                "method": "keyword",
+                                "matched_term": kw,
+                                "row_snippet": row_text[:120].strip(),
+                            }
+
                             # Lógica de extracción de columna
                             if take_last:
                                 return lista_final[-1]
@@ -412,15 +465,37 @@ class FinancialCalculator:
                             if kw in str(cell.get("text", "")).lower():
                                 val = self._clean_number(cell.get("text", ""))
                                 if val is not None:
+                                    self._last_match_info = {
+                                        "method": "keyword",
+                                        "matched_term": kw,
+                                        "row_snippet": row_text[:120].strip(),
+                                    }
                                     return float(val)
         return 0.0
 
     def _semantic_search(self, tables_data: List[List[Dict[str, Any]]], concept_key: str, take_last: bool = False, col_index: int = 0, skip_if_row_contains: List[str] = None) -> float:
-        """Búsqueda semántica: compara cada fila de texto contra el concepto canónico usando embeddings."""
-        THRESHOLD = 0.85
-        best_score = 0.0
+        """Búsqueda semántica con umbral graduado y penalización por anti-conceptos.
+
+        Para cada fila se calcula:
+          - score_raw: similitud con el concepto buscado
+          - score_anti: similitud máxima con sus anti-conceptos (ej. activo_circulante ↔ pasivo_circulante)
+          - score_adjusted = score_raw - 0.5 * score_anti
+
+        Aceptación:
+          - score_adjusted >= THRESHOLD_ALTO (0.88)  → aceptado (zona segura)
+          - THRESHOLD_BAJO (0.75) <= adj < ALTO     → zona gris. Aceptar solo si la
+            ventaja sobre el anti-concepto (raw - anti) es >= MARGIN (0.05).
+          - score_adjusted < THRESHOLD_BAJO          → rechazado.
+        """
+        THRESHOLD_ALTO = 0.88
+        THRESHOLD_BAJO = 0.75
+        MARGIN_ANTI = 0.05
+
+        best_adjusted = 0.0
+        best_raw = 0.0
+        best_anti = 0.0
         best_values = []
-        
+
         for table in reversed(tables_data):
             rows: Dict[int, List[Dict[str, Any]]] = {}
             for cell in table:
@@ -430,37 +505,40 @@ class FinancialCalculator:
             for r_idx in sorted(rows.keys(), reverse=True):
                 row_cells = rows[r_idx]
                 row_cells.sort(key=lambda x: int(x.get("col", 0)))
-                
+
                 # Extraer solo las celdas de texto (no numéricas) para el embedding
                 text_cells = []
                 for c in row_cells:
                     txt = str(c.get("text", "")).strip()
                     if txt and self._clean_number(txt) is None:
                         text_cells.append(txt)
-                
+
                 row_label = " ".join(text_cells).strip()
                 if not row_label or len(row_label) < 3:
                     continue
-                
+
                 row_text = " ".join([str(c.get("text", "")).lower() for c in row_cells])
-                
+
                 # Saltar filas veneno
                 if skip_if_row_contains and any(poison in row_text for poison in skip_if_row_contains):
                     continue
-                
-                # Calcular similitud semántica
-                score = self._embedding_service.find_match_for_concept(row_label, concept_key, threshold=THRESHOLD)
-                
-                if score > best_score:
-                    best_score = score
+
+                # Score crudo + anti-concepto (un solo embedding por fila)
+                score_raw, score_anti, score_adj = self._embedding_service.find_match_with_anticoncepts(
+                    row_label, concept_key
+                )
+
+                if score_adj > best_adjusted:
+                    best_adjusted = score_adj
+                    best_raw = score_raw
+                    best_anti = score_anti
                     # Extraer valores numéricos de la fila
-                    # Encontrar la última celda de texto para usarla como referencia de columna
                     text_col_max = -1
                     for c in row_cells:
                         txt = str(c.get("text", "")).strip()
                         if txt and self._clean_number(txt) is None:
                             text_col_max = max(text_col_max, int(c.get("col", 0)))
-                    
+
                     found_values = []
                     for cell in row_cells:
                         c_idx = int(cell.get("col", 0))
@@ -471,68 +549,223 @@ class FinancialCalculator:
                                 found_values.append(float(val))
                             elif cell_text and val is None:
                                 break
-                    
+
                     if found_values:
                         max_magnitude = max(abs(v) for v in found_values)
                         val_monetarios = [v for v in found_values if abs(v) > 100 or abs(v) == max_magnitude or v == 0]
                         best_values = val_monetarios if val_monetarios else found_values
-        
-        if best_values and best_score >= THRESHOLD:
-            lista_final = best_values
-            if take_last:
-                return lista_final[-1]
-                
-            # --- REGLA FRANCOTIRADOR (Sábanas Mensuales) ---
-            p = getattr(self, "_current_periodicidad", "").lower()
-            if len(lista_final) >= 12 and p in ("trimestral", "semestral"):
-                is_flow = concept_key in ("ventas_netas", "utilidad_neta", "utilidad_antes_impuestos", "utilidad_operacion", "costo_de_ventas", "gastos_financieros", "impuestos")
-                step = 3 if p == "trimestral" else 6
-                start = col_index * step
-                if start + step <= len(lista_final):
-                    if is_flow:
-                        return sum(lista_final[start:start+step])
-                    else:
-                        return lista_final[start + step - 1]
 
-            if col_index < len(lista_final):
-                return lista_final[col_index]
-            p = getattr(self, "_current_periodicidad", "").lower()
-            if p == "mensual":
-                return lista_final[0]
+        # Reglas de aceptación por umbral graduado
+        if not best_values:
+            return 0.0
+
+        accepted = False
+        zona = None
+        if best_adjusted >= THRESHOLD_ALTO:
+            accepted = True
+            zona = "alta"
+        elif best_adjusted >= THRESHOLD_BAJO:
+            # Zona gris solo es válida si el concepto tiene anti-conceptos definidos
+            # que aporten señal de desambiguación. Sin anti-concepto, el margin check
+            # es trivial (anti=0 → cualquier raw lo cumple) y se filtran falsos
+            # positivos exigiendo zona alta.
+            if best_anti > 0 and (best_raw - best_anti) >= MARGIN_ANTI:
+                accepted = True
+                zona = "gris"
+
+        if not accepted:
+            if best_raw >= THRESHOLD_BAJO:
+                print(
+                    f"  ⛔ Embedding rechazado: '{concept_key}' raw={best_raw:.3f} "
+                    f"anti={best_anti:.3f} adj={best_adjusted:.3f}"
+                )
+            return 0.0
+
+        # Registrar match semántico para telemetría
+        self._last_match_info = {
+            "method": "semantic",
+            "score": round(best_raw, 4),
+            "score_adjusted": round(best_adjusted, 4),
+            "score_anti": round(best_anti, 4),
+            "zone": zona,
+        }
+
+        lista_final = best_values
+        if take_last:
             return lista_final[-1]
-        
-        return 0.0
 
+        # --- REGLA FRANCOTIRADOR (Sábanas Mensuales) ---
+        p = getattr(self, "_current_periodicidad", "").lower()
+        if len(lista_final) >= 12 and p in ("trimestral", "semestral"):
+            is_flow = concept_key in ("ventas_netas", "utilidad_neta", "utilidad_antes_impuestos", "utilidad_operacion", "costo_de_ventas", "gastos_financieros", "impuestos")
+            step = 3 if p == "trimestral" else 6
+            start = col_index * step
+            if start + step <= len(lista_final):
+                if is_flow:
+                    return sum(lista_final[start:start+step])
+                else:
+                    return lista_final[start + step - 1]
+
+        if col_index < len(lista_final):
+            return lista_final[col_index]
+        p = getattr(self, "_current_periodicidad", "").lower()
+        if p == "mensual":
+            return lista_final[0]
+        return lista_final[-1]
+
+
+    def _record_rescue(self, concept_key: str, formula: str, value: float) -> None:
+        """Registra que un rescate matemático calculó/sobreescribió el valor de un concepto."""
+        if not concept_key:
+            return
+        self._trace_buffer[concept_key] = {
+            "method": "math_rescue",
+            "formula": formula,
+            "value": round(value, 2),
+        }
+        print(f"  🔧 Rescate matemático: '{concept_key}' = {value:,.2f}  [{formula}]")
+
+    def _collect_trace(self) -> Optional[Dict[str, dict]]:
+        """Retorna el trace acumulado y limpia el buffer para el siguiente módulo."""
+        trace = dict(self._trace_buffer) if self._trace_buffer else None
+        self._trace_buffer.clear()
+        return trace
+
+    def _validate_extractions(
+        self,
+        values: Dict[str, float],
+        trace: Optional[Dict[str, dict]] = None,
+        tolerancia: float = 0.02,
+    ) -> List[str]:
+        """
+        Valida identidades contables sobre los valores ya extraídos y rescatados.
+        Retorna una lista de strings de advertencia (vacía = todo OK).
+
+        Usa el trace para evitar falsos positivos:
+        - Si un valor proviene de 'math_rescue', la ecuación contable se deriva
+          matemáticamente de los otros dos y siempre sería consistente → se omite.
+        """
+        warnings: List[str] = []
+        tr = trace or {}
+
+        def _method(key: str) -> str:
+            return tr.get(key, {}).get("method", "")
+
+        ac  = values.get("activo_circulante", 0) or 0
+        pc  = values.get("pasivo_circulante", 0) or 0
+        inv = values.get("inventario", 0) or 0
+        at  = values.get("activo_total", 0) or 0
+        pt  = values.get("pasivo_total", 0) or 0
+        cc  = values.get("capital_contable", 0) or 0
+        af  = values.get("activo_fijo", 0) or 0
+        plp = values.get("pasivo_largo_plazo", 0) or 0
+        vn  = values.get("ventas_netas", 0) or 0
+        un  = values.get("utilidad_neta", 0) or 0
+        uai = values.get("utilidad_antes_impuestos", 0) or 0
+
+        # 1. Un componente no puede superar su contenedor
+        if inv > 0 and ac > 0 and inv > ac:
+            warnings.append(
+                f"inventario ({inv:,.2f}) > activo_circulante ({ac:,.2f}) — "
+                "posible extracción incorrecta de activo_circulante"
+            )
+
+        if ac > 0 and at > 0 and ac > at:
+            warnings.append(
+                f"activo_circulante ({ac:,.2f}) > activo_total ({at:,.2f}) — "
+                "posible extracción incorrecta"
+            )
+
+        if af > 0 and at > 0 and af > at:
+            warnings.append(
+                f"activo_fijo ({af:,.2f}) > activo_total ({at:,.2f}) — "
+                "posible extracción incorrecta"
+            )
+
+        if plp > 0 and pt > 0 and plp > pt:
+            warnings.append(
+                f"pasivo_largo_plazo ({plp:,.2f}) > pasivo_total ({pt:,.2f}) — "
+                "posible extracción incorrecta"
+            )
+
+        # 2. Ecuación contable: Activo = Pasivo + Capital (±tolerancia)
+        #    Se omite si pasivo_total viene de math_rescue (se derivó de la ecuación).
+        if (
+            at > 0 and pt > 0 and cc > 0
+            and _method("pasivo_total") != "math_rescue"
+        ):
+            suma = pt + cc
+            diff_rel = abs(at - suma) / at
+            if diff_rel > tolerancia:
+                warnings.append(
+                    f"Ecuación contable rota: activo ({at:,.2f}) ≠ "
+                    f"pasivo ({pt:,.2f}) + capital ({cc:,.2f}) — "
+                    f"diferencia {diff_rel * 100:.1f}%"
+                )
+
+        # 3. Consistencia P&L: utilidad neta no puede superar utilidad antes de impuestos
+        if uai != 0 and un != 0 and abs(un) > abs(uai) * 1.05:
+            warnings.append(
+                f"utilidad_neta ({un:,.2f}) > utilidad_antes_impuestos ({uai:,.2f}) — "
+                "posible inversión de valores"
+            )
+
+        # 4. Valores obligatoriamente positivos
+        if at < 0:
+            warnings.append(f"activo_total negativo ({at:,.2f}) — valor imposible")
+        if vn < 0:
+            warnings.append(f"ventas_netas negativas ({vn:,.2f}) — revisar extracción")
+
+        if warnings:
+            for w in warnings:
+                print(f"  ⚠️  Validación    : {w}")
+
+        return warnings or None
+
+    # -------------------------------------------------------------------------
+    # Escala
+    # -------------------------------------------------------------------------
+    def _detect_scale(self, data: Dict[str, Any]) -> int:
+        """Detecta la escala (miles o millones) en el texto del documento para normalizar los valores absolutos."""
+        text = str(data.get("text_content", "")).lower()
+        if re.search(r'\b(millones\s+de\s+pesos|cifras\s+en\s+millones|en\s+millones|mdp|millones\s+de\s+dólares)\b', text):
+            return 1000000
+        if re.search(r'\b(miles\s+de\s+pesos|cifras\s+en\s+miles|en\s+miles)\b', text):
+            return 1000
+        return 1
 
     # -------------------------------------------------------------------------
     # KPIs
     # -------------------------------------------------------------------------
     def calcular_rentabilidad(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de rentabilidad cruzando Balance y Estado de Resultados."""
+        self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         tablas_resultados = self._get_tables(resultados_data)
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
-        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas")
+        
+        multiplicador = max(self._detect_scale(balance_data), self._detect_scale(resultados_data))
+        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas") * multiplicador
         if ventas_netas == 0:
-            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index)
+            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index) * multiplicador
 
-        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta")
+        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta") * multiplicador
         
         # Fallback 1: buscar utilidad antes de impuestos en el Estado de Resultados
         if utilidad_neta == 0:
-            utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos")
+            utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos") * multiplicador
 
         # Fallback 2: buscar utilidad neta en el Balance General
         if utilidad_neta == 0:
-            utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=0)
+            utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=0) * multiplicador
             
         if utilidad_neta == 0:
-                utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=0)
+                utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=0) * multiplicador
 
         # 3) Balance
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable")
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
 
         # 4) Cálculos
         margen_utilidad = (utilidad_neta / ventas_netas) if ventas_netas else 0
@@ -547,12 +780,22 @@ class FinancialCalculator:
         roa_ok = 0.05 * factor
         roe_ok = 0.10 * factor
 
+        trace = self._collect_trace()
+        warnings = self._validate_extractions(
+            {"ventas_netas": ventas_netas, "activo_total": activo_total,
+             "capital_contable": capital_contable},
+            trace=trace,
+        )
+
         return {
             "datos_crudos": {
                 "utilidad_neta": utilidad_neta,
                 "ventas_netas": ventas_netas,
                 "activo_total": activo_total,
                 "capital_contable": capital_contable,
+                "multiplicador": multiplicador,
+                "_extraction_trace": trace,
+                "_warnings": warnings,
             },
             "kpis": [
                 {
@@ -575,16 +818,27 @@ class FinancialCalculator:
 
     def calcular_liquidez(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de liquidez usando únicamente el Balance General."""
+        self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
+        
+        multiplicador = self._detect_scale(balance_data)
 
-        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante, take_last=usar_acumulado, col_index=0, concept_key="activo_circulante")
-        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0, concept_key="pasivo_circulante")
-        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario")
+        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante, take_last=usar_acumulado, col_index=0, concept_key="activo_circulante") * multiplicador
+        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0, concept_key="pasivo_circulante") * multiplicador
+        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario") * multiplicador
 
         if pasivo_circulante < 0:
             pasivo_circulante = abs(pasivo_circulante)
+
+        trace = self._collect_trace()
+        warnings = self._validate_extractions(
+            {"activo_circulante": activo_circulante,
+             "pasivo_circulante": pasivo_circulante,
+             "inventario": inventario},
+            trace=trace,
+        )
 
         razon_liquidez = (activo_circulante / pasivo_circulante) if pasivo_circulante else 0
         prueba_acido = ((activo_circulante - inventario) / pasivo_circulante) if pasivo_circulante else 0
@@ -595,6 +849,9 @@ class FinancialCalculator:
                 "activo_circulante": activo_circulante,
                 "pasivo_circulante": pasivo_circulante,
                 "inventario": inventario,
+                "multiplicador": multiplicador,
+                "_extraction_trace": trace,
+                "_warnings": warnings,
             },
             "kpis": [
                 {
@@ -617,35 +874,39 @@ class FinancialCalculator:
 
     def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de endeudamiento cruzando Balance y Estado de Resultados."""
+        self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         tablas_balance = self._get_tables(balance_data)
         tablas_resultados = self._get_tables(resultados_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
+        
+        multiplicador = max(self._detect_scale(balance_data), self._detect_scale(resultados_data))
 
         # --- EXTRACCIÓN DEL BALANCE ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
         
         # Renombramos a capital_contable para evitar confusiones y asegurar la fórmula
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable")
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "+ capital", "y hacienda"], concept_key="pasivo_total")
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "+ capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
 
         # Lógica de rescate para Pasivo Total (Ecuación Contable: P = A - C)
         # Si no lo encuentra (0) o si captura la fila "Total Pasivo + Capital" (>= activo_total)
         if (pasivo_total_doc == 0 or pasivo_total_doc >= activo_total) and activo_total > 0:
             pasivo_total = activo_total - capital_contable
+            self._record_rescue("pasivo_total", "activo_total - capital_contable", pasivo_total)
         else:
             pasivo_total = pasivo_total_doc
-        
+
         # Limpieza de signos
         if pasivo_total < 0: pasivo_total = abs(pasivo_total)
 
 
 
         # --- EXTRACCIÓN DEL ESTADO DE RESULTADOS ---
-        utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["neta", "total", "ejercicio", "antes de", "cambiaria", "bruta", "financier"], concept_key="utilidad_operacion")
-        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=col_index, concept_key="gastos_financieros")
-        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta")
-        impuestos = self._find_value(tablas_resultados, self.kw_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="impuestos")
+        utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["neta", "total", "ejercicio", "antes de", "cambiaria", "bruta", "financier"], concept_key="utilidad_operacion") * multiplicador
+        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=col_index, concept_key="gastos_financieros") * multiplicador
+        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta") * multiplicador
+        impuestos = self._find_value(tablas_resultados, self.kw_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="impuestos") * multiplicador
         
         if intereses < 0: intereses = abs(intereses)
         if impuestos < 0: impuestos = abs(impuestos)
@@ -653,26 +914,38 @@ class FinancialCalculator:
         # --- LÓGICA DE RESCATE (100% UNIVERSAL Y MATEMÁTICA) ---
         if utilidad_operacion == 0 or utilidad_operacion == intereses:
             # Rescate Nivel 1: EBT + Intereses
-            util_antes_imp = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos")
-            
+            util_antes_imp = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos") * multiplicador
+
             if util_antes_imp != 0:
                 utilidad_operacion = util_antes_imp + intereses
+                self._record_rescue("utilidad_operacion", "utilidad_antes_impuestos + gastos_financieros", utilidad_operacion)
             elif utilidad_neta != 0:
                 # Rescate Nivel 2: Utilidad Neta + Impuestos Reales Extraídos + Intereses
                 utilidad_operacion = utilidad_neta + impuestos + intereses
+                self._record_rescue("utilidad_operacion", "utilidad_neta + impuestos + gastos_financieros", utilidad_operacion)
 
         # --- CÁLCULOS ---
         apalancamiento = (pasivo_total / activo_total) if activo_total else 0
         cobertura_intereses = (utilidad_operacion / intereses) if intereses else 0
         estabilidad_financiera = (pasivo_total / capital_contable) if capital_contable else 0
 
+        trace = self._collect_trace()
+        warnings = self._validate_extractions(
+            {"activo_total": activo_total, "pasivo_total": pasivo_total,
+             "capital_contable": capital_contable, "ventas_netas": 0},
+            trace=trace,
+        )
+
         return {
             "datos_crudos": {
                 "pasivo_total": pasivo_total,
                 "activo_total": activo_total,
-                "capital_social": capital_contable,  # Nota: el campo se llama capital_social por compatibilidad con el frontend, pero el valor es capital_contable
+                "capital_social": capital_contable,  # campo llamado capital_social por compatibilidad con el frontend, pero el valor es capital_contable
                 "utilidad_operacion": utilidad_operacion,
                 "intereses": intereses,
+                "multiplicador": multiplicador,
+                "_extraction_trace": trace,
+                "_warnings": warnings,
             },
             "kpis": [
                 {
@@ -695,26 +968,29 @@ class FinancialCalculator:
 
     def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de rotación adaptándose dinámicamente al tipo de periodo."""
+        self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         tablas_balance = self._get_tables(balance_data)
         tablas_resultados = self._get_tables(resultados_data)
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
+        
+        multiplicador = max(self._detect_scale(balance_data), self._detect_scale(resultados_data))
 
         # --- EXTRACCIÓN BÁSICA ---
-        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["nacionales", "extranjeros"], concept_key="cuentas_por_cobrar")
-        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario")
-        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo")
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
+        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["nacionales", "extranjeros"], concept_key="cuentas_por_cobrar") * multiplicador
+        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario") * multiplicador
+        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo") * multiplicador
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
 
         # Usamos nuestra variable dinámica 'usar_acumulado' en lugar del True hardcodeado
-        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas")
+        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas") * multiplicador
         
         if ventas_netas == 0:
-            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index)
+            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index) * multiplicador
 
-        costo_directo = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=usar_acumulado, col_index=col_index, concept_key="costo_de_ventas")
-        compras = self._find_value(tablas_resultados, self.kw_compras, take_last=usar_acumulado, col_index=col_index)
-        devoluciones = self._find_value(tablas_resultados, self.kw_devoluciones_costo, take_last=usar_acumulado, col_index=col_index)
+        costo_directo = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=usar_acumulado, col_index=col_index, concept_key="costo_de_ventas") * multiplicador
+        compras = self._find_value(tablas_resultados, self.kw_compras, take_last=usar_acumulado, col_index=col_index) * multiplicador
+        devoluciones = self._find_value(tablas_resultados, self.kw_devoluciones_costo, take_last=usar_acumulado, col_index=col_index) * multiplicador
         
         costo_ventas_calculado = abs(costo_directo) + abs(compras) - abs(devoluciones)        
         if costo_ventas_calculado < 0: costo_ventas_calculado = 0
@@ -742,6 +1018,13 @@ class FinancialCalculator:
         rot_at_ok = 1.0 * factor
         rot_at_warn = 0.5 * factor
 
+        trace = self._collect_trace()
+        warnings = self._validate_extractions(
+            {"activo_total": activo_total, "activo_fijo": activo_fijo_neto,
+             "inventario": inventario, "ventas_netas": ventas_netas},
+            trace=trace,
+        )
+
         return {
             "datos_crudos": {
                 "cuentas_por_cobrar": cuentas_por_cobrar,
@@ -749,8 +1032,11 @@ class FinancialCalculator:
                 "activo_fijo_neto": activo_fijo_neto,
                 "activo_total": activo_total,
                 "ventas_netas": ventas_netas,
-                "costo_ventas": costo_ventas_calculado, # Este valor corregido se enviará a Firebase
-                "dias_calculo": dias_periodo
+                "costo_ventas": costo_ventas_calculado,
+                "dias_calculo": dias_periodo,
+                "multiplicador": multiplicador,
+                "_extraction_trace": trace,
+                "_warnings": warnings,
             },
             "kpis": [
                 {
@@ -783,29 +1069,34 @@ class FinancialCalculator:
 
     def calcular_estructura(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
         """Calcula indicadores de estructura financiera basándose en el Balance General."""
+        self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
+        
+        multiplicador = self._detect_scale(balance_data)
 
         # --- 1. EXTRACCIÓN BÁSICA ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total")
-        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo") 
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "y hacienda"], concept_key="pasivo_total")
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="capital_contable")
-        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital", "circulante", "corto", "deudores", "acreedores", "clientes", "activo"], concept_key="pasivo_largo_plazo")
-        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0, concept_key="pasivo_circulante")
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
+        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo") * multiplicador
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="capital_contable") * multiplicador
+        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital", "circulante", "corto", "deudores", "acreedores", "clientes", "activo"], concept_key="pasivo_largo_plazo") * multiplicador
+        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0, concept_key="pasivo_circulante") * multiplicador
 
         # --- 2. LÓGICA INTELIGENTE PARA CAPITAL SOCIAL ---
-        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "contable"])
-        capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"], take_last=usar_acumulado, col_index=0)
-        capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"], take_last=usar_acumulado, col_index=0)
+        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "contable"]) * multiplicador
+        capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"], take_last=usar_acumulado, col_index=0) * multiplicador
+        capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"], take_last=usar_acumulado, col_index=0) * multiplicador
         
         suma_capitales = capital_fijo + capital_variable
-        
+
         if suma_capitales > capital_social_doc:
-            capital_social = suma_capitales      
+            capital_social = suma_capitales
+            self._record_rescue("capital_social", "capital_social_fijo + capital_social_variable", capital_social)
         elif capital_social_doc == capital_variable and capital_fijo == 0 and capital_variable > 0:
-            capital_social = capital_social_doc + capital_variable   
+            capital_social = capital_social_doc + capital_variable
+            self._record_rescue("capital_social", "capital_social_doc + capital_social_variable (duplicado detectado)", capital_social)
         else:
             capital_social = capital_social_doc
 
@@ -813,19 +1104,21 @@ class FinancialCalculator:
         # Si lee 0, o si se confunde con "Suma de Pasivo y Capital" (dando un valor >= al activo)
         if (pasivo_total_doc == 0 or pasivo_total_doc >= activo_total) and activo_total > 0:
             pasivo_total = activo_total - capital_contable
+            self._record_rescue("pasivo_total", "activo_total - capital_contable", pasivo_total)
         else:
             pasivo_total = pasivo_total_doc
-            
-        if pasivo_total < 0: 
+
+        if pasivo_total < 0:
             pasivo_total = abs(pasivo_total)
 
         # --- 3.5. RESCATE PARA PASIVO LARGO PLAZO ---
-        # Si no lo encontró, o si capturó solo una fracción (ej. "Otros pasivos de largo plazo"), 
+        # Si no lo encontró, o si capturó solo una fracción (ej. "Otros pasivos de largo plazo"),
         # asumimos que el pasivo largo plazo debería ser la diferencia exacta entre Total y Circulante.
         if pasivo_total > 0 and pasivo_circulante > 0:
             pasivo_largo_plazo_calc = round(pasivo_total - pasivo_circulante, 2)
             if pasivo_largo_plazo == 0 or pasivo_largo_plazo < (pasivo_largo_plazo_calc * 0.8):
                 pasivo_largo_plazo = pasivo_largo_plazo_calc
+                self._record_rescue("pasivo_largo_plazo", "pasivo_total - pasivo_circulante", pasivo_largo_plazo)
 
         # --- 4. CÁLCULOS MATEMÁTICOS (¡DEBEN IR AQUÍ ABAJO!) ---
         # Ahora sí, el sistema usará los 10,000 corregidos
@@ -841,6 +1134,15 @@ class FinancialCalculator:
         inmovilizacion_contable = (activo_fijo / capital_contable) if capital_contable else 0
 
         # --- 5. RETORNO DE RESULTADOS ---
+        trace = self._collect_trace()
+        warnings = self._validate_extractions(
+            {"activo_total": activo_total, "pasivo_total": pasivo_total,
+             "capital_contable": capital_contable, "activo_fijo": activo_fijo,
+             "pasivo_largo_plazo": pasivo_largo_plazo,
+             "pasivo_circulante": pasivo_circulante},
+            trace=trace,
+        )
+
         return {
             "datos_crudos": {
                 "activo_total": activo_total,
@@ -848,7 +1150,10 @@ class FinancialCalculator:
                 "capital_social": capital_social,
                 "capital_contable": capital_contable,
                 "activo_fijo": activo_fijo,
-                "pasivo_largo_plazo": pasivo_largo_plazo
+                "pasivo_largo_plazo": pasivo_largo_plazo,
+                "multiplicador": multiplicador,
+                "_extraction_trace": trace,
+                "_warnings": warnings,
             },
             "kpis": [
                 {

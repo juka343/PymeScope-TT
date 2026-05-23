@@ -365,5 +365,14 @@
         }
       ]
     }
-  ]
+  ],
+  "extensiones": {
+    "nota": "Totales y subtotales estructurales derivados de NIF B-3 y B-6. No son cuentas individuales sino líneas de subtotal que cada empresa formatea según su criterio; se listan aquí para mantener trazabilidad normativa.",
+    "cuentas": [
+      {"nombre": "Total del Activo",    "norma": "NIF B-6", "tipo": "total",    "descripcion": "Suma de todos los activos (circulantes + no circulantes)"},
+      {"nombre": "Total del Pasivo",    "norma": "NIF B-6", "tipo": "total",    "descripcion": "Suma de todos los pasivos (circulantes + largo plazo)"},
+      {"nombre": "Utilidad de operación", "norma": "NIF B-3", "tipo": "subtotal", "descripcion": "Ventas netas menos costo de ventas y gastos de operación"},
+      {"nombre": "Utilidad antes de impuestos a la utilidad", "norma": "NIF B-3", "tipo": "subtotal", "descripcion": "Utilidad de operación más/menos resultado integral de financiamiento y otros ingresos/gastos"}
+    ]
+  }
 }
