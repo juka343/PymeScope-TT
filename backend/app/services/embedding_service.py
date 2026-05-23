@@ -115,6 +115,23 @@ CONCEPTOS_CANONICOS: Dict[str, str] = {
 }
 
 
+# ─── Anti-Conceptos ──────────────────────────────────────────────────────────
+# Pares de conceptos cuya redacción se confunde en el OCR. Cuando el embedding
+# de una fila apunta a `concept_key`, si también puntúa alto contra alguno de
+# sus anti-conceptos, se penaliza el score para evitar matches cruzados.
+ANTI_CONCEPTOS: Dict[str, List[str]] = {
+    "activo_circulante":  ["pasivo_circulante"],
+    "pasivo_circulante":  ["activo_circulante"],
+    "utilidad_operacion": ["ventas_netas", "utilidad_neta"],
+    "ventas_netas":       ["utilidad_operacion", "utilidad_neta"],
+    "utilidad_neta":      ["utilidad_operacion", "utilidad_antes_impuestos"],
+    "activo_total":       ["pasivo_total", "capital_contable"],
+    "pasivo_total":       ["activo_total", "capital_contable"],
+    "capital_contable":   ["capital_social", "pasivo_total"],
+    "capital_social":     ["capital_contable"],
+}
+
+
 class EmbeddingService:
     """
     Servicio singleton para búsquedas semánticas de conceptos financieros.
@@ -240,26 +257,61 @@ class EmbeddingService:
     def find_match_for_concept(self, text: str, concept_key: str, threshold: float = 0.85) -> float:
         """
         Verifica si un texto corresponde a un concepto específico.
-        
+
         Args:
             text: Texto de la fila del documento
             concept_key: Clave del concepto canónico a comparar (ej. "ventas_netas")
             threshold: Umbral mínimo de similitud
-            
+
         Returns:
             Score de similitud si >= threshold, o 0.0
         """
         if not self.is_available() or concept_key not in self._canonical_embeddings:
             return 0.0
-        
+
         embedding = self.get_embedding(text)
         if embedding is None:
             return 0.0
-        
+
         canonical = self._canonical_embeddings[concept_key]
         score = self.cosine_similarity(embedding, canonical)
-        
+
         return score if score >= threshold else 0.0
+
+    def find_match_with_anticoncepts(
+        self, text: str, concept_key: str
+    ) -> Tuple[float, float, float]:
+        """
+        Calcula el score crudo del concepto, el score máximo de sus anti-conceptos
+        y un score ajustado que penaliza la confusión entre pares conflictivos.
+
+        Reusa un solo embedding por fila — no realiza llamadas Gemini extra.
+
+        Returns:
+            (score_raw, score_anti_max, score_adjusted)
+            score_adjusted = score_raw - 0.5 * score_anti_max
+        """
+        if not self.is_available() or concept_key not in self._canonical_embeddings:
+            return 0.0, 0.0, 0.0
+
+        embedding = self.get_embedding(text)
+        if embedding is None:
+            return 0.0, 0.0, 0.0
+
+        canonical = self._canonical_embeddings[concept_key]
+        score_raw = self.cosine_similarity(embedding, canonical)
+
+        score_anti_max = 0.0
+        for anti_key in ANTI_CONCEPTOS.get(concept_key, []):
+            anti_canonical = self._canonical_embeddings.get(anti_key)
+            if anti_canonical is None:
+                continue
+            anti_score = self.cosine_similarity(embedding, anti_canonical)
+            if anti_score > score_anti_max:
+                score_anti_max = anti_score
+
+        score_adjusted = score_raw - 0.5 * score_anti_max
+        return score_raw, score_anti_max, score_adjusted
 
     def clear_cache(self):
         """Limpia el cache de embeddings de filas (entre documentos diferentes)."""
