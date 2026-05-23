@@ -320,6 +320,14 @@ def validate_document_date(text: str, period_date: str, periodicity: str, doc_na
             if re.search(any_month_pattern, text_lower):
                 found = True
 
+        # Patrón 6: Formato numérico (ej. "31/03/2026", "2026-03-31")
+        if not found:
+            months_str = '|'.join([f"{m:02d}" for m in range(int(q_info["start"]), int(q_info["end"]) + 1)])
+            numeric_date_pattern = r'\b\d{1,2}[/-](' + months_str + r')[/-](?:' + year + r'|' + year_short + r')\b'
+            numeric_date_pattern_2 = r'\b(?:' + year + r'|' + year_short + r')[/-](' + months_str + r')[/-]\d{1,2}\b'
+            if re.search(numeric_date_pattern, text_lower) or re.search(numeric_date_pattern_2, text_lower):
+                found = True
+
         if not found:
             raise ValueError(f"DATE_MISMATCH|{doc_name}|Q{quarter} {year}|{period_label}")
 
@@ -408,6 +416,14 @@ def validate_document_date(text: str, period_date: str, periodicity: str, doc_na
         if not found:
             any_month_pattern = r'\b(' + '|'.join(s_month_names) + r')\.?,?\s*(?:de\s*|del\s*)?' + r'(?:' + year + r'|' + year_short + r')\b'
             if re.search(any_month_pattern, text_lower):
+                found = True
+
+        # Patrón 6: Formato numérico (ej. "30/06/2026", "2026-06-30")
+        if not found:
+            months_str = '|'.join([f"{m:02d}" for m in sem_range])
+            numeric_date_pattern = r'\b\d{1,2}[/-](' + months_str + r')[/-](?:' + year + r'|' + year_short + r')\b'
+            numeric_date_pattern_2 = r'\b(?:' + year + r'|' + year_short + r')[/-](' + months_str + r')[/-]\d{1,2}\b'
+            if re.search(numeric_date_pattern, text_lower) or re.search(numeric_date_pattern_2, text_lower):
                 found = True
 
         if not found:
@@ -866,29 +882,31 @@ async def generar_analisis_financiero_ia(payload: SolicitudAnalisisIA) -> Dict[s
     print(f"Generando análisis financiero con Gemini para proyecto: {payload.project_id}")
 
     try:
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        # --- INICIO DE MOCK PARA AHORRAR COSTOS ---
+        # client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        # system_prompt = _build_financial_ai_system_prompt()
+        # user_prompt = _build_financial_ai_user_prompt(payload.analysis_payload)
 
-        system_prompt = _build_financial_ai_system_prompt()
-        user_prompt = _build_financial_ai_user_prompt(payload.analysis_payload)
-
-        def call_gemini():
-            return client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    response_mime_type="application/json",
-                    response_schema=RespuestaAnalisisFinancieroIA,
-                    temperature=0.2,
-                ),
-            )
-
-        response = await asyncio.to_thread(call_gemini)
-
-        if getattr(response, "parsed", None):
-            result_dict = _pydantic_to_dict(response.parsed)
-        else:
-            result_dict = json.loads(response.text)
+        # def call_gemini():
+        #     return client.models.generate_content(
+        #         model=settings.GEMINI_MODEL,
+        #         contents=user_prompt,
+        #         config=types.GenerateContentConfig(
+        #             system_instruction=system_prompt,
+        #             response_mime_type="application/json",
+        #             response_schema=RespuestaAnalisisFinancieroIA,
+        #             temperature=0.2,
+        #         ),
+        #     )
+        # response = await asyncio.to_thread(call_gemini)
+        # if getattr(response, "parsed", None):
+        #     result_dict = _pydantic_to_dict(response.parsed)
+        # else:
+        #     result_dict = json.loads(response.text)
+        
+        print("⏭️ Saltando llamada a Gemini (Mock Mode) para ahorrar costos.")
+        result_dict = {}
+        # --- FIN DE MOCK ---
 
         result_dict = _ensure_complete_ai_result(result_dict)
 
