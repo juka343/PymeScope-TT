@@ -1,0 +1,33 @@
+{
+  "datos_crudos": {
+    "activo_total": 4582804.97,
+    "pasivo_total": 423385.46999999974,
+    "capital_social": 4739400.0,
+    "capital_contable": 4159419.5,
+    "activo_fijo": 1729400.0,
+    "pasivo_largo_plazo": -0.0,
+    "multiplicador": 1
+  },
+  "kpis": [
+    {
+      "label": "Solvencia General",
+      "value": "10.82",
+      "status": "ok"
+    },
+    {
+      "label": "Seguridad a largo plazo",
+      "value": "N/A",
+      "status": "neutral"
+    },
+    {
+      "label": "Inmovilización de Cap. Social",
+      "value": "0.36",
+      "status": "ok"
+    },
+    {
+      "label": "Inmovilización de Cap. Contable",
+      "value": "0.42",
+      "status": "ok"
+    }
+  ]
+}

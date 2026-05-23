@@ -92,7 +92,13 @@ class FinancialCalculator:
             "activo circulante", "total activo circulante",
             "total de activo circulante", "activos corrientes",
             "total de activos corrientes", "suma del activo circulante",
-            "activo a corto plazo", 
+            "activo a corto plazo",
+            # Variantes plurales con prefijo "total" (ej. Coca-Cola BMV: "Total activos circulantes")
+            # NOTA: "activos circulantes" sin "total" NO se agrega — coincide con
+            # encabezados de sección en balances corporativos (Bimbo, FEMSA) que tienen
+            # un número adyacente erróneo antes de la fila de total real.
+            "total activos circulantes",
+            "activos corrientes totales",
         ]
 
         self.kw_pasivo_circulante = [
@@ -171,7 +177,10 @@ class FinancialCalculator:
 
         # ===== Estructura =====
         self.kw_capital_social = [
-            "capital social", 
+            # Formas de total (más largas → prioridad en sort descendente)
+            "total de capital social",
+            "total capital social",
+            "capital social",
             "capital social fijo",      # Muy común en S.A. de C.V.
             "capital social variable",  # Muy común en S.A. de C.V.
             "capital aportado", 
@@ -221,9 +230,13 @@ class FinancialCalculator:
             print(f"⚠️ FinancialCalculator: Error al cargar catalogo_nif.json: {e}")
             return
 
-        # Mapeo estricto para Exact Match. 
-        # NOTA: Omitimos "A corto plazo" o "A largo plazo" porque como substring causan falsos positivos (ej. atrapan "Activo a largo plazo" al buscar pasivo).
+        # Mapeo estricto para Exact Match.
+        # NOTA: Omitimos "A corto plazo" o "A largo plazo" porque como substring causan falsos positivos
+        # (ej. "a corto plazo" matchea "Activo a Corto Plazo" al buscar pasivo).
+        # Para kw_pasivo_circulante y kw_pasivo_largo_plazo: el nombre NIF es peligroso como keyword;
+        # se omiten del mapping para no inyectar términos ambiguos en las listas de búsqueda.
         nif_mapping = {
+            # === NIF B-6 / B-3: conceptos que ya tenían sustento ===
             "kw_inventario": ["Inventarios"],
             "kw_capital_social": ["Capital social"],
             "kw_utilidad_neta": ["Utilidad / pérdida del ejercicio"],
@@ -232,7 +245,16 @@ class FinancialCalculator:
             "kw_cuentas_por_cobrar": ["Cuentas por cobrar a clientes", "Otras cuentas por cobrar (deudores diversos)"],
             "kw_activo_fijo": ["Propiedades, planta y equipo (activo fijo)"],
             "kw_impuestos": ["Impuestos a la utilidad", "ISR (Impuesto Sobre la Renta)", "PTU (Participación de los Trabajadores en las Utilidades)"],
-            "kw_capital": ["Capital Contable"]
+            "kw_capital": ["Capital Contable"],
+            # === NIF B-6: 3 conceptos que faltaban (solo términos seguros como keyword) ===
+            # "Corto plazo, circulante o corriente" es el nombre de clasificación NIF B-6 —
+            # demasiado verboso para aparecer en documentos reales, pero establece el vínculo normativo.
+            "kw_activo_circulante": ["Corto plazo, circulante o corriente"],
+            # === Extensiones NIF (totales estructurales de catalogo_nif.json#extensiones) ===
+            "kw_activo_total": ["Total del Activo"],
+            "kw_pasivo_total": ["Total del Pasivo"],
+            "kw_utilidad_operacion": ["Utilidad de operación"],
+            "kw_utilidad_antes_impuestos": ["Utilidad antes de impuestos a la utilidad"],
         }
 
         def extract_terms(data, target_names, current_terms):

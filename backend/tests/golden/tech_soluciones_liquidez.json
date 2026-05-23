@@ -1,0 +1,25 @@
+{
+  "datos_crudos": {
+    "activo_circulante": 1565000.0,
+    "pasivo_circulante": 712000.0,
+    "inventario": 280000.0,
+    "multiplicador": 1
+  },
+  "kpis": [
+    {
+      "label": "Razón de Liquidez",
+      "value": "2.20",
+      "status": "ok"
+    },
+    {
+      "label": "Prueba del Ácido",
+      "value": "1.80",
+      "status": "ok"
+    },
+    {
+      "label": "Capital de Trabajo",
+      "value": "$853,000.00",
+      "status": "ok"
+    }
+  ]
+}

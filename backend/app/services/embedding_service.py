@@ -18,32 +18,100 @@ from google.genai import types
 # Descripciones enriquecidas de cada concepto financiero.
 # El texto es lo que se embedea como "ancla" para comparar contra filas OCR.
 CONCEPTOS_CANONICOS: Dict[str, str] = {
-    # === Rentabilidad (Estado de Resultados) ===
-    "ventas_netas": "Ventas netas totales, ingresos totales, ingresos propios netos o ingresos operativos de la empresa",
-    "utilidad_neta": "Utilidad neta consolidada, utilidad o pérdida neta, resultado neto del ejercicio",
-    "utilidad_antes_impuestos": "Utilidad antes de impuestos, utilidad o pérdida antes de ISR y PTU",
-    "impuestos": "ISR, provisión de ISR, impuesto sobre la renta o impuestos a la utilidad",
+    # === Rentabilidad (Estado de Resultados — NIF B-3) ===
+    # NIF B-3: "Ventas o Ingresos netos" — primer renglón del estado de resultados.
+    "ventas_netas": (
+        "Ventas netas, ingresos netos, ingresos operativos o facturación total de la empresa. "
+        "Incluye: ventas totales, total ingresos, ingresos por servicios. "
+        "NO incluye: utilidad bruta, utilidad de operación, utilidad neta."
+    ),
+    # NIF B-3: "Utilidad / pérdida del ejercicio" — último renglón después de impuestos.
+    "utilidad_neta": (
+        "Utilidad neta, resultado neto, utilidad del ejercicio o resultado final después de impuestos. "
+        "Incluye: utilidad neta consolidada, ganancia neta, remanente del ejercicio. "
+        "NO incluye: utilidad de operación, utilidad antes de impuestos, ingresos totales."
+    ),
+    # NIF B-3: subtotal entre utilidad de operación e impuestos.
+    "utilidad_antes_impuestos": (
+        "Utilidad antes de impuestos a la utilidad, resultado antes de ISR y PTU. "
+        "Incluye: utilidad antes del impuesto sobre la renta, resultado antes de impuestos. "
+        "NO incluye: utilidad neta (que ya descontó impuestos), utilidad de operación."
+    ),
+    # NIF B-3: "Impuestos a la utilidad" — ISR y PTU.
+    "impuestos": (
+        "ISR, impuesto sobre la renta, PTU o impuestos a la utilidad. "
+        "Incluye: provisión de ISR, impuestos y PTU. "
+        "NO incluye: IVA, impuestos por recuperar, impuestos al activo."
+    ),
 
-    # === Liquidez (Balance General) ===
-    "activo_circulante": "Total de activo circulante, suma activo circulante, activos corrientes a corto plazo",
-    "pasivo_circulante": "Total de pasivo circulante, suma pasivo circulante, pasivos corrientes a corto plazo",
-    "inventario": "Inventarios, mercancías o almacén de productos",
+    # === Liquidez (Balance General — NIF B-6) ===
+    # NIF B-6: clasificación "Corto plazo, circulante o corriente" del Activo.
+    "activo_circulante": (
+        "Total activo circulante, activos corrientes a corto plazo. "
+        "Incluye: efectivo, cuentas por cobrar, inventarios, activos a corto plazo. "
+        "Es la suma del ACTIVO corriente — NO del pasivo circulante."
+    ),
+    # NIF B-6: clasificación "A corto plazo" del Pasivo.
+    "pasivo_circulante": (
+        "Total pasivo circulante, pasivos corrientes a corto plazo. "
+        "Incluye: proveedores, deudas a corto plazo, pasivos corrientes. "
+        "Es la suma del PASIVO corriente — NO del activo circulante."
+    ),
+    # NIF B-6: cuenta "Inventarios" dentro del activo circulante.
+    "inventario": "Inventarios, mercancías, almacén o existencias de productos para venta.",
 
-    # === Endeudamiento ===
-    "activo_total": "Total de activos, suma activo, activo total de la empresa",
-    "capital_contable": "Capital contable total, patrimonio neto, hacienda pública o recursos propios de los accionistas",
-    "pasivo_total": "Pasivo total, suma pasivo, total de deudas y obligaciones de la empresa",
-    "utilidad_operacion": "Utilidad de operación, resultado operativo o ganancia operativa",
-    "gastos_financieros": "Gastos financieros, costo integral de financiamiento, resultado integral de financiamiento",
+    # === Endeudamiento (Balance General — NIF B-6) ===
+    # NIF B-6: total estructural del Estado de Situación Financiera.
+    "activo_total": (
+        "Total de activos, suma del activo, activo total de la empresa. "
+        "Es la suma del activo circulante más el activo no circulante (fijo). "
+        "NO confundir con activo circulante ni activo fijo por separado."
+    ),
+    # NIF B-6: clasificación "Capital contribuido + Capital ganado".
+    "capital_contable": (
+        "Capital contable total, patrimonio neto, hacienda pública o recursos propios de los accionistas. "
+        "Incluye: capital social más utilidades acumuladas y reservas."
+    ),
+    # NIF B-6: total estructural del Pasivo.
+    "pasivo_total": (
+        "Pasivo total, suma del pasivo, total de deudas y obligaciones de la empresa. "
+        "Es la suma del pasivo circulante más el pasivo a largo plazo. "
+        "NO confundir con pasivo circulante ni 'total pasivo + capital'."
+    ),
+    # NIF B-3: subtotal entre utilidad bruta y resultado financiero.
+    "utilidad_operacion": (
+        "Utilidad de operación, resultado operativo o ganancia operativa. "
+        "Incluye: utilidad (pérdida) de operación, resultado de operación. "
+        "NO incluye: ventas netas, ingresos totales, utilidad antes de impuestos."
+    ),
+    "gastos_financieros": (
+        "Gastos financieros, costo integral de financiamiento o resultado integral de financiamiento. "
+        "Incluye: intereses a cargo, gastos de financiamiento."
+    ),
 
-    # === Rotación ===
-    "cuentas_por_cobrar": "Cuentas por cobrar a clientes o deudores comerciales",
-    "costo_de_ventas": "Costo de ventas, costo de lo vendido o costo de servicios",
-    "activo_fijo": "Activo fijo neto, propiedad planta y equipo o activo no circulante",
+    # === Rotación (Balance General + Estado de Resultados) ===
+    # NIF B-6: "Cuentas por cobrar a clientes".
+    "cuentas_por_cobrar": "Cuentas por cobrar a clientes, deudores comerciales o cartera de clientes.",
+    # NIF B-3: "Costo de ventas".
+    "costo_de_ventas": "Costo de ventas, costo de lo vendido, costo de servicios prestados o costo de mercancía vendida.",
+    # NIF B-6: "Propiedades, planta y equipo (activo fijo)".
+    "activo_fijo": (
+        "Activo fijo neto, propiedad planta y equipo, activo no circulante o activo a largo plazo. "
+        "Incluye: maquinaria, equipo, terrenos, edificios (neto de depreciación)."
+    ),
 
-    # === Estructura ===
-    "capital_social": "Capital social contribuido o aportado por los socios, aportaciones de capital",
-    "pasivo_largo_plazo": "Pasivo a largo plazo, pasivo no circulante o deuda a largo plazo",
+    # === Estructura (Balance General — NIF B-6) ===
+    # NIF B-6: cuenta "Capital social" dentro de Capital contribuido.
+    "capital_social": (
+        "Capital social, capital aportado o contribuido por los socios o accionistas. "
+        "Incluye: capital social fijo, capital social variable, aportaciones de socios. "
+        "NO incluye: utilidades acumuladas, reservas, capital contable total."
+    ),
+    # NIF B-6: clasificación "A largo plazo" del Pasivo.
+    "pasivo_largo_plazo": (
+        "Pasivo a largo plazo, pasivo no circulante o deuda a largo plazo. "
+        "Incluye: préstamos bancarios LP, pasivo fijo, créditos a largo plazo."
+    ),
 }
 
 

@@ -17,3 +17,4 @@ aiohttp
 azure-ai-formrecognizer
 azure-core
 google-genai
+pytest

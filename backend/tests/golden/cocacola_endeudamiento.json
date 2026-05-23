@@ -1,0 +1,27 @@
+{
+  "datos_crudos": {
+    "pasivo_total": 186246000000.0,
+    "activo_total": 333116000000.0,
+    "capital_social": 146870000000.0,
+    "utilidad_operacion": 9032000000.0,
+    "intereses": 1752000000.0,
+    "multiplicador": 1000000
+  },
+  "kpis": [
+    {
+      "label": "Apalancamiento",
+      "value": "0.56",
+      "status": "warn"
+    },
+    {
+      "label": "Razón de Cobertura de Intereses",
+      "value": "5.16",
+      "status": "ok"
+    },
+    {
+      "label": "Estabilidad Financiera",
+      "value": "1.27",
+      "status": "warn"
+    }
+  ]
+}

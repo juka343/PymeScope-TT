@@ -1,0 +1,39 @@
+{
+  "datos_crudos": {
+    "cuentas_por_cobrar": 1385929.8,
+    "inventario": 0.0,
+    "activo_fijo_neto": 4646054.71,
+    "activo_total": 7860188.61,
+    "ventas_netas": 496288.6,
+    "costo_ventas": 0.0,
+    "dias_calculo": 30,
+    "multiplicador": 1
+  },
+  "kpis": [
+    {
+      "label": "Rotación de la Cartera",
+      "value": "0.36",
+      "status": "ok"
+    },
+    {
+      "label": "Periodo Promedio de Recaudo",
+      "value": "84 días",
+      "status": "warn"
+    },
+    {
+      "label": "Rotación de Inventarios",
+      "value": "N/A",
+      "status": "neutral"
+    },
+    {
+      "label": "Rotación de Activos Fijos",
+      "value": "0.11",
+      "status": "ok"
+    },
+    {
+      "label": "Rotación de Activos Totales",
+      "value": "0.06",
+      "status": "warn"
+    }
+  ]
+}
