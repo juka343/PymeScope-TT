@@ -882,31 +882,26 @@ async def generar_analisis_financiero_ia(payload: SolicitudAnalisisIA) -> Dict[s
     print(f"Generando análisis financiero con Gemini para proyecto: {payload.project_id}")
 
     try:
-        # --- INICIO DE MOCK PARA AHORRAR COSTOS ---
-        # client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        # system_prompt = _build_financial_ai_system_prompt()
-        # user_prompt = _build_financial_ai_user_prompt(payload.analysis_payload)
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        system_prompt = _build_financial_ai_system_prompt()
+        user_prompt = _build_financial_ai_user_prompt(payload.analysis_payload)
 
-        # def call_gemini():
-        #     return client.models.generate_content(
-        #         model=settings.GEMINI_MODEL,
-        #         contents=user_prompt,
-        #         config=types.GenerateContentConfig(
-        #             system_instruction=system_prompt,
-        #             response_mime_type="application/json",
-        #             response_schema=RespuestaAnalisisFinancieroIA,
-        #             temperature=0.2,
-        #         ),
-        #     )
-        # response = await asyncio.to_thread(call_gemini)
-        # if getattr(response, "parsed", None):
-        #     result_dict = _pydantic_to_dict(response.parsed)
-        # else:
-        #     result_dict = json.loads(response.text)
-        
-        print("⏭️ Saltando llamada a Gemini (Mock Mode) para ahorrar costos.")
-        result_dict = {}
-        # --- FIN DE MOCK ---
+        def call_gemini():
+            return client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    response_mime_type="application/json",
+                    response_schema=RespuestaAnalisisFinancieroIA,
+                    temperature=0.2,
+                ),
+            )
+        response = await asyncio.to_thread(call_gemini)
+        if getattr(response, "parsed", None):
+            result_dict = _pydantic_to_dict(response.parsed)
+        else:
+            result_dict = json.loads(response.text)
 
         result_dict = _ensure_complete_ai_result(result_dict)
 
