@@ -80,7 +80,7 @@ def test_regression(calc, case_name, modulo):
     actual_datos = actual.get("datos_crudos", {})
 
     for key, expected_val in golden_datos.items():
-        if key == "multiplicador":
+        if key in ("multiplicador", "fuentes") or key.startswith("_"):
             continue  # no es un valor extraído, es configuración
         assert key in actual_datos, (
             f"[{case_name}::{modulo}] Falta clave en datos_crudos: '{key}'"
@@ -109,3 +109,70 @@ def test_regression(calc, case_name, modulo):
             f"[{case_name}::{modulo}] KPI '{label}' status cambió: "
             f"esperado='{golden_kpi['status']}', actual='{actual_kpi['status']}'"
         )
+
+
+# ─── Conceptos esperados por módulo ──────────────────────────────────────────
+_FUENTES_ESPERADAS = {
+    "rentabilidad":  {"utilidad_neta", "ventas_netas", "activo_total", "capital_contable"},
+    "liquidez":      {"activo_circulante", "pasivo_circulante", "inventario"},
+    "endeudamiento": {"pasivo_total", "activo_total", "capital_contable", "utilidad_operacion", "gastos_financieros", "utilidad_neta", "impuestos"},
+    "rotacion":      {"cuentas_por_cobrar", "inventario", "activo_fijo", "activo_total", "ventas_netas", "costo_de_ventas"},
+    "estructura":    {"activo_total", "pasivo_total", "capital_social", "capital_contable", "activo_fijo", "pasivo_largo_plazo", "pasivo_circulante"},
+}
+
+# Usamos un solo caso representativo (cocacola) para validar la forma de fuentes
+_FUENTES_CASE = "cocacola"
+
+
+@pytest.mark.parametrize("modulo", MODULOS)
+def test_fuentes_presentes(calc, modulo):
+    """Verifica que datos_crudos incluye 'fuentes' con las claves NIF esperadas."""
+    cfg    = ALL_CASES[_FUENTES_CASE]
+    result = _run_modulo(calc, modulo, cfg)
+    datos  = result.get("datos_crudos", {})
+
+    assert "fuentes" in datos, f"[{modulo}] 'fuentes' ausente en datos_crudos"
+
+    fuentes = datos["fuentes"]
+    assert isinstance(fuentes, dict), f"[{modulo}] 'fuentes' debe ser un dict"
+    assert len(fuentes) > 0, f"[{modulo}] 'fuentes' está vacío"
+
+    for concepto in _FUENTES_ESPERADAS[modulo]:
+        assert concepto in fuentes, f"[{modulo}] Concepto '{concepto}' ausente en fuentes"
+        entrada = fuentes[concepto]
+        assert "norma" in entrada, f"[{modulo}][{concepto}] Falta campo 'norma'"
+        assert "cuenta_nif" in entrada, f"[{modulo}][{concepto}] Falta campo 'cuenta_nif'"
+        assert entrada["norma"].startswith("NIF"), f"[{modulo}][{concepto}] 'norma' no es NIF: {entrada['norma']}"
+
+
+# ─── Test perfiles de formato ────────────────────────────────────────────────
+def _make_sabana_table(n_cols: int = 12):
+    """Genera una tabla sintética con una fila de ventas y n_cols valores mensuales."""
+    cells = [{"row": 0, "col": 0, "text": "Ventas netas"}]
+    for i in range(n_cols):
+        cells.append({"row": 0, "col": i + 1, "text": str((i + 1) * 10_000)})
+    return {"tables_data": [cells]}
+
+
+def test_perfil_sabana_mensual_vs_corporativo_bmv():
+    """corporativo_bmv con col_index=0 en tabla de 12 columnas lee lista[0], NO el francotirador."""
+    calc = FinancialCalculator()
+    calc._embedding_service = None
+
+    tabla = _make_sabana_table(12)
+
+    # sabana_mensual con col_index=0, periodicidad trimestral → suma Q1 (cols 0,1,2) = 10k+20k+30k
+    calc._current_periodicidad = "trimestral"
+    calc._current_formato_perfil = "sabana_mensual"
+    result_sabana = calc.calcular_rentabilidad(tabla, tabla, periodicidad="trimestral", col_index=0, formato_perfil="sabana_mensual")
+    ventas_sabana = result_sabana["datos_crudos"]["ventas_netas"]
+
+    # corporativo_bmv con col_index=0, mismo periodicidad → lee lista[0] = 10k (sin sumar)
+    result_bmv = calc.calcular_rentabilidad(tabla, tabla, periodicidad="trimestral", col_index=0, formato_perfil="corporativo_bmv")
+    ventas_bmv = result_bmv["datos_crudos"]["ventas_netas"]
+
+    assert ventas_sabana != ventas_bmv, (
+        f"sabana_mensual y corporativo_bmv deben producir valores distintos con 12 columnas; "
+        f"sabana={ventas_sabana}, bmv={ventas_bmv}"
+    )
+    assert ventas_bmv == 10_000, f"corporativo_bmv col_index=0 debe leer el primer valor (10000), obtuvo {ventas_bmv}"

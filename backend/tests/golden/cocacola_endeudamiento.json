@@ -5,7 +5,43 @@
     "capital_social": 146870000000.0,
     "utilidad_operacion": 9032000000.0,
     "intereses": 1752000000.0,
-    "multiplicador": 1000000
+    "multiplicador": 1000000,
+    "_extraction_trace": {
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activos",
+        "row_snippet": "total activos 333,116 total capital 146,870"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "total capital",
+        "row_snippet": "total activos 333,116 total capital 146,870"
+      },
+      "pasivo_total": {
+        "method": "keyword",
+        "matched_term": "total pasivo",
+        "row_snippet": "activos por derechos de uso 3,461 total pasivo 186,246"
+      },
+      "utilidad_operacion": {
+        "method": "keyword",
+        "matched_term": "utilidad de operación",
+        "row_snippet": "utilidad de operación 9,032 12.7% 9,248 13.2%"
+      },
+      "gastos_financieros": {
+        "method": "keyword",
+        "matched_term": "resultado integral de financiamiento",
+        "row_snippet": "resultado integral de financiamiento 1,752 1,126"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "utilidad neta",
+        "row_snippet": "utilidad neta consolidada 4,735 5,492"
+      },
+      "impuestos": {
+        "method": "not_found"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

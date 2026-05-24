@@ -1,0 +1,49 @@
+{
+  "datos_crudos": {
+    "utilidad_neta": 2214000000.0,
+    "ventas_netas": 103726000000.0,
+    "activo_total": 429186000000.0,
+    "capital_contable": 127723000000.0,
+    "multiplicador": 1000000,
+    "_extraction_trace": {
+      "ventas_netas": {
+        "method": "keyword",
+        "matched_term": "ventas netas",
+        "row_snippet": "ventas netas 103,726 93,641 10.8"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "operaciones continuas",
+        "row_snippet": "utilidad (pérdida) de operaciones continuas 2,214 2,757 (19.7)"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "activo total",
+        "row_snippet": "activo total 429,186 416,804 3.0"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "capital contable",
+        "row_snippet": "capital contable mayoritario 127,723 125,944 1.4"
+      }
+    },
+    "_warnings": null
+  },
+  "kpis": [
+    {
+      "label": "Margen de Rentabilidad",
+      "value": "2.13%",
+      "status": "warn"
+    },
+    {
+      "label": "Rendimiento sobre Activos Totales (RAT)",
+      "value": "0.52%",
+      "status": "warn"
+    },
+    {
+      "label": "Rendimiento sobre el Patrimonio",
+      "value": "1.73%",
+      "status": "warn"
+    }
+  ]
+}

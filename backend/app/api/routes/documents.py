@@ -105,6 +105,7 @@ class SolicitudAnalisisPeriodo(BaseModel):
     resultados_url: str
     periodicidad: str
     col_index: int = 0
+    formato_perfil: str = "vertical_simple"
     period_date: str = ""
     period_label: str = ""
 
@@ -817,12 +818,14 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
             resultados_data,
             periodicidad=payload.periodicidad,
             col_index=indice,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_liquidez = _calculator.calcular_liquidez(
             balance_data,
             periodicidad=payload.periodicidad,
             col_index=indice,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_endeudamiento = _calculator.calcular_endeudamiento(
@@ -830,6 +833,7 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
             resultados_data,
             periodicidad=payload.periodicidad,
             col_index=indice,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_rotacion = _calculator.calcular_rotacion(
@@ -837,12 +841,14 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
             resultados_data,
             periodicidad=payload.periodicidad,
             col_index=indice,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_estructura = _calculator.calcular_estructura(
             balance_data,
             periodicidad=payload.periodicidad,
             col_index=indice,
+            formato_perfil=payload.formato_perfil,
         )
 
         # 3. Retornar paquete listo para Dashboard de Vue

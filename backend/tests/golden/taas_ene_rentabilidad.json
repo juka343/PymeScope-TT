@@ -4,7 +4,28 @@
     "ventas_netas": 479242.08,
     "activo_total": 4582804.97,
     "capital_contable": 4159419.5,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "ventas_netas": {
+        "method": "not_found"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "utilidad total",
+        "row_snippet": "utilidad total 362,674.24 362,674.24"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activos:",
+        "row_snippet": "total activos: 4,582,804.97 total pasivo + capital: 4,582,804.97"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "capital contable",
+        "row_snippet": "maquinaria y equipo 395,600.00 capital contable 4,159,419.50"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

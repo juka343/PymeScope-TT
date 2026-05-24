@@ -6,7 +6,40 @@
     "capital_contable": 3688000.0,
     "activo_fijo": 5035000.0,
     "pasivo_largo_plazo": 2200000.0,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activo",
+        "row_snippet": "total activo 6,600,000"
+      },
+      "activo_fijo": {
+        "method": "keyword",
+        "matched_term": "total activo no circulante",
+        "row_snippet": "total activo no circulante 5,035,000"
+      },
+      "pasivo_total": {
+        "method": "math_rescue",
+        "formula": "activo_total - capital_contable",
+        "value": 2912000.0
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "total capital contable",
+        "row_snippet": "total capital contable 3,688,000"
+      },
+      "pasivo_largo_plazo": {
+        "method": "keyword",
+        "matched_term": "pasivo a largo plazo",
+        "row_snippet": "pasivo a largo plazo 2,200,000"
+      },
+      "pasivo_circulante": {
+        "method": "keyword",
+        "matched_term": "total pasivo corto plazo",
+        "row_snippet": "total pasivo corto plazo 712,000"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

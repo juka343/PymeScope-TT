@@ -3,7 +3,23 @@
     "activo_circulante": 2853404.97,
     "pasivo_circulante": 423385.47,
     "inventario": 0.0,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "activo_circulante": {
+        "method": "keyword",
+        "matched_term": "activo a corto plazo",
+        "row_snippet": "activo a corto plazo 2,853,404.97 pasivo a corto plazo 423,385.47"
+      },
+      "pasivo_circulante": {
+        "method": "keyword",
+        "matched_term": "pasivo a corto plazo",
+        "row_snippet": "activo a corto plazo 2,853,404.97 pasivo a corto plazo 423,385.47"
+      },
+      "inventario": {
+        "method": "not_found"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

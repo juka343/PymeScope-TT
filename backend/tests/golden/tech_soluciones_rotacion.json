@@ -7,7 +7,40 @@
     "ventas_netas": 2800000.0,
     "costo_ventas": 1450000.0,
     "dias_calculo": 360,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "cuentas_por_cobrar": {
+        "method": "keyword",
+        "matched_term": "cuentas por cobrar",
+        "row_snippet": "cuentas por cobrar (clientes) 650,000"
+      },
+      "inventario": {
+        "method": "keyword",
+        "matched_term": "inventarios",
+        "row_snippet": "inventarios (hardware para servicios) 280,000"
+      },
+      "activo_fijo": {
+        "method": "keyword",
+        "matched_term": "total activo no circulante",
+        "row_snippet": "total activo no circulante 5,035,000"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activo",
+        "row_snippet": "total activo 6,600,000"
+      },
+      "ventas_netas": {
+        "method": "keyword",
+        "matched_term": "ventas netas",
+        "row_snippet": "ventas netas 2,800,000"
+      },
+      "costo_de_ventas": {
+        "method": "keyword",
+        "matched_term": "costo de ventas",
+        "row_snippet": "(-) costo de ventas (1,450,000)"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

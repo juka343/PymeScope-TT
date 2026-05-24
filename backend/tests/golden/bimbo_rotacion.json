@@ -1,43 +1,43 @@
 {
   "datos_crudos": {
-    "cuentas_por_cobrar": 380000.0,
-    "inventario": 900000.0,
-    "activo_fijo_neto": 2100000.0,
-    "activo_total": 4455000.0,
-    "ventas_netas": 3500000.0,
-    "costo_ventas": 1900000.0,
-    "dias_calculo": 360,
-    "multiplicador": 1,
+    "cuentas_por_cobrar": 27988000000.0,
+    "inventario": 17763000000.0,
+    "activo_fijo_neto": 158326000000.0,
+    "activo_total": 429186000000.0,
+    "ventas_netas": 103726000000.0,
+    "costo_ventas": 49262000000.0,
+    "dias_calculo": 90,
+    "multiplicador": 1000000,
     "_extraction_trace": {
       "cuentas_por_cobrar": {
         "method": "keyword",
-        "matched_term": "clientes",
-        "row_snippet": "clientes 380,000 ptu por pagar 32,000"
+        "matched_term": "cuentas por cobrar",
+        "row_snippet": "clientes y otras cuentas por cobrar 27,988 26,631 5.1"
       },
       "inventario": {
         "method": "keyword",
         "matched_term": "inventarios",
-        "row_snippet": "inventarios 900,000 isr por pagar 96,000"
+        "row_snippet": "inventarios 17,763 18,832 (5.7)"
       },
       "activo_fijo": {
         "method": "keyword",
-        "matched_term": "total activo no circulante",
-        "row_snippet": "total activo no circulante 2,100,000 utilid. ejercicios 377,000"
+        "matched_term": "propiedad, planta y equipo",
+        "row_snippet": "propiedad, planta y equipo 158,326 155,376 1.9"
       },
       "activo_total": {
         "method": "keyword",
-        "matched_term": "total activo",
-        "row_snippet": "total activo 4,455,000 tot. pas+cap 4,455,000"
+        "matched_term": "activo total",
+        "row_snippet": "activo total 429,186 416,804 3.0"
       },
       "ventas_netas": {
         "method": "keyword",
         "matched_term": "ventas netas",
-        "row_snippet": "ventas netas 3,500,000"
+        "row_snippet": "ventas netas 103,726 93,641 10.8"
       },
       "costo_de_ventas": {
         "method": "keyword",
         "matched_term": "costo de ventas",
-        "row_snippet": "(-) costo de ventas (1,900,000)"
+        "row_snippet": "costo de ventas 49,262 44,940 9.6"
       }
     },
     "_warnings": null
@@ -45,27 +45,27 @@
   "kpis": [
     {
       "label": "Rotación de la Cartera",
-      "value": "9.21",
+      "value": "3.71",
       "status": "ok"
     },
     {
       "label": "Periodo Promedio de Recaudo",
-      "value": "39 días",
+      "value": "24 días",
       "status": "ok"
     },
     {
       "label": "Rotación de Inventarios",
-      "value": "2.11",
+      "value": "2.77",
       "status": "ok"
     },
     {
       "label": "Rotación de Activos Fijos",
-      "value": "1.67",
+      "value": "0.66",
       "status": "ok"
     },
     {
       "label": "Rotación de Activos Totales",
-      "value": "0.79",
+      "value": "0.24",
       "status": "warn"
     }
   ]

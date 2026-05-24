@@ -5,7 +5,45 @@
     "capital_social": 3688000.0,
     "utilidad_operacion": 300000.0,
     "intereses": 45000.0,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activo",
+        "row_snippet": "total activo 6,600,000"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "total capital contable",
+        "row_snippet": "total capital contable 3,688,000"
+      },
+      "pasivo_total": {
+        "method": "keyword",
+        "matched_term": "total pasivo",
+        "row_snippet": "total pasivo 2,912,000"
+      },
+      "utilidad_operacion": {
+        "method": "keyword",
+        "matched_term": "utilidad de operación",
+        "row_snippet": "utilidad de operación 300,000"
+      },
+      "gastos_financieros": {
+        "method": "keyword",
+        "matched_term": "gastos financieros",
+        "row_snippet": "(-) gastos financieros (intereses) (45,000)"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "utilidad neta",
+        "row_snippet": "utilidad neta 153,000"
+      },
+      "impuestos": {
+        "method": "keyword",
+        "matched_term": "isr",
+        "row_snippet": "(-) isr (30%) (76,500)"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

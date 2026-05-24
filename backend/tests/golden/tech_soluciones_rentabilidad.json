@@ -4,7 +4,30 @@
     "ventas_netas": 2800000.0,
     "activo_total": 6600000.0,
     "capital_contable": 3688000.0,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "ventas_netas": {
+        "method": "keyword",
+        "matched_term": "ventas netas",
+        "row_snippet": "ventas netas 2,800,000"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "utilidad neta",
+        "row_snippet": "utilidad neta 153,000"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activo",
+        "row_snippet": "total activo 6,600,000"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "total capital contable",
+        "row_snippet": "total capital contable 3,688,000"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

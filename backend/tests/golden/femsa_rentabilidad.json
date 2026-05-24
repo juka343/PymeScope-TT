@@ -1,30 +1,30 @@
 {
   "datos_crudos": {
-    "utilidad_neta": 4735000000.0,
-    "ventas_netas": 70925000000.0,
-    "activo_total": 333116000000.0,
-    "capital_contable": 146870000000.0,
+    "utilidad_neta": 8943000000.0,
+    "ventas_netas": 195820000000.0,
+    "activo_total": 855883000000.0,
+    "capital_contable": 391776000000.0,
     "multiplicador": 1000000,
     "_extraction_trace": {
       "ventas_netas": {
         "method": "keyword",
         "matched_term": "ingresos totales",
-        "row_snippet": "ingresos totales 70,925 100.0% 70,157 100.0%"
+        "row_snippet": "ingresos totales 195,820 100.0 176,334 100.0 11.1 5.6"
       },
       "utilidad_neta": {
         "method": "keyword",
         "matched_term": "utilidad neta",
-        "row_snippet": "utilidad neta consolidada 4,735 5,492"
+        "row_snippet": "(pérdida) utilidad neta consolidada 8,943 5,794 54.3"
       },
       "activo_total": {
         "method": "keyword",
         "matched_term": "total activos",
-        "row_snippet": "total activos 333,116 total capital 146,870"
+        "row_snippet": "total activos 855,883 851,536 0.5"
       },
       "capital_contable": {
         "method": "keyword",
-        "matched_term": "total capital",
-        "row_snippet": "total activos 333,116 total capital 146,870"
+        "matched_term": "total capital contable",
+        "row_snippet": "total capital contable 391,776 381,131 2.8"
       }
     },
     "_warnings": null
@@ -32,18 +32,18 @@
   "kpis": [
     {
       "label": "Margen de Rentabilidad",
-      "value": "6.68%",
+      "value": "4.57%",
       "status": "warn"
     },
     {
       "label": "Rendimiento sobre Activos Totales (RAT)",
-      "value": "1.42%",
-      "status": "ok"
+      "value": "1.04%",
+      "status": "warn"
     },
     {
       "label": "Rendimiento sobre el Patrimonio",
-      "value": "3.22%",
-      "status": "ok"
+      "value": "2.28%",
+      "status": "warn"
     }
   ]
 }

@@ -216,9 +216,52 @@ class FinancialCalculator:
         # rellenan antes de retornar, para que _find_value la copie al buffer.
         self._trace_buffer: Dict[str, dict] = {}
         self._last_match_info: dict = {}
+        self._current_formato_perfil: str = "vertical_simple"
+
+        # Marcadores de cuentas compuestas en una sola fila.
+        # Cuando una fila del balance combina dos cuentas NIF distintas (ej.
+        # "Clientes y otras cuentas por cobrar"), no se puede separar el monto
+        # entre los componentes sin información externa — emitimos un warning
+        # para que el usuario sepa que el valor es agregado.
+        # NOTA: "y equivalentes de efectivo" NO está aquí porque la NIF B-6 lo
+        # reconoce como UNA sola cuenta canónica, no como composición.
+        self._composed_markers: List[str] = [
+            " y otras cuentas por cobrar",
+            " y otras cuentas por pagar",
+            " y otros activos",
+            " y otros pasivos",
+            " y otros deudores",
+            " y otros acreedores",
+            " y otras partidas",
+            " e otros activos",
+            " e intangibles",
+        ]
 
         # Cargar catálogo NIF y hacer merge con diccionarios
         self._load_nif_catalog()
+
+        # ===== Fuentes NIF (trazabilidad normativa por concepto canónico) =====
+        self.fuentes_nif: Dict[str, Dict[str, str]] = {
+            # NIF B-3 — Estado de Resultados
+            "ventas_netas":             {"norma": "NIF B-3", "cuenta_nif": "Ventas o Ingresos netos"},
+            "costo_de_ventas":          {"norma": "NIF B-3", "cuenta_nif": "Costo de ventas"},
+            "utilidad_operacion":       {"norma": "NIF B-3", "cuenta_nif": "Utilidad de operación"},
+            "gastos_financieros":       {"norma": "NIF B-3", "cuenta_nif": "Gastos financieros (Intereses a cargo)"},
+            "utilidad_antes_impuestos": {"norma": "NIF B-3", "cuenta_nif": "Utilidad antes de impuestos a la utilidad"},
+            "impuestos":                {"norma": "NIF B-3", "cuenta_nif": "Impuestos a la utilidad"},
+            "utilidad_neta":            {"norma": "NIF B-3", "cuenta_nif": "Utilidad / pérdida del ejercicio"},
+            # NIF B-6 — Estado de Situación Financiera
+            "activo_circulante":        {"norma": "NIF B-6", "cuenta_nif": "Activo a corto plazo (circulante)"},
+            "cuentas_por_cobrar":       {"norma": "NIF B-6", "cuenta_nif": "Cuentas por cobrar a clientes"},
+            "inventario":               {"norma": "NIF B-6", "cuenta_nif": "Inventarios"},
+            "activo_fijo":              {"norma": "NIF B-6", "cuenta_nif": "Propiedades, planta y equipo"},
+            "activo_total":             {"norma": "NIF B-6", "cuenta_nif": "Total del Activo"},
+            "pasivo_circulante":        {"norma": "NIF B-6", "cuenta_nif": "Pasivo a corto plazo"},
+            "pasivo_largo_plazo":       {"norma": "NIF B-6", "cuenta_nif": "Pasivo a largo plazo"},
+            "pasivo_total":             {"norma": "NIF B-6", "cuenta_nif": "Total del Pasivo"},
+            "capital_social":           {"norma": "NIF B-6", "cuenta_nif": "Capital social"},
+            "capital_contable":         {"norma": "NIF B-6", "cuenta_nif": "Capital Contable"},
+        }
 
     # -------------------------------------------------------------------------
     # Helpers internos
@@ -422,6 +465,18 @@ class FinancialCalculator:
                             # --- FILTRO ANTI-PORCENTAJES (Nivel Experto) ---
                             max_magnitude = max(abs(v) for v in found_values)
 
+                            # Detectar columna de % al final: si hay 3+ valores y el
+                            # último es < 1% del máximo en magnitud, es una columna de
+                            # variación/porcentaje (ej. -251.17% en GCMK vs -324,525.87).
+                            # Cubre % > 100 que el filtro >100 no puede descartar.
+                            if (
+                                len(found_values) >= 3
+                                and max_magnitude > 0
+                                and abs(found_values[-1]) < max_magnitude * 0.01
+                            ):
+                                found_values = found_values[:-1]
+                                max_magnitude = max(abs(v) for v in found_values)
+
                             val_monetarios = [v for v in found_values if abs(v) > 100 or abs(v) == max_magnitude or v == 0]
 
                             # Determinamos la lista a usar
@@ -433,32 +488,26 @@ class FinancialCalculator:
                                 "matched_term": kw,
                                 "row_snippet": row_text[:120].strip(),
                             }
+                            # Detección de cuenta compuesta (ej. "Clientes y otras cuentas por cobrar")
+                            for marker in self._composed_markers:
+                                if marker in row_text:
+                                    self._last_match_info["composed"] = True
+                                    self._last_match_info["composed_marker"] = marker.strip()
+                                    break
 
                             # Lógica de extracción de columna
                             if take_last:
                                 return lista_final[-1]
-                            
-                            # --- REGLA FRANCOTIRADOR (Sábanas Mensuales) ---
-                            p = getattr(self, "_current_periodicidad", "").lower()
-                            if len(lista_final) >= 12 and p in ("trimestral", "semestral"):
-                                flow_kws = getattr(self, "kw_ventas_netas", []) + getattr(self, "kw_utilidad_neta", []) + getattr(self, "kw_utilidad_antes_impuestos", []) + getattr(self, "kw_utilidad_operacion", []) + getattr(self, "kw_costo_de_ventas", []) + getattr(self, "kw_intereses", []) + getattr(self, "kw_impuestos", []) + getattr(self, "kw_compras", []) + getattr(self, "kw_devoluciones_costo", []) + ["ingresos"]
-                                is_flow = any(kw in flow_kws for kw in keywords)
-                                step = 3 if p == "trimestral" else 6
-                                start = col_index * step
-                                if start + step <= len(lista_final):
-                                    if is_flow:
-                                        return sum(lista_final[start:start+step])
-                                    else:
-                                        return lista_final[start + step - 1]
 
-                            # Usamos el col_index para elegir la columna deseada
-                            if col_index < len(lista_final):
-                                return lista_final[col_index]
-                            else:
-                                p = getattr(self, "_current_periodicidad", "").lower()
-                                if p == "mensual":
-                                    return lista_final[0]
-                                return lista_final[-1]
+                            flow_kws = (
+                                getattr(self, "kw_ventas_netas", []) + getattr(self, "kw_utilidad_neta", [])
+                                + getattr(self, "kw_utilidad_antes_impuestos", []) + getattr(self, "kw_utilidad_operacion", [])
+                                + getattr(self, "kw_costo_de_ventas", []) + getattr(self, "kw_intereses", [])
+                                + getattr(self, "kw_impuestos", []) + getattr(self, "kw_compras", [])
+                                + getattr(self, "kw_devoluciones_costo", []) + ["ingresos"]
+                            )
+                            is_flow = any(kw in flow_kws for kw in keywords)
+                            return self._pick_column_value(lista_final, col_index, is_flow)
 
                         # Fallback si texto y número están pegados en la misma celda
                         for cell in row_cells:
@@ -495,6 +544,7 @@ class FinancialCalculator:
         best_raw = 0.0
         best_anti = 0.0
         best_values = []
+        best_row_label = ""
 
         for table in reversed(tables_data):
             rows: Dict[int, List[Dict[str, Any]]] = {}
@@ -532,6 +582,7 @@ class FinancialCalculator:
                     best_adjusted = score_adj
                     best_raw = score_raw
                     best_anti = score_anti
+                    best_row_label = row_label
                     # Extraer valores numéricos de la fila
                     text_col_max = -1
                     for c in row_cells:
@@ -552,6 +603,15 @@ class FinancialCalculator:
 
                     if found_values:
                         max_magnitude = max(abs(v) for v in found_values)
+                        # Mismo filtro anti-porcentajes que _keyword_search:
+                        # columna de % al final con magnitud < 1% del max.
+                        if (
+                            len(found_values) >= 3
+                            and max_magnitude > 0
+                            and abs(found_values[-1]) < max_magnitude * 0.01
+                        ):
+                            found_values = found_values[:-1]
+                            max_magnitude = max(abs(v) for v in found_values)
                         val_monetarios = [v for v in found_values if abs(v) > 100 or abs(v) == max_magnitude or v == 0]
                         best_values = val_monetarios if val_monetarios else found_values
 
@@ -588,6 +648,7 @@ class FinancialCalculator:
             "score_adjusted": round(best_adjusted, 4),
             "score_anti": round(best_anti, 4),
             "zone": zona,
+            "row_snippet": best_row_label[:120],
         }
 
         lista_final = best_values
@@ -630,6 +691,47 @@ class FinancialCalculator:
         trace = dict(self._trace_buffer) if self._trace_buffer else None
         self._trace_buffer.clear()
         return trace
+
+    def _collect_fuentes(self, concept_keys: List[str]) -> Dict[str, Dict[str, str]]:
+        """Retorna las fuentes NIF para los conceptos usados en el módulo."""
+        return {k: self.fuentes_nif[k] for k in concept_keys if k in self.fuentes_nif}
+
+    def _pick_column_value(self, lista_final: List[float], col_index: int, is_flow: bool = False) -> float:
+        """Selecciona el valor correcto de lista_final según el perfil de formato activo.
+
+        Perfiles:
+          - sabana_mensual   : francotirador explícito (col_index navega grupos de meses)
+          - corporativo_bmv  : col_index directo, nunca activa el francotirador
+          - vertical_simple  : col_index directo + heurística legacy (len>=12) para compatibilidad
+          - lado_a_lado      : col_index directo (el stop-at-text ya filtró el lado correcto)
+        """
+        perfil = getattr(self, "_current_formato_perfil", "vertical_simple")
+        p = getattr(self, "_current_periodicidad", "").lower()
+
+        if perfil == "sabana_mensual":
+            step = 3 if p == "trimestral" else 6
+            start = col_index * step
+            if start + step <= len(lista_final):
+                return sum(lista_final[start:start + step]) if is_flow else lista_final[start + step - 1]
+            return lista_final[0]
+
+        if perfil == "corporativo_bmv":
+            if col_index < len(lista_final):
+                return lista_final[col_index]
+            return lista_final[-1]
+
+        # vertical_simple y lado_a_lado: mantener heurística legacy para compatibilidad
+        if len(lista_final) >= 12 and p in ("trimestral", "semestral"):
+            step = 3 if p == "trimestral" else 6
+            start = col_index * step
+            if start + step <= len(lista_final):
+                return sum(lista_final[start:start + step]) if is_flow else lista_final[start + step - 1]
+
+        if col_index < len(lista_final):
+            return lista_final[col_index]
+        if p == "mensual":
+            return lista_final[0]
+        return lista_final[-1]
 
     def _validate_extractions(
         self,
@@ -716,6 +818,16 @@ class FinancialCalculator:
         if vn < 0:
             warnings.append(f"ventas_netas negativas ({vn:,.2f}) — revisar extracción")
 
+        # 5. Cuentas compuestas: informativo, no bloqueante
+        for concept_key, info in tr.items():
+            if info.get("composed"):
+                marker = info.get("composed_marker", "")
+                warnings.append(
+                    f"{concept_key}: valor extraído de una cuenta compuesta "
+                    f"(fila contiene '{marker}'). Incluye sub-cuentas que no pueden "
+                    f"separarse sin información adicional."
+                )
+
         if warnings:
             for w in warnings:
                 print(f"  ⚠️  Validación    : {w}")
@@ -737,10 +849,11 @@ class FinancialCalculator:
     # -------------------------------------------------------------------------
     # KPIs
     # -------------------------------------------------------------------------
-    def calcular_rentabilidad(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
+    def calcular_rentabilidad(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
         """Calcula indicadores de rentabilidad cruzando Balance y Estado de Resultados."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
+        self._current_formato_perfil = formato_perfil
         tablas_resultados = self._get_tables(resultados_data)
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
@@ -796,6 +909,7 @@ class FinancialCalculator:
                 "multiplicador": multiplicador,
                 "_extraction_trace": trace,
                 "_warnings": warnings,
+                "fuentes": self._collect_fuentes(["utilidad_neta", "ventas_netas", "activo_total", "capital_contable"]),
             },
             "kpis": [
                 {
@@ -816,10 +930,11 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_liquidez(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
+    def calcular_liquidez(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
         """Calcula indicadores de liquidez usando únicamente el Balance General."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
+        self._current_formato_perfil = formato_perfil
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
         
@@ -852,6 +967,7 @@ class FinancialCalculator:
                 "multiplicador": multiplicador,
                 "_extraction_trace": trace,
                 "_warnings": warnings,
+                "fuentes": self._collect_fuentes(["activo_circulante", "pasivo_circulante", "inventario"]),
             },
             "kpis": [
                 {
@@ -872,10 +988,11 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
+    def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
         """Calcula indicadores de endeudamiento cruzando Balance y Estado de Resultados."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
+        self._current_formato_perfil = formato_perfil
         tablas_balance = self._get_tables(balance_data)
         tablas_resultados = self._get_tables(resultados_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
@@ -904,7 +1021,7 @@ class FinancialCalculator:
 
         # --- EXTRACCIÓN DEL ESTADO DE RESULTADOS ---
         utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["neta", "total", "ejercicio", "antes de", "cambiaria", "bruta", "financier"], concept_key="utilidad_operacion") * multiplicador
-        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=col_index, concept_key="gastos_financieros") * multiplicador
+        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=col_index, concept_key="gastos_financieros", skip_if_row_contains=["de operacion", "operativos", "de venta", "de administracion"]) * multiplicador
         utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta") * multiplicador
         impuestos = self._find_value(tablas_resultados, self.kw_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="impuestos") * multiplicador
         
@@ -946,6 +1063,7 @@ class FinancialCalculator:
                 "multiplicador": multiplicador,
                 "_extraction_trace": trace,
                 "_warnings": warnings,
+                "fuentes": self._collect_fuentes(["pasivo_total", "activo_total", "capital_contable", "utilidad_operacion", "gastos_financieros", "utilidad_neta", "impuestos"]),
             },
             "kpis": [
                 {
@@ -966,10 +1084,11 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
+    def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
         """Calcula indicadores de rotación adaptándose dinámicamente al tipo de periodo."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
+        self._current_formato_perfil = formato_perfil
         tablas_balance = self._get_tables(balance_data)
         tablas_resultados = self._get_tables(resultados_data)
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
@@ -1037,6 +1156,7 @@ class FinancialCalculator:
                 "multiplicador": multiplicador,
                 "_extraction_trace": trace,
                 "_warnings": warnings,
+                "fuentes": self._collect_fuentes(["cuentas_por_cobrar", "inventario", "activo_fijo", "activo_total", "ventas_netas", "costo_de_ventas"]),
             },
             "kpis": [
                 {
@@ -1067,10 +1187,11 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_estructura(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0) -> Dict[str, Any]:
+    def calcular_estructura(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
         """Calcula indicadores de estructura financiera basándose en el Balance General."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
+        self._current_formato_perfil = formato_perfil
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
         
@@ -1154,6 +1275,7 @@ class FinancialCalculator:
                 "multiplicador": multiplicador,
                 "_extraction_trace": trace,
                 "_warnings": warnings,
+                "fuentes": self._collect_fuentes(["activo_total", "pasivo_total", "capital_social", "capital_contable", "activo_fijo", "pasivo_largo_plazo", "pasivo_circulante"]),
             },
             "kpis": [
                 {

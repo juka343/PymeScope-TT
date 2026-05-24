@@ -3,7 +3,25 @@
     "activo_circulante": 86141000000.0,
     "pasivo_circulante": 78345000000.0,
     "inventario": 14814000000.0,
-    "multiplicador": 1000000
+    "multiplicador": 1000000,
+    "_extraction_trace": {
+      "activo_circulante": {
+        "method": "keyword",
+        "matched_term": "total activos circulantes",
+        "row_snippet": "total activos circulantes 86,141 pasivo circulante 78,345"
+      },
+      "pasivo_circulante": {
+        "method": "keyword",
+        "matched_term": "pasivo circulante",
+        "row_snippet": "total activos circulantes 86,141 pasivo circulante 78,345"
+      },
+      "inventario": {
+        "method": "keyword",
+        "matched_term": "inventarios",
+        "row_snippet": "inventarios 14,814 vencimiento cp pasivo arrendamiento 952"
+      }
+    },
+    "_warnings": null
   },
   "kpis": [
     {

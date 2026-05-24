@@ -156,3 +156,5 @@ frontend/.env
 
 playwright-report/
 test-results/
+
+backend/app/services/canonical_embeddings.backup.json

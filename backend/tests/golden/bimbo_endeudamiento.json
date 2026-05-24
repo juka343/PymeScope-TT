@@ -1,0 +1,65 @@
+{
+  "datos_crudos": {
+    "pasivo_total": 299907000000.0,
+    "activo_total": 429186000000.0,
+    "capital_social": 127723000000.0,
+    "utilidad_operacion": 6748000000.0,
+    "intereses": 3256000000.0,
+    "multiplicador": 1000000,
+    "_extraction_trace": {
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "activo total",
+        "row_snippet": "activo total 429,186 416,804 3.0"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "capital contable",
+        "row_snippet": "capital contable mayoritario 127,723 125,944 1.4"
+      },
+      "pasivo_total": {
+        "method": "keyword",
+        "matched_term": "pasivo total",
+        "row_snippet": "pasivo total 299,907 289,107 3.7"
+      },
+      "utilidad_operacion": {
+        "method": "keyword",
+        "matched_term": "utilidad (pérdida) de operación",
+        "row_snippet": "utilidad (pérdida) de operación 6,748 6,875 (1.8)"
+      },
+      "gastos_financieros": {
+        "method": "keyword",
+        "matched_term": "resultado integral de financiamiento",
+        "row_snippet": "resultado integral de financiamiento 3,256 2,773 17.4"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "operaciones continuas",
+        "row_snippet": "utilidad (pérdida) de operaciones continuas 2,214 2,757 (19.7)"
+      },
+      "impuestos": {
+        "method": "keyword",
+        "matched_term": "impuestos a la utilidad",
+        "row_snippet": "impuestos a la utilidad 1,328 1,456 (8.8)"
+      }
+    },
+    "_warnings": null
+  },
+  "kpis": [
+    {
+      "label": "Apalancamiento",
+      "value": "0.70",
+      "status": "warn"
+    },
+    {
+      "label": "Razón de Cobertura de Intereses",
+      "value": "2.07",
+      "status": "ok"
+    },
+    {
+      "label": "Estabilidad Financiera",
+      "value": "2.35",
+      "status": "danger"
+    }
+  ]
+}

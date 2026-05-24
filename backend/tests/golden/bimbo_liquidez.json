@@ -1,22 +1,24 @@
 {
   "datos_crudos": {
-    "activo_circulante": 3214133.9,
-    "pasivo_circulante": 1072748.57,
-    "inventario": 0.0,
+    "activo_circulante": 74656.0,
+    "pasivo_circulante": 82589.0,
+    "inventario": 17763.0,
     "multiplicador": 1,
     "_extraction_trace": {
       "activo_circulante": {
         "method": "keyword",
         "matched_term": "activo circulante",
-        "row_snippet": "activo circulante 3,214,133.90 resul. del ejercicio 3,784,287.01"
+        "row_snippet": "activo circulante 74,656 67,180 11.1"
       },
       "pasivo_circulante": {
         "method": "keyword",
         "matched_term": "pasivo circulante",
-        "row_snippet": "iva retenido 6,200.47 pasivo circulante -1,072,748.57"
+        "row_snippet": "pasivo circulante 82,589 85,155 (3.0)"
       },
       "inventario": {
-        "method": "not_found"
+        "method": "keyword",
+        "matched_term": "inventarios",
+        "row_snippet": "inventarios 17,763 18,832 (5.7)"
       }
     },
     "_warnings": null
@@ -24,18 +26,18 @@
   "kpis": [
     {
       "label": "Razón de Liquidez",
-      "value": "3.00",
-      "status": "ok"
+      "value": "0.90",
+      "status": "warn"
     },
     {
       "label": "Prueba del Ácido",
-      "value": "3.00",
-      "status": "ok"
+      "value": "0.69",
+      "status": "warn"
     },
     {
       "label": "Capital de Trabajo",
-      "value": "$2,141,385.33",
-      "status": "ok"
+      "value": "$-7,933.00",
+      "status": "danger"
     }
   ]
 }
