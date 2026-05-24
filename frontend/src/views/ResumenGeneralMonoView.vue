@@ -973,12 +973,21 @@ const mapDataToDashboard = (data) => {
     },
   ];
 
+  const findKpiNota = (kpis, keyword) => {
+    if (!kpis) return null;
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    return item?.nota_periodo || null;
+  };
+
   cards.value[0].items = [
     {
       label: "ROE",
       target: ">10%",
       value: findKpiValue(rent.kpis, "Patrimonio") || "-",
       dot: getDotColor(rent.kpis, "Patrimonio"),
+      nota: findKpiNota(rent.kpis, "Patrimonio"),
     },
     {
       label: "Margen Neto",
@@ -1033,6 +1042,7 @@ const mapDataToDashboard = (data) => {
       target: ">4.0x",
       value: rotInvValue,
       dot: getDotColor(rot.kpis, "Inventarios"),
+      nota: findKpiNota(rot.kpis, "Inventarios"),
     },
     {
       label: "Periodo Cobro",
@@ -1195,6 +1205,7 @@ onMounted(() => {
 
             <div class="metric-right">
               <p class="metric-value">{{ it.value }}</p>
+              <p v-if="it.nota" class="metric-nota">{{ it.nota }}</p>
               <span class="mini-dot" :class="it.dot" aria-hidden="true"></span>
             </div>
 
@@ -1521,6 +1532,14 @@ onMounted(() => {
 .metric-value {
   margin: 0;
   font-weight: 900;
+}
+
+.metric-nota {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-style: italic;
 }
 
 .mini-dot {

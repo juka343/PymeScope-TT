@@ -202,6 +202,7 @@ onMounted(() => {
           </div>
 
           <div class="kpi-value">{{ k.value }}</div>
+          <p v-if="k.nota_periodo" class="kpi-nota">{{ k.nota_periodo }}</p>
         </article>
       </section>
 
@@ -513,6 +514,14 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 900;
   margin-top: 10px;
+}
+
+.kpi-nota {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-style: italic;
 }
 
 /* PANEL + TABLE */

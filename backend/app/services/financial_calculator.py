@@ -338,6 +338,19 @@ class FinancialCalculator:
         dias_map = {"mensual": 30, "trimestral": 90, "semestral": 180}
         return usar_acumulado, dias_map.get(p, 360)
 
+    def _nota_periodo(self, periodicidad: str) -> Optional[str]:
+        """Devuelve la etiqueta sutil para KPIs flujo÷stock cuando el periodo no es anual.
+
+        Aplica a RAT, RSP y las 4 rotaciones: el valor refleja el periodo, no es una tasa anualizada.
+        """
+        p = str(periodicidad).lower().strip()
+        notas = {
+            "mensual": "valor mensual",
+            "trimestral": "valor trimestral",
+            "semestral": "valor semestral",
+        }
+        return notas.get(p)
+
     @staticmethod
     def _get_tables(data: Dict[str, Any]) -> List:
         """Extrae tables_data de un documento de forma segura."""
@@ -733,6 +746,127 @@ class FinancialCalculator:
             return lista_final[0]
         return lista_final[-1]
 
+    # -------------------------------------------------------------------------
+    # Detección de periodo por columna (Fase 8)
+    # -------------------------------------------------------------------------
+    _MESES_ES = {
+        "enero": "01", "ene": "01",
+        "febrero": "02", "feb": "02",
+        "marzo": "03", "mar": "03",
+        "abril": "04", "abr": "04",
+        "mayo": "05", "may": "05",
+        "junio": "06", "jun": "06",
+        "julio": "07", "jul": "07",
+        "agosto": "08", "ago": "08",
+        "septiembre": "09", "sept": "09", "sep": "09",
+        "octubre": "10", "oct": "10",
+        "noviembre": "11", "nov": "11",
+        "diciembre": "12", "dic": "12",
+    }
+
+    def _parse_period_label(self, text: str) -> Optional[str]:
+        """Detecta un periodo en un texto y devuelve etiqueta normalizada.
+
+        Formatos detectados:
+          - "2024"                → "2024"
+          - "Enero 2024"          → "2024-01"
+          - "Dic 2023"            → "2023-12"
+          - "1T24" / "Q1 2024"    → "2024-Q1"
+          - "2024-01" / "01/2024" → "2024-01"
+        """
+        if not text or len(text) < 2:
+            return None
+
+        s = text.strip().lower()
+
+        # Año (20xx)
+        year_match = re.search(r"\b(20\d{2})\b", s)
+        year = year_match.group(1) if year_match else None
+
+        # Año corto al final de patrones tipo "1T24"
+        short_year_match = re.search(r"\b[1-4]\s*[tq]\s*(\d{2})\b", s)
+
+        # Mes (nombre español, completo o abreviado)
+        mes_num: Optional[str] = None
+        for mes_name, num in self._MESES_ES.items():
+            if re.search(rf"\b{mes_name}\b", s):
+                mes_num = num
+                break
+
+        # Fecha numérica: YYYY-MM o MM/YYYY
+        if not mes_num:
+            iso_match = re.search(r"\b(20\d{2})[-/](\d{1,2})\b", s)
+            if iso_match:
+                year = iso_match.group(1)
+                mes_num = iso_match.group(2).zfill(2)
+            else:
+                rev_match = re.search(r"\b(\d{1,2})[-/](20\d{2})\b", s)
+                if rev_match:
+                    mes_num = rev_match.group(1).zfill(2)
+                    year = rev_match.group(2)
+
+        # Trimestre
+        q_num: Optional[str] = None
+        q_match = (
+            re.search(r"\b([1-4])\s*[tq]\s*\d{2,4}\b", s)   # 1T24, 1T 2024
+            or re.search(r"\b([1-4])\s*[tq]\b", s)           # 1T standalone
+            or re.search(r"\b[tq]([1-4])\b", s)              # T1, Q1
+            or re.search(r"trimestre\s+([1-4])", s)          # trimestre 1
+        )
+        if q_match:
+            q_num = q_match.group(1)
+            if not year and short_year_match:
+                year = f"20{short_year_match.group(1)}"
+
+        if mes_num and year:
+            return f"{year}-{mes_num}"
+        if q_num and year:
+            return f"{year}-Q{q_num}"
+        if year:
+            return year
+        return None
+
+    def _detect_period_columns(self, tables_data: List[List[Dict[str, Any]]]) -> Dict[str, int]:
+        """Escanea headers de las tablas y devuelve mapa {periodo: data_col_index}.
+
+        Mira las primeras 3 filas de cada tabla, agrupa el texto por columna
+        (para soportar headers multi-fila tipo "Enero" sobre "2024"), y aplica
+        _parse_period_label a cada combinación.
+
+        El índice devuelto es POSICIONAL entre las columnas de periodo encontradas
+        (0, 1, 2, …), no el índice de celda OCR. Así queda alineado con
+        _find_value, que construye lista_final únicamente con los valores
+        numéricos de la fila (ignorando la celda de etiqueta).
+        """
+        detected: Dict[str, int] = {}
+
+        for table in tables_data:
+            rows: Dict[int, List[Dict[str, Any]]] = {}
+            for cell in table:
+                r_idx = int(cell.get("row", 0))
+                rows.setdefault(r_idx, []).append(cell)
+
+            header_row_ids = sorted(rows.keys())[:3]
+            column_texts: Dict[int, List[str]] = {}
+            for r_idx in header_row_ids:
+                for cell in rows[r_idx]:
+                    col = int(cell.get("col", 0))
+                    text = str(cell.get("text", "")).strip()
+                    if text:
+                        column_texts.setdefault(col, []).append(text)
+
+            data_idx = 0
+            for col in sorted(column_texts.keys()):
+                combined = " ".join(column_texts[col])
+                label = self._parse_period_label(combined)
+                if not label:
+                    continue
+                if label not in detected:
+                    detected[label] = data_idx
+                data_idx += 1
+
+        return detected
+
     def _validate_extractions(
         self,
         values: Dict[str, float],
@@ -893,6 +1027,8 @@ class FinancialCalculator:
         roa_ok = 0.05 * factor
         roe_ok = 0.10 * factor
 
+        nota = self._nota_periodo(periodicidad)
+
         trace = self._collect_trace()
         warnings = self._validate_extractions(
             {"ventas_netas": ventas_netas, "activo_total": activo_total,
@@ -921,11 +1057,13 @@ class FinancialCalculator:
                     "label": "Rendimiento sobre Activos Totales (RAT)",
                     "value": f"{roa * 100:.2f}%",
                     "status": "ok" if roa >= roa_ok else ("warn" if roa >= 0 else "danger"),
+                    **({"nota_periodo": nota} if nota else {}),
                 },
                 {
                     "label": "Rendimiento sobre el Patrimonio",
                     "value": f"{roe * 100:.2f}%",
                     "status": "ok" if roe >= roe_ok else ("warn" if roe >= 0 else "danger"),
+                    **({"nota_periodo": nota} if nota else {}),
                 },
             ],
         }
@@ -1137,6 +1275,8 @@ class FinancialCalculator:
         rot_at_ok = 1.0 * factor
         rot_at_warn = 0.5 * factor
 
+        nota = self._nota_periodo(periodicidad)
+
         trace = self._collect_trace()
         warnings = self._validate_extractions(
             {"activo_total": activo_total, "activo_fijo": activo_fijo_neto,
@@ -1163,6 +1303,7 @@ class FinancialCalculator:
                     "label": "Rotación de la Cartera",
                     "value": f"{rotacion_cartera:.2f}",
                     "status": "ok" if rotacion_cartera >= rot_cartera_ok else ("warn" if rotacion_cartera > 0 else "danger"),
+                    **({"nota_periodo": nota} if nota else {}),
                 },
                 {
                     "label": "Periodo Promedio de Recaudo",
@@ -1173,16 +1314,19 @@ class FinancialCalculator:
                     "label": "Rotación de Inventarios",
                     "value": "N/A" if inventario == 0 else f"{rotacion_inventarios:.2f}",
                     "status": "neutral" if inventario == 0 else ("ok" if rotacion_inventarios > 0 else "danger"),
+                    **({"nota_periodo": nota} if nota and inventario != 0 else {}),
                 },
                 {
                     "label": "Rotación de Activos Fijos",
                     "value": f"{rotacion_activos_fijos:.2f}",
                     "status": "ok" if rotacion_activos_fijos >= rot_af_ok else ("warn" if rotacion_activos_fijos >= rot_af_warn else "danger"),
+                    **({"nota_periodo": nota} if nota else {}),
                 },
                 {
                     "label": "Rotación de Activos Totales",
                     "value": f"{rotacion_activos_totales:.2f}",
                     "status": "ok" if rotacion_activos_totales >= rot_at_ok else ("warn" if rotacion_activos_totales >= rot_at_warn else "danger"),
+                    **({"nota_periodo": nota} if nota else {}),
                 },
             ],
         }

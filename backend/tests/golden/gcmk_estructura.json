@@ -37,7 +37,37 @@
         "row_snippet": "iva retenido 6,200.47 pasivo circulante -1,072,748.57"
       }
     },
-    "_warnings": null
+    "_warnings": null,
+    "fuentes": {
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "pasivo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Pasivo"
+      },
+      "capital_social": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital social"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      },
+      "activo_fijo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Propiedades, planta y equipo"
+      },
+      "pasivo_largo_plazo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a largo plazo"
+      },
+      "pasivo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a corto plazo"
+      }
+    }
   },
   "kpis": [
     {

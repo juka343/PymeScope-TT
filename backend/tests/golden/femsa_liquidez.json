@@ -21,7 +21,21 @@
         "row_snippet": "inventarios 66,548 67,464 (1.4)"
       }
     },
-    "_warnings": null
+    "_warnings": null,
+    "fuentes": {
+      "activo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Activo a corto plazo (circulante)"
+      },
+      "pasivo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a corto plazo"
+      },
+      "inventario": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Inventarios"
+      }
+    }
   },
   "kpis": [
     {

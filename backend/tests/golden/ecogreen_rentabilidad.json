@@ -27,7 +27,25 @@
         "row_snippet": "total capital contable 2,727,000"
       }
     },
-    "_warnings": null
+    "_warnings": null,
+    "fuentes": {
+      "utilidad_neta": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Utilidad / pérdida del ejercicio"
+      },
+      "ventas_netas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Ventas o Ingresos netos"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      }
+    }
   },
   "kpis": [
     {

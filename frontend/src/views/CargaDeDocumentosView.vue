@@ -635,7 +635,62 @@ async function removePeriod(periodId) {
 // =====================
 // ANÁLISIS
 // =====================
-function getColIndex(period) {
+
+// Normaliza periodDate al formato que devuelve el backend en /detect-columns:
+//   anual      → "2024"
+//   mensual    → "2024-01"
+//   trimestral → "2024-Q1"
+function getPeriodKey(period) {
+  if (!period.periodDate) return null;
+  const dateStr = String(period.periodDate);
+
+  if (periodicity.value === "anual") {
+    const yearMatch = dateStr.match(/\b(20\d{2})\b/);
+    return yearMatch ? yearMatch[1] : null;
+  }
+
+  const parts = dateStr.split("-");
+  if (parts.length < 2) return null;
+
+  const year = parts[0];
+  const month = parts[1].padStart(2, "0");
+
+  if (periodicity.value === "mensual") {
+    return `${year}-${month}`;
+  }
+
+  if (periodicity.value === "trimestral") {
+    const q = Math.ceil(parseInt(month, 10) / 3);
+    return `${year}-Q${q}`;
+  }
+
+  return null;
+}
+
+// Llama al backend para obtener el mapa {periodo: col_index} a partir de los headers reales.
+// Si falla (red, OCR, etc.), devuelve null y el caller cae al fallback.
+async function detectColumnsForPeriod(period) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/documents/detect-columns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        balance_url: period.balanceFile.url,
+        resultados_url: period.resultsFile.url,
+      }),
+    });
+
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.warn("Detección de columnas falló:", error);
+    return null;
+  }
+}
+
+// Fallback histórico: deduce el col_index a partir de la fecha que indicó el usuario,
+// asumiendo orden cronológico estándar. Se usa solo cuando la detección por backend no encuentra el periodo.
+function getColIndexFallback(period) {
   let indiceColumna = 0;
 
   if (periodicity.value === "mensual" && period.periodDate) {
@@ -683,6 +738,27 @@ function getColIndex(period) {
   return indiceColumna;
 }
 
+// Resuelve el col_index correcto para un periodo.
+// Estrategia: primero pregunta al backend qué columna corresponde al periodo solicitado
+// (basado en los headers reales del documento). Si el backend no encuentra el periodo en
+// ningún documento, cae al fallback histórico que deduce por orden cronológico.
+async function getColIndex(period) {
+  const periodKey = getPeriodKey(period);
+  if (!periodKey) return getColIndexFallback(period);
+
+  const detected = await detectColumnsForPeriod(period);
+  if (!detected) return getColIndexFallback(period);
+
+  if (detected.balance && detected.balance[periodKey] !== undefined) {
+    return detected.balance[periodKey];
+  }
+  if (detected.resultados && detected.resultados[periodKey] !== undefined) {
+    return detected.resultados[periodKey];
+  }
+
+  return getColIndexFallback(period);
+}
+
 async function analyzePeriod(period) {
   const payload = {
     project_id: projectId,
@@ -690,7 +766,7 @@ async function analyzePeriod(period) {
     balance_url: period.balanceFile.url,
     resultados_url: period.resultsFile.url,
     periodicidad: periodicity.value,
-    col_index: getColIndex(period),
+    col_index: await getColIndex(period),
     period_date: period.periodDate,
     period_label: period.label,
   };

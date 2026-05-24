@@ -109,6 +109,14 @@ const generateDashboardData = () => {
     return item ? item.status : "warn";
   };
 
+  const getKpiNota = (kpis, keyword) => {
+    if (!kpis) return null;
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    return item?.nota_periodo || null;
+  };
+
   const dataMargen = periods.map((p) => findKpi(p.rentabilidad.kpis, "margen"));
   const dataRat = periods.map((p) => findKpi(p.rentabilidad.kpis, "activos"));
   const dataRoe = periods.map((p) => findKpi(p.rentabilidad.kpis, "patrimonio"));
@@ -197,6 +205,7 @@ const generateDashboardData = () => {
         "rat",
         getKpiStatus(lastP.rentabilidad.kpis, "activos")
       ),
+      notaPeriodo: getKpiNota(lastP.rentabilidad.kpis, "activos"),
     },
     {
       key: "roe",
@@ -209,6 +218,7 @@ const generateDashboardData = () => {
         "roe",
         getKpiStatus(lastP.rentabilidad.kpis, "patrimonio")
       ),
+      notaPeriodo: getKpiNota(lastP.rentabilidad.kpis, "patrimonio"),
     },
   ];
 
@@ -455,6 +465,7 @@ onMounted(() => {
         </div>
 
         <div class="kpi-value">{{ k.kpiValue }}</div>
+        <p v-if="k.notaPeriodo" class="kpi-nota">{{ k.notaPeriodo }}</p>
 
         <div class="kpi-delta">
           <span class="delta-pill" :class="k.deltaType === 'up' ? 'delta-up' : 'delta-down'">
@@ -949,6 +960,14 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 900;
   color: #0e161b;
+}
+
+.kpi-nota {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-style: italic;
 }
 
 .kpi-delta {

@@ -43,7 +43,37 @@
         "row_snippet": "isr 4,781 3,356 42.5"
       }
     },
-    "_warnings": null
+    "_warnings": null,
+    "fuentes": {
+      "pasivo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Pasivo"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      },
+      "utilidad_operacion": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Utilidad de operación"
+      },
+      "gastos_financieros": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Gastos financieros (Intereses a cargo)"
+      },
+      "utilidad_neta": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Utilidad / pérdida del ejercicio"
+      },
+      "impuestos": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Impuestos a la utilidad"
+      }
+    }
   },
   "kpis": [
     {

@@ -176,3 +176,72 @@ def test_perfil_sabana_mensual_vs_corporativo_bmv():
         f"sabana={ventas_sabana}, bmv={ventas_bmv}"
     )
     assert ventas_bmv == 10_000, f"corporativo_bmv col_index=0 debe leer el primer valor (10000), obtuvo {ventas_bmv}"
+
+
+# ─── Test detección de periodos por columna (Fase 8) ─────────────────────────
+@pytest.mark.parametrize("texto,esperado", [
+    ("2024", "2024"),
+    ("Enero 2024", "2024-01"),
+    ("ene 2024", "2024-01"),
+    ("Dic 2023", "2023-12"),
+    ("Diciembre 2022", "2022-12"),
+    ("1T24", "2024-Q1"),
+    ("Q1 2024", "2024-Q1"),
+    ("4T 2023", "2023-Q4"),
+    ("2024-03", "2024-03"),
+    ("03/2024", "2024-03"),
+    ("Trimestre 2 2024", "2024-Q2"),
+    ("Cuenta", None),
+    ("", None),
+    ("Total", None),
+])
+def test_parse_period_label(texto, esperado):
+    calc = FinancialCalculator()
+    assert calc._parse_period_label(texto) == esperado
+
+
+def test_detect_period_columns_comparativo_anual():
+    """Documento con 3 años en columnas → mapa {año: data_col_index}.
+
+    Índice posicional entre columnas de periodo (0,1,2…), alineado con _find_value.
+    """
+    calc = FinancialCalculator()
+    tabla = [
+        {"row": 0, "col": 0, "text": "Cuenta"},
+        {"row": 0, "col": 1, "text": "2024"},
+        {"row": 0, "col": 2, "text": "2023"},
+        {"row": 0, "col": 3, "text": "2022"},
+        {"row": 1, "col": 0, "text": "Ventas"},
+        {"row": 1, "col": 1, "text": "100"},
+        {"row": 1, "col": 2, "text": "90"},
+        {"row": 1, "col": 3, "text": "80"},
+    ]
+    detected = calc._detect_period_columns([tabla])
+    assert detected == {"2024": 0, "2023": 1, "2022": 2}
+
+
+def test_detect_period_columns_header_multifila():
+    """Header con mes en una fila y año en la siguiente → combina."""
+    calc = FinancialCalculator()
+    tabla = [
+        {"row": 0, "col": 1, "text": "Enero"},
+        {"row": 0, "col": 2, "text": "Febrero"},
+        {"row": 0, "col": 3, "text": "Marzo"},
+        {"row": 1, "col": 1, "text": "2024"},
+        {"row": 1, "col": 2, "text": "2024"},
+        {"row": 1, "col": 3, "text": "2024"},
+    ]
+    detected = calc._detect_period_columns([tabla])
+    assert detected == {"2024-01": 0, "2024-02": 1, "2024-03": 2}
+
+
+def test_detect_period_columns_corporativo_bmv():
+    """Comparativo trimestral típico BMV: trimestre actual vs anterior."""
+    calc = FinancialCalculator()
+    tabla = [
+        {"row": 0, "col": 0, "text": "Concepto"},
+        {"row": 0, "col": 1, "text": "4T 2024"},
+        {"row": 0, "col": 2, "text": "4T 2023"},
+    ]
+    detected = calc._detect_period_columns([tabla])
+    assert detected == {"2024-Q4": 0, "2023-Q4": 1}

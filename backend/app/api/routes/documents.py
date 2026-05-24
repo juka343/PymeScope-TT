@@ -852,6 +852,9 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
         )
 
         # 3. Retornar paquete listo para Dashboard de Vue
+        columnas_balance = _calculator._detect_period_columns(_calculator._get_tables(balance_data))
+        columnas_resultados = _calculator._detect_period_columns(_calculator._get_tables(resultados_data))
+
         return {
             "estatus": "Completado",
             "project_id": payload.project_id,
@@ -863,6 +866,10 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
                 "rotacion": analisis_rotacion,
                 "estructura": analisis_estructura,
             },
+            "columnas_detectadas": {
+                "balance": columnas_balance,
+                "resultados": columnas_resultados,
+            },
         }
 
     except HTTPException:
@@ -872,6 +879,39 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
         raise HTTPException(
             status_code=500,
             detail=f"Error procesando el periodo: {str(e)}",
+        )
+
+
+class SolicitudDetectarColumnas(BaseModel):
+    balance_url: str
+    resultados_url: str
+
+
+@router.post("/documents/detect-columns")
+async def detectar_columnas_periodo(payload: SolicitudDetectarColumnas) -> Dict[str, Any]:
+    """Devuelve un mapa {periodo: col_index} por cada documento.
+
+    El frontend puede consultar este endpoint ANTES de llamar /analyze-period
+    para saber a qué columna corresponde cada año/mes/trimestre detectado en
+    los headers y así enviar el col_index correcto.
+    """
+    _ensure_firebase_initialized()
+
+    try:
+        balance_data, resultados_data = await asyncio.gather(
+            _azure_service.process_financial_document_async(payload.balance_url),
+            _azure_service.process_financial_document_async(payload.resultados_url),
+        )
+
+        return {
+            "balance": _calculator._detect_period_columns(_calculator._get_tables(balance_data)),
+            "resultados": _calculator._detect_period_columns(_calculator._get_tables(resultados_data)),
+        }
+    except Exception as e:
+        print(f"Error detectando columnas: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error detectando columnas: {str(e)}",
         )
 
 

@@ -40,7 +40,33 @@
         "row_snippet": "(-) costo de ventas (1,900,000)"
       }
     },
-    "_warnings": null
+    "_warnings": null,
+    "fuentes": {
+      "cuentas_por_cobrar": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Cuentas por cobrar a clientes"
+      },
+      "inventario": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Inventarios"
+      },
+      "activo_fijo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Propiedades, planta y equipo"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "ventas_netas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Ventas o Ingresos netos"
+      },
+      "costo_de_ventas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Costo de ventas"
+      }
+    }
   },
   "kpis": [
     {
