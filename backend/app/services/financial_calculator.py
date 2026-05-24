@@ -983,36 +983,43 @@ class FinancialCalculator:
     # -------------------------------------------------------------------------
     # KPIs
     # -------------------------------------------------------------------------
-    def calcular_rentabilidad(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
-        """Calcula indicadores de rentabilidad cruzando Balance y Estado de Resultados."""
+    def calcular_rentabilidad(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple", col_index_balance: Optional[int] = None, col_index_resultados: Optional[int] = None) -> Dict[str, Any]:
+        """Calcula indicadores de rentabilidad cruzando Balance y Estado de Resultados.
+
+        col_index_balance / col_index_resultados: índices independientes por documento (recomendado).
+        col_index: valor legacy usado como fallback si los duales no se proveen.
+        """
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         self._current_formato_perfil = formato_perfil
         tablas_resultados = self._get_tables(resultados_data)
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
-        
-        multiplicador = max(self._detect_scale(balance_data), self._detect_scale(resultados_data))
-        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas") * multiplicador
-        if ventas_netas == 0:
-            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index) * multiplicador
 
-        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta") * multiplicador
-        
+        idx_b = col_index_balance if col_index_balance is not None else col_index
+        idx_r = col_index_resultados if col_index_resultados is not None else col_index
+
+        multiplicador = max(self._detect_scale(balance_data), self._detect_scale(resultados_data))
+        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=idx_r, concept_key="ventas_netas") * multiplicador
+        if ventas_netas == 0:
+            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=idx_r) * multiplicador
+
+        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=idx_r, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta") * multiplicador
+
         # Fallback 1: buscar utilidad antes de impuestos en el Estado de Resultados
         if utilidad_neta == 0:
-            utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos") * multiplicador
+            utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=idx_r, concept_key="utilidad_antes_impuestos") * multiplicador
 
         # Fallback 2: buscar utilidad neta en el Balance General
         if utilidad_neta == 0:
-            utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=0) * multiplicador
-            
+            utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=idx_b) * multiplicador
+
         if utilidad_neta == 0:
-                utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=0) * multiplicador
+                utilidad_neta = self._find_value(tablas_balance, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=idx_b) * multiplicador
 
         # 3) Balance
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_total") * multiplicador
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
 
         # 4) Cálculos
         margen_utilidad = (utilidad_neta / ventas_netas) if ventas_netas else 0
@@ -1068,19 +1075,21 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_liquidez(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
+    def calcular_liquidez(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple", col_index_balance: Optional[int] = None) -> Dict[str, Any]:
         """Calcula indicadores de liquidez usando únicamente el Balance General."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         self._current_formato_perfil = formato_perfil
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
-        
+
+        idx_b = col_index_balance if col_index_balance is not None else col_index
+
         multiplicador = self._detect_scale(balance_data)
 
-        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante, take_last=usar_acumulado, col_index=0, concept_key="activo_circulante") * multiplicador
-        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0, concept_key="pasivo_circulante") * multiplicador
-        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario") * multiplicador
+        activo_circulante = self._find_value(tablas_balance, self.kw_activo_circulante, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_circulante") * multiplicador
+        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=idx_b, concept_key="pasivo_circulante") * multiplicador
+        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=idx_b, concept_key="inventario") * multiplicador
 
         if pasivo_circulante < 0:
             pasivo_circulante = abs(pasivo_circulante)
@@ -1126,7 +1135,7 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
+    def calcular_endeudamiento(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple", col_index_balance: Optional[int] = None, col_index_resultados: Optional[int] = None) -> Dict[str, Any]:
         """Calcula indicadores de endeudamiento cruzando Balance y Estado de Resultados."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
@@ -1134,15 +1143,18 @@ class FinancialCalculator:
         tablas_balance = self._get_tables(balance_data)
         tablas_resultados = self._get_tables(resultados_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
-        
+
+        idx_b = col_index_balance if col_index_balance is not None else col_index
+        idx_r = col_index_resultados if col_index_resultados is not None else col_index
+
         multiplicador = max(self._detect_scale(balance_data), self._detect_scale(resultados_data))
 
         # --- EXTRACCIÓN DEL BALANCE ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
-        
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_total") * multiplicador
+
         # Renombramos a capital_contable para evitar confusiones y asegurar la fórmula
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "+ capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["capital contable", "y capital", "+ capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
 
         # Lógica de rescate para Pasivo Total (Ecuación Contable: P = A - C)
         # Si no lo encuentra (0) o si captura la fila "Total Pasivo + Capital" (>= activo_total)
@@ -1158,18 +1170,18 @@ class FinancialCalculator:
 
 
         # --- EXTRACCIÓN DEL ESTADO DE RESULTADOS ---
-        utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["neta", "total", "ejercicio", "antes de", "cambiaria", "bruta", "financier"], concept_key="utilidad_operacion") * multiplicador
-        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=col_index, concept_key="gastos_financieros", skip_if_row_contains=["de operacion", "operativos", "de venta", "de administracion"]) * multiplicador
-        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=col_index, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta") * multiplicador
-        impuestos = self._find_value(tablas_resultados, self.kw_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="impuestos") * multiplicador
-        
+        utilidad_operacion = self._find_value(tablas_resultados, self.kw_utilidad_operacion, take_last=usar_acumulado, col_index=idx_r, skip_if_row_contains=["neta", "total", "ejercicio", "antes de", "cambiaria", "bruta", "financier"], concept_key="utilidad_operacion") * multiplicador
+        intereses = self._find_value(tablas_resultados, self.kw_intereses, take_last=usar_acumulado, col_index=idx_r, concept_key="gastos_financieros", skip_if_row_contains=["de operacion", "operativos", "de venta", "de administracion"]) * multiplicador
+        utilidad_neta = self._find_value(tablas_resultados, self.kw_utilidad_neta, take_last=usar_acumulado, col_index=idx_r, skip_if_row_contains=["atribuible", "controladora", "no controladora", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="utilidad_neta") * multiplicador
+        impuestos = self._find_value(tablas_resultados, self.kw_impuestos, take_last=usar_acumulado, col_index=idx_r, concept_key="impuestos") * multiplicador
+
         if intereses < 0: intereses = abs(intereses)
         if impuestos < 0: impuestos = abs(impuestos)
 
         # --- LÓGICA DE RESCATE (100% UNIVERSAL Y MATEMÁTICA) ---
         if utilidad_operacion == 0 or utilidad_operacion == intereses:
             # Rescate Nivel 1: EBT + Intereses
-            util_antes_imp = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=col_index, concept_key="utilidad_antes_impuestos") * multiplicador
+            util_antes_imp = self._find_value(tablas_resultados, self.kw_utilidad_antes_impuestos, take_last=usar_acumulado, col_index=idx_r, concept_key="utilidad_antes_impuestos") * multiplicador
 
             if util_antes_imp != 0:
                 utilidad_operacion = util_antes_imp + intereses
@@ -1222,7 +1234,7 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
+    def calcular_rotacion(self, balance_data: Dict[str, Any], resultados_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple", col_index_balance: Optional[int] = None, col_index_resultados: Optional[int] = None) -> Dict[str, Any]:
         """Calcula indicadores de rotación adaptándose dinámicamente al tipo de periodo."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
@@ -1230,24 +1242,27 @@ class FinancialCalculator:
         tablas_balance = self._get_tables(balance_data)
         tablas_resultados = self._get_tables(resultados_data)
         usar_acumulado, dias_periodo = self._parse_periodicidad(periodicidad)
-        
+
+        idx_b = col_index_balance if col_index_balance is not None else col_index
+        idx_r = col_index_resultados if col_index_resultados is not None else col_index
+
         multiplicador = max(self._detect_scale(balance_data), self._detect_scale(resultados_data))
 
         # --- EXTRACCIÓN BÁSICA ---
-        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["nacionales", "extranjeros"], concept_key="cuentas_por_cobrar") * multiplicador
-        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=0, concept_key="inventario") * multiplicador
-        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo") * multiplicador
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
+        cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["nacionales", "extranjeros"], concept_key="cuentas_por_cobrar") * multiplicador
+        inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=idx_b, concept_key="inventario") * multiplicador
+        activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_fijo") * multiplicador
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_total") * multiplicador
 
         # Usamos nuestra variable dinámica 'usar_acumulado' en lugar del True hardcodeado
-        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=col_index, concept_key="ventas_netas") * multiplicador
-        
-        if ventas_netas == 0:
-            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=col_index) * multiplicador
+        ventas_netas = self._find_value(tablas_resultados, self.kw_ventas_netas, take_last=usar_acumulado, col_index=idx_r, concept_key="ventas_netas") * multiplicador
 
-        costo_directo = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=usar_acumulado, col_index=col_index, concept_key="costo_de_ventas") * multiplicador
-        compras = self._find_value(tablas_resultados, self.kw_compras, take_last=usar_acumulado, col_index=col_index) * multiplicador
-        devoluciones = self._find_value(tablas_resultados, self.kw_devoluciones_costo, take_last=usar_acumulado, col_index=col_index) * multiplicador
+        if ventas_netas == 0:
+            ventas_netas = self._find_value(tablas_resultados, ["ingresos"], take_last=usar_acumulado, col_index=idx_r) * multiplicador
+
+        costo_directo = self._find_value(tablas_resultados, self.kw_costo_de_ventas, take_last=usar_acumulado, col_index=idx_r, concept_key="costo_de_ventas") * multiplicador
+        compras = self._find_value(tablas_resultados, self.kw_compras, take_last=usar_acumulado, col_index=idx_r) * multiplicador
+        devoluciones = self._find_value(tablas_resultados, self.kw_devoluciones_costo, take_last=usar_acumulado, col_index=idx_r) * multiplicador
         
         costo_ventas_calculado = abs(costo_directo) + abs(compras) - abs(devoluciones)        
         if costo_ventas_calculado < 0: costo_ventas_calculado = 0
@@ -1331,28 +1346,30 @@ class FinancialCalculator:
             ],
         }
 
-    def calcular_estructura(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple") -> Dict[str, Any]:
+    def calcular_estructura(self, balance_data: Dict[str, Any], periodicidad: str = "anual", col_index: int = 0, formato_perfil: str = "vertical_simple", col_index_balance: Optional[int] = None) -> Dict[str, Any]:
         """Calcula indicadores de estructura financiera basándose en el Balance General."""
         self._trace_buffer.clear()
         self._current_periodicidad = periodicidad
         self._current_formato_perfil = formato_perfil
         tablas_balance = self._get_tables(balance_data)
         usar_acumulado, _ = self._parse_periodicidad(periodicidad)
-        
+
+        idx_b = col_index_balance if col_index_balance is not None else col_index
+
         multiplicador = self._detect_scale(balance_data)
 
         # --- 1. EXTRACCIÓN BÁSICA ---
-        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=0, concept_key="activo_total") * multiplicador
-        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=0, concept_key="activo_fijo") * multiplicador
-        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital contable", "y capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
-        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="capital_contable") * multiplicador
-        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["capital", "circulante", "corto", "deudores", "acreedores", "clientes", "activo"], concept_key="pasivo_largo_plazo") * multiplicador
-        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=0, concept_key="pasivo_circulante") * multiplicador
+        activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_total") * multiplicador
+        activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_fijo") * multiplicador
+        pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["capital contable", "y capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
+        capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="capital_contable") * multiplicador
+        pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["capital", "circulante", "corto", "deudores", "acreedores", "clientes", "activo"], concept_key="pasivo_largo_plazo") * multiplicador
+        pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=idx_b, concept_key="pasivo_circulante") * multiplicador
 
         # --- 2. LÓGICA INTELIGENTE PARA CAPITAL SOCIAL ---
-        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, take_last=usar_acumulado, col_index=0, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "contable"]) * multiplicador
-        capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"], take_last=usar_acumulado, col_index=0) * multiplicador
-        capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"], take_last=usar_acumulado, col_index=0) * multiplicador
+        capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "contable"]) * multiplicador
+        capital_variable = self._find_value(tablas_balance, ["capital variable", "capital social variable"], take_last=usar_acumulado, col_index=idx_b) * multiplicador
+        capital_fijo = self._find_value(tablas_balance, ["capital fijo", "capital social fijo"], take_last=usar_acumulado, col_index=idx_b) * multiplicador
         
         suma_capitales = capital_fijo + capital_variable
 

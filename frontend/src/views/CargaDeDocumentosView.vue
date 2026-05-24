@@ -738,35 +738,47 @@ function getColIndexFallback(period) {
   return indiceColumna;
 }
 
-// Resuelve el col_index correcto para un periodo.
-// Estrategia: primero pregunta al backend qué columna corresponde al periodo solicitado
-// (basado en los headers reales del documento). Si el backend no encuentra el periodo en
-// ningún documento, cae al fallback histórico que deduce por orden cronológico.
+// Resuelve los col_index correctos para un periodo, devolviendo un índice
+// independiente para Balance y para Estado de Resultados.
+// Cada documento puede tener su propio orden/cantidad de columnas, así que
+// preguntamos al backend por separado y, si el periodo no aparece en alguno
+// de los dos, caemos al fallback histórico para ese documento.
 async function getColIndex(period) {
   const periodKey = getPeriodKey(period);
-  if (!periodKey) return getColIndexFallback(period);
+  const fallback = getColIndexFallback(period);
+
+  if (!periodKey) {
+    return { balance: fallback, resultados: fallback };
+  }
 
   const detected = await detectColumnsForPeriod(period);
-  if (!detected) return getColIndexFallback(period);
-
-  if (detected.balance && detected.balance[periodKey] !== undefined) {
-    return detected.balance[periodKey];
-  }
-  if (detected.resultados && detected.resultados[periodKey] !== undefined) {
-    return detected.resultados[periodKey];
+  if (!detected) {
+    return { balance: fallback, resultados: fallback };
   }
 
-  return getColIndexFallback(period);
+  const idxBalance =
+    detected.balance && detected.balance[periodKey] !== undefined
+      ? detected.balance[periodKey]
+      : fallback;
+  const idxResultados =
+    detected.resultados && detected.resultados[periodKey] !== undefined
+      ? detected.resultados[periodKey]
+      : fallback;
+
+  return { balance: idxBalance, resultados: idxResultados };
 }
 
 async function analyzePeriod(period) {
+  const indices = await getColIndex(period);
   const payload = {
     project_id: projectId,
     period_id: period.id,
     balance_url: period.balanceFile.url,
     resultados_url: period.resultsFile.url,
     periodicidad: periodicity.value,
-    col_index: await getColIndex(period),
+    col_index: indices.balance, // legacy fallback
+    col_index_balance: indices.balance,
+    col_index_resultados: indices.resultados,
     period_date: period.periodDate,
     period_label: period.label,
   };
