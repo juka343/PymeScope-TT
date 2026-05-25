@@ -14,6 +14,7 @@ import {
   deleteDoc,
   collection,
   serverTimestamp,
+  deleteField,
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -462,8 +463,8 @@ async function savePeriodToFirestore(period) {
       {
         label: period.label,
         periodDate: period.periodDate,
-        balanceFile: period.balanceFile,
-        resultsFile: period.resultsFile,
+        balanceFile: period.balanceFile ?? deleteField(),
+        resultsFile: period.resultsFile ?? deleteField(),
         updatedAt: serverTimestamp(),
       },
       { merge: true }
