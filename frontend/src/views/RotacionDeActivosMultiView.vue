@@ -543,7 +543,7 @@ onMounted(() => {
   <div class="wrap" v-if="!loading && metrics.length > 0">
     <div class="title">
       <div class="title-row">
-        <h1>Rotación de Activos</h1>
+        <h1>Rotación de activos</h1>
         <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
