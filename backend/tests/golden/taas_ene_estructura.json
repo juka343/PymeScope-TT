@@ -6,7 +6,70 @@
     "capital_contable": 4159419.5,
     "activo_fijo": 1729400.0,
     "pasivo_largo_plazo": -0.0,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activos:",
+        "row_snippet": "total activos: 4,582,804.97 total pasivo + capital: 4,582,804.97"
+      },
+      "activo_fijo": {
+        "method": "keyword",
+        "matched_term": "activo a largo plazo",
+        "row_snippet": "activo a largo plazo 1,729,400.00 capital"
+      },
+      "pasivo_total": {
+        "method": "math_rescue",
+        "formula": "activo_total - capital_contable",
+        "value": 423385.47
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "capital contable",
+        "row_snippet": "maquinaria y equipo 395,600.00 capital contable 4,159,419.50"
+      },
+      "pasivo_largo_plazo": {
+        "method": "math_rescue",
+        "formula": "pasivo_total - pasivo_circulante",
+        "value": -0.0
+      },
+      "pasivo_circulante": {
+        "method": "keyword",
+        "matched_term": "pasivo a corto plazo",
+        "row_snippet": "activo a corto plazo 2,853,404.97 pasivo a corto plazo 423,385.47"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "pasivo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Pasivo"
+      },
+      "capital_social": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital social"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      },
+      "activo_fijo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Propiedades, planta y equipo"
+      },
+      "pasivo_largo_plazo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a largo plazo"
+      },
+      "pasivo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a corto plazo"
+      }
+    }
   },
   "kpis": [
     {

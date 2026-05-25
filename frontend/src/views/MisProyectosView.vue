@@ -87,19 +87,21 @@ const onboardingChecking = ref(true);
 const onboardingSlides = [
   {
     title: "Bienvenido a PymeScope",
-  text: `Estamos felices de tenerte aquí :)
+    text: `Estamos felices de tenerte aquí :)
 Tus datos están seguros en todo momento.
-PymeScope puede cometer errores, así que consulta a un profesional calificado para obtener asesoramiento financiero.`,    icon: "waving_hand",
+PymeScope es un prototipo en desarrollo, por lo que te recomendamos verificar los resultados con un profesional financiero calificado.`,
+    icon: "waving_hand",
   },
   {
     title: "Sube tus archivos",
-    text: "Sube tus archivos de Balance General y Estado de Resultados. Nuestro sistema extraerá los datos automáticamente para generar tu dashboard financiero.",
+    text: "Sube tus archivos de Estado de Situación Financiera y Estado de Resultados. Nuestro sistema extraerá los datos automáticamente para generar tu dashboard financiero.",
     icon: "cloud_upload",
   },
-{
+  {
     title: "Formato de Archivos",
     icon: "description",
     bullets: [
+      "Solo se aceptan archivos en formato PDF.",
       "Evita usar abreviaturas en los nombres de las cuentas.",
       "Incluye sumas totales para cada categoría.",
       "Mantén una estructura clara y consistente.",
@@ -549,7 +551,7 @@ async function guardarNombre(p) {
     <main class="container main">
       <div class="top">
         <div class="top-left">
-          <h2>Mis proyectos de análisis</h2>
+          <h2>Mis proyectos de análisis financiero</h2>
           <p>Crea y administra tus análisis financieros en un solo lugar.</p>
         </div>
 

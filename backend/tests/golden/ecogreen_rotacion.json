@@ -7,7 +7,66 @@
     "ventas_netas": 3500000.0,
     "costo_ventas": 1900000.0,
     "dias_calculo": 360,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "cuentas_por_cobrar": {
+        "method": "keyword",
+        "matched_term": "clientes",
+        "row_snippet": "clientes 380,000 ptu por pagar 32,000"
+      },
+      "inventario": {
+        "method": "keyword",
+        "matched_term": "inventarios",
+        "row_snippet": "inventarios 900,000 isr por pagar 96,000"
+      },
+      "activo_fijo": {
+        "method": "keyword",
+        "matched_term": "total activo no circulante",
+        "row_snippet": "total activo no circulante 2,100,000 utilid. ejercicios 377,000"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activo",
+        "row_snippet": "total activo 4,455,000 tot. pas+cap 4,455,000"
+      },
+      "ventas_netas": {
+        "method": "keyword",
+        "matched_term": "ventas netas",
+        "row_snippet": "ventas netas 3,500,000"
+      },
+      "costo_de_ventas": {
+        "method": "keyword",
+        "matched_term": "costo de ventas",
+        "row_snippet": "(-) costo de ventas (1,900,000)"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "cuentas_por_cobrar": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Cuentas por cobrar a clientes"
+      },
+      "inventario": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Inventarios"
+      },
+      "activo_fijo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Propiedades, planta y equipo"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "ventas_netas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Ventas o Ingresos netos"
+      },
+      "costo_de_ventas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Costo de ventas"
+      }
+    }
   },
   "kpis": [
     {

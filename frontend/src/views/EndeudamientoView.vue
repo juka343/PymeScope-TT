@@ -181,7 +181,7 @@ onMounted(() => {
       <div class="subtitle">
         <p>Nivel de apalancamiento y estabilidad financiera de la empresa</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Balance General y Estado de Resultados</p>
+        <p class="small">Indicadores calculados a partir del Estado de Situación Financiera y Estado de Resultados</p>
       </div>
     </div>
 

@@ -221,7 +221,6 @@ async function handleDeleteAccount() {
 
           <!-- Danger Zone -->
           <div class="danger-zone">
-            <h4>Zona de peligro</h4>
             <div class="danger-content">
               <div class="danger-text">
                 <strong>Eliminar cuenta</strong>

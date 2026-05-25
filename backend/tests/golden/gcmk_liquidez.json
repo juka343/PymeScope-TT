@@ -3,7 +3,37 @@
     "activo_circulante": 3214133.9,
     "pasivo_circulante": 1072748.57,
     "inventario": 0.0,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "activo_circulante": {
+        "method": "keyword",
+        "matched_term": "activo circulante",
+        "row_snippet": "activo circulante 3,214,133.90 resul. del ejercicio 3,784,287.01"
+      },
+      "pasivo_circulante": {
+        "method": "keyword",
+        "matched_term": "pasivo circulante",
+        "row_snippet": "iva retenido 6,200.47 pasivo circulante -1,072,748.57"
+      },
+      "inventario": {
+        "method": "not_found"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "activo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Activo a corto plazo (circulante)"
+      },
+      "pasivo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a corto plazo"
+      },
+      "inventario": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Inventarios"
+      }
+    }
   },
   "kpis": [
     {

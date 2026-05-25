@@ -26,6 +26,37 @@ _calculator = FinancialCalculator()
 _is_initialized = False
 
 
+def _build_period_key(period_date: str, periodicidad: str) -> Optional[str]:
+    """Reconstruye la clave del periodo (mismo formato que el frontend) para
+    cruzar contra la salida de _detect_period_columns.
+
+    Ejemplos:
+      anual + "2024-03"  -> "2024"
+      mensual + "2024-03" -> "2024-03"
+      trimestral + "2024-03" -> "2024-Q1"
+    """
+    if not period_date:
+        return None
+    p = (periodicidad or "").lower().strip()
+    if p == "anual":
+        m = re.search(r"\b(20\d{2})\b", str(period_date))
+        return m.group(1) if m else None
+    parts = str(period_date).split("-")
+    if len(parts) < 2:
+        return None
+    year = parts[0]
+    month = parts[1].zfill(2)
+    if p == "mensual":
+        return f"{year}-{month}"
+    if p == "trimestral":
+        try:
+            q = (int(month) + 2) // 3
+        except ValueError:
+            return None
+        return f"{year}-Q{q}"
+    return None
+
+
 def _ensure_firebase_initialized() -> None:
     global _is_initialized
 
@@ -104,7 +135,10 @@ class SolicitudAnalisisPeriodo(BaseModel):
     balance_url: str
     resultados_url: str
     periodicidad: str
-    col_index: int = 0
+    col_index: int = 0  # legacy; usado si los duales no vienen
+    col_index_balance: Optional[int] = None
+    col_index_resultados: Optional[int] = None
+    formato_perfil: str = "vertical_simple"
     period_date: str = ""
     period_label: str = ""
 
@@ -807,46 +841,75 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        indice = payload.col_index
+        # Resolución de col_index dual: si vienen los duales se usan; si no, fallback al legacy.
+        idx_balance = payload.col_index_balance if payload.col_index_balance is not None else payload.col_index
+        idx_resultados = payload.col_index_resultados if payload.col_index_resultados is not None else payload.col_index
+
+        # Detección temprana de columnas + alerta de asimetría
+        columnas_balance = _calculator._detect_period_columns(_calculator._get_tables(balance_data))
+        columnas_resultados = _calculator._detect_period_columns(_calculator._get_tables(resultados_data))
+        periodo_key = _build_period_key(payload.period_date, payload.periodicidad)
+        warning_periodo: Optional[str] = None
+        if periodo_key:
+            en_balance = periodo_key in columnas_balance
+            en_resultados = periodo_key in columnas_resultados
+            if en_balance and not en_resultados and columnas_resultados:
+                warning_periodo = (
+                    f"El periodo '{periodo_key}' aparece en el Balance pero no en el Estado de Resultados. "
+                    "Los KPIs que mezclan ambos documentos pueden estar cruzando periodos distintos."
+                )
+            elif en_resultados and not en_balance and columnas_balance:
+                warning_periodo = (
+                    f"El periodo '{periodo_key}' aparece en el Estado de Resultados pero no en el Balance. "
+                    "Los KPIs que mezclan ambos documentos pueden estar cruzando periodos distintos."
+                )
 
         # 2. Calcular indicadores financieros
-        print("-> Calculando indicadores financieros...")
+        print(f"-> Calculando indicadores financieros (col_index balance={idx_balance}, resultados={idx_resultados})...")
 
         analisis_rentabilidad = _calculator.calcular_rentabilidad(
             balance_data,
             resultados_data,
             periodicidad=payload.periodicidad,
-            col_index=indice,
+            col_index_balance=idx_balance,
+            col_index_resultados=idx_resultados,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_liquidez = _calculator.calcular_liquidez(
             balance_data,
             periodicidad=payload.periodicidad,
-            col_index=indice,
+            col_index_balance=idx_balance,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_endeudamiento = _calculator.calcular_endeudamiento(
             balance_data,
             resultados_data,
             periodicidad=payload.periodicidad,
-            col_index=indice,
+            col_index_balance=idx_balance,
+            col_index_resultados=idx_resultados,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_rotacion = _calculator.calcular_rotacion(
             balance_data,
             resultados_data,
             periodicidad=payload.periodicidad,
-            col_index=indice,
+            col_index_balance=idx_balance,
+            col_index_resultados=idx_resultados,
+            formato_perfil=payload.formato_perfil,
         )
 
         analisis_estructura = _calculator.calcular_estructura(
             balance_data,
             periodicidad=payload.periodicidad,
-            col_index=indice,
+            col_index_balance=idx_balance,
+            formato_perfil=payload.formato_perfil,
         )
 
         # 3. Retornar paquete listo para Dashboard de Vue
-        return {
+        respuesta = {
             "estatus": "Completado",
             "project_id": payload.project_id,
             "period_id": payload.period_id,
@@ -857,7 +920,15 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
                 "rotacion": analisis_rotacion,
                 "estructura": analisis_estructura,
             },
+            "columnas_detectadas": {
+                "balance": columnas_balance,
+                "resultados": columnas_resultados,
+            },
         }
+        if warning_periodo:
+            respuesta["warning_periodo_asimetrico"] = warning_periodo
+            print(f"  ⚠️  {warning_periodo}")
+        return respuesta
 
     except HTTPException:
         raise
@@ -866,6 +937,39 @@ async def analizar_periodo_completo(payload: SolicitudAnalisisPeriodo) -> Dict[s
         raise HTTPException(
             status_code=500,
             detail=f"Error procesando el periodo: {str(e)}",
+        )
+
+
+class SolicitudDetectarColumnas(BaseModel):
+    balance_url: str
+    resultados_url: str
+
+
+@router.post("/documents/detect-columns")
+async def detectar_columnas_periodo(payload: SolicitudDetectarColumnas) -> Dict[str, Any]:
+    """Devuelve un mapa {periodo: col_index} por cada documento.
+
+    El frontend puede consultar este endpoint ANTES de llamar /analyze-period
+    para saber a qué columna corresponde cada año/mes/trimestre detectado en
+    los headers y así enviar el col_index correcto.
+    """
+    _ensure_firebase_initialized()
+
+    try:
+        balance_data, resultados_data = await asyncio.gather(
+            _azure_service.process_financial_document_async(payload.balance_url),
+            _azure_service.process_financial_document_async(payload.resultados_url),
+        )
+
+        return {
+            "balance": _calculator._detect_period_columns(_calculator._get_tables(balance_data)),
+            "resultados": _calculator._detect_period_columns(_calculator._get_tables(resultados_data)),
+        }
+    except Exception as e:
+        print(f"Error detectando columnas: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error detectando columnas: {str(e)}",
         )
 
 

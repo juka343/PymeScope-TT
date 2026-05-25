@@ -5,7 +5,76 @@
     "capital_social": 4159419.5,
     "utilidad_operacion": 377343.58999999997,
     "intereses": 14669.35,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activos:",
+        "row_snippet": "total activos: 4,582,804.97 total pasivo + capital: 4,582,804.97"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "capital contable",
+        "row_snippet": "maquinaria y equipo 395,600.00 capital contable 4,159,419.50"
+      },
+      "pasivo_total": {
+        "method": "math_rescue",
+        "formula": "activo_total - capital_contable",
+        "value": 423385.47
+      },
+      "utilidad_operacion": {
+        "method": "math_rescue",
+        "formula": "utilidad_neta + impuestos + gastos_financieros",
+        "value": 377343.59
+      },
+      "gastos_financieros": {
+        "method": "keyword",
+        "matched_term": "gastos financieros",
+        "row_snippet": "gastos financieros 14,669.35 14,669.35"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "utilidad total",
+        "row_snippet": "utilidad total 362,674.24 362,674.24"
+      },
+      "impuestos": {
+        "method": "not_found"
+      },
+      "utilidad_antes_impuestos": {
+        "method": "not_found"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "pasivo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Pasivo"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      },
+      "utilidad_operacion": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Utilidad de operación"
+      },
+      "gastos_financieros": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Gastos financieros (Intereses a cargo)"
+      },
+      "utilidad_neta": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Utilidad / pérdida del ejercicio"
+      },
+      "impuestos": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Impuestos a la utilidad"
+      }
+    }
   },
   "kpis": [
     {

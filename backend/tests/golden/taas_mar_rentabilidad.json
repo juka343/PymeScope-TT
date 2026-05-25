@@ -4,7 +4,46 @@
     "ventas_netas": 479242.08,
     "activo_total": 4828580.34,
     "capital_contable": 4460926.36,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "ventas_netas": {
+        "method": "not_found"
+      },
+      "utilidad_neta": {
+        "method": "keyword",
+        "matched_term": "utilidad total",
+        "row_snippet": "utilidad total 362,674.24 140,588.37 145,888.78 664,181.10"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activos:",
+        "row_snippet": "total activos: 4,828,580.34 total pasivo + capital: 4,828,580.34"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "capital contable",
+        "row_snippet": "maquinaria y equipo 395,600.00 capital contable 4,460,926.36"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "utilidad_neta": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Utilidad / pérdida del ejercicio"
+      },
+      "ventas_netas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Ventas o Ingresos netos"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      }
+    }
   },
   "kpis": [
     {
@@ -15,12 +54,14 @@
     {
       "label": "Rendimiento sobre Activos Totales (RAT)",
       "value": "7.51%",
-      "status": "ok"
+      "status": "ok",
+      "nota_periodo": "valor trimestral"
     },
     {
       "label": "Rendimiento sobre el Patrimonio",
       "value": "8.13%",
-      "status": "ok"
+      "status": "ok",
+      "nota_periodo": "valor trimestral"
     }
   ]
 }

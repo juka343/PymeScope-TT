@@ -3,7 +3,39 @@
     "activo_circulante": 1655000.0,
     "pasivo_circulante": 528000.0,
     "inventario": 900000.0,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "activo_circulante": {
+        "method": "keyword",
+        "matched_term": "total activo circulante",
+        "row_snippet": "total activo circulante 1,655,000 pasivo l.p. 1,200,000"
+      },
+      "pasivo_circulante": {
+        "method": "keyword",
+        "matched_term": "pasivo a corto plazo",
+        "row_snippet": "seguros anticipados 25,000 total pasivo a corto plazo 528,000"
+      },
+      "inventario": {
+        "method": "keyword",
+        "matched_term": "inventarios",
+        "row_snippet": "inventarios 900,000 isr por pagar 96,000"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "activo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Activo a corto plazo (circulante)"
+      },
+      "pasivo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a corto plazo"
+      },
+      "inventario": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Inventarios"
+      }
+    }
   },
   "kpis": [
     {

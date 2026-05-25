@@ -116,6 +116,14 @@ const generateDashboardData = () => {
     return item ? item.status : "warn";
   };
 
+  const getKpiNota = (kpis, keyword) => {
+    if (!kpis) return null;
+    const item = kpis.find((k) =>
+      k.label.toLowerCase().includes(keyword.toLowerCase())
+    );
+    return item?.nota_periodo || null;
+  };
+
   const dataCobrar = periods.map((p) => findKpi(p.rotacion.kpis, "cartera"));
   const dataRecaudo = periods.map((p) => findKpi(p.rotacion.kpis, "recaudo"));
   const dataInventarios = periods.map((p) =>
@@ -231,6 +239,7 @@ const generateDashboardData = () => {
         "times",
         getKpiStatus(lastP.rotacion.kpis, "cartera")
       ),
+      notaPeriodo: getKpiNota(lastP.rotacion.kpis, "cartera"),
     },
     {
       key: "recaudo",
@@ -255,6 +264,7 @@ const generateDashboardData = () => {
         "times",
         getKpiStatus(lastP.rotacion.kpis, "inventarios")
       ),
+      notaPeriodo: getKpiNota(lastP.rotacion.kpis, "inventarios"),
     },
     {
       key: "fijos",
@@ -267,6 +277,7 @@ const generateDashboardData = () => {
         "times",
         getKpiStatus(lastP.rotacion.kpis, "fijos")
       ),
+      notaPeriodo: getKpiNota(lastP.rotacion.kpis, "fijos"),
     },
     {
       key: "activosTotales",
@@ -279,6 +290,7 @@ const generateDashboardData = () => {
         "times",
         getKpiStatus(lastP.rotacion.kpis, "totales")
       ),
+      notaPeriodo: getKpiNota(lastP.rotacion.kpis, "totales"),
     },
   ];
 
@@ -531,7 +543,7 @@ onMounted(() => {
   <div class="wrap" v-if="!loading && metrics.length > 0">
     <div class="title">
       <div class="title-row">
-        <h1>Rotación de Activos</h1>
+        <h1>Rotación de activos</h1>
         <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
@@ -541,7 +553,7 @@ onMounted(() => {
       <div class="subtitle">
         <p>Análisis de eficiencia operativa y administración de activos</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Balance General y del Estado de Resultados</p>
+        <p class="small">Indicadores calculados a partir del Estado de Situación Financiera y del Estado de Resultados</p>
       </div>
     </div>
 
@@ -562,6 +574,7 @@ onMounted(() => {
         </div>
 
         <div class="kpi-value">{{ k.kpiValue }}</div>
+        <p v-if="k.notaPeriodo" class="kpi-nota">{{ k.notaPeriodo }}</p>
 
         <div class="kpi-delta">
           <span
@@ -1071,6 +1084,14 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 900;
   color: #0e161b;
+}
+
+.kpi-nota {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-style: italic;
 }
 
 .kpi-delta {
