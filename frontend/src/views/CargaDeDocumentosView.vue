@@ -829,7 +829,7 @@ async function saveAnalysisResult(res) {
 async function generateAnalysis() {
   if (completePeriods.value.length === 0) {
     toast({
-      message: "Carga al menos un Balance General y un Estado de Resultados.",
+      message: "Carga al menos un Estado de Situación Financiera y un Estado de Resultados.",
       type: "warning",
     });
     return;
@@ -920,7 +920,7 @@ async function generateAnalysis() {
     <div v-if="isProcessing" class="loading-overlay">
       <div class="loading-content">
         <div class="spinner"></div>
-        <h3>Generando Análisis Financiero...</h3>
+        <h3>Generando análisis financiero...</h3>
         <p>Procesando documentos y ejecutando algoritmos de IA.</p>
       </div>
     </div>
@@ -975,7 +975,7 @@ async function generateAnalysis() {
         <div class="info">
           <span class="material-symbols-outlined">info</span>
           <p>
-            Cada periodo requiere un <strong>Balance General</strong> y un
+            Cada periodo requiere un <strong>Estado de Situación Financiera</strong> y un
             <strong>Estado de Resultados</strong> para poder generar el análisis completo.
           </p>
         </div>
@@ -1125,7 +1125,7 @@ async function generateAnalysis() {
               <div class="doc-left">
                 <span class="material-symbols-outlined">description</span>
                 <div>
-                  <p class="doc-title">Balance General</p>
+                  <p class="doc-title">Estado de Situación Financiera</p>
                   <p class="doc-sub">
                     <span v-if="p.balanceFile" class="file-success">
                       {{ p.balanceFile.name }}

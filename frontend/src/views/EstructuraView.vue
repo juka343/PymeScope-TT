@@ -192,7 +192,7 @@ onMounted(() => {
       <div class="subtitle">
         <p>Diagnóstico de la composición del capital</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Balance General</p>
+        <p class="small">Indicadores calculados a partir del Estado de Situación Financiera</p>
       </div>
     </div>
 

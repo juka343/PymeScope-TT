@@ -184,7 +184,7 @@ onMounted(() => {
       <div class="subtitle">
         <p>Diagnóstico de eficiencia operativa</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Balance General y Estado de Resultados</p>
+        <p class="small">Indicadores calculados a partir del Estado de Situación Financiera y Estado de Resultados</p>
       </div>
     </div>
 

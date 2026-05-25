@@ -172,7 +172,7 @@ onMounted(() => {
       <div class="subtitle">
         <p>Capacidad de la empresa para cumplir con sus obligaciones a corto plazo</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Balance General</p>
+        <p class="small">Indicadores calculados a partir del Estado de Situación Financiera</p>
       </div>
     </div>
 
