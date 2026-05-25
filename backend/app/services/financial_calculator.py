@@ -210,6 +210,39 @@ class FinancialCalculator:
             "pasivos lp"
         ]
 
+        # ===== Subcuentas para rescate por suma (layouts sin subtotales explícitos) =====
+        self.kw_efectivo = [
+            "efectivo y equivalentes de efectivo",
+            "efectivo y equivalentes",
+            "efectivo", "caja y bancos", "caja", "bancos",
+        ]
+        self.kw_pagos_anticipados = [
+            "seguros anticipados", "pagos anticipados",
+            "gastos pagados por anticipado", "gastos anticipados", "anticipos",
+        ]
+        self.kw_terrenos = ["terrenos", "terreno"]
+        self.kw_maquinaria_equipo = [
+            "maquinaria y equipo", "maquinaria", "edificios",
+            "mobiliario y equipo", "equipo de transporte", "equipo de computo",
+        ]
+        self.kw_depreciacion_acum = [
+            "depreciación acumulada", "depreciacion acumulada",
+            "(-) depreciación acumulada", "(-) depreciacion acumulada",
+            "depreciación y amortización acumulada", "deprec. acum",
+        ]
+        self.kw_proveedores = [
+            "proveedores", "cuentas por pagar a proveedores",
+        ]
+        self.kw_ptu_pagar = ["ptu por pagar", "p.t.u. por pagar"]
+        self.kw_isr_pagar = ["isr por pagar", "i.s.r. por pagar"]
+        self.kw_reservas = ["reservas", "reserva legal", "otras reservas"]
+        self.kw_utilidades_acumuladas = [
+            "utilidades de ejercicios anteriores",
+            "utilidad de ejercicios anteriores",
+            "utilidades acumuladas", "resultados acumulados",
+            "utilid. ejercicios", "utilidades retenidas",
+        ]
+
         # ===== Telemetría de extracción =====
         # _trace_buffer acumula cómo se obtuvo cada concepto en el módulo activo.
         # _last_match_info es la "variable de salida" que _keyword_search/_semantic_search
@@ -509,9 +542,9 @@ class FinancialCalculator:
                                     break
 
                             # Lógica de extracción de columna
-                            if take_last:
-                                return lista_final[-1]
-
+                            # col_index tiene prioridad; take_last es solo fallback
+                            # cuando col_index queda fuera de rango (mantenido por
+                            # _pick_column_value que retorna lista_final[-1] como default).
                             flow_kws = (
                                 getattr(self, "kw_ventas_netas", []) + getattr(self, "kw_utilidad_neta", [])
                                 + getattr(self, "kw_utilidad_antes_impuestos", []) + getattr(self, "kw_utilidad_operacion", [])
@@ -665,8 +698,6 @@ class FinancialCalculator:
         }
 
         lista_final = best_values
-        if take_last:
-            return lista_final[-1]
 
         # --- REGLA FRANCOTIRADOR (Sábanas Mensuales) ---
         p = getattr(self, "_current_periodicidad", "").lower()
@@ -680,13 +711,51 @@ class FinancialCalculator:
                 else:
                     return lista_final[start + step - 1]
 
+        # Respeta col_index primero: en comparativos multi-año la columna elegida
+        # por _detect_period_columns es la fuente de verdad. take_last es fallback
+        # legado para layouts donde el último valor de la fila es el "actual"
+        # (ej. sábanas con columna "Total" al final) y solo aplica si col_index
+        # quedó fuera de rango.
         if col_index < len(lista_final):
             return lista_final[col_index]
-        p = getattr(self, "_current_periodicidad", "").lower()
+
+        if take_last:
+            return lista_final[-1]
+
         if p == "mensual":
             return lista_final[0]
         return lista_final[-1]
 
+
+    def _suma_subcuentas(
+        self,
+        tablas: list,
+        kw_lists_add: List[List[str]],
+        col_index: int,
+        usar_acumulado: bool,
+        multiplicador: float = 1.0,
+        kw_lists_sub: List[List[str]] = None,
+    ) -> float:
+        """Suma subcuentas cuando el subtotal no tiene línea explícita en el documento.
+
+        Solo retorna > 0 si al menos una subcuenta tiene valor, evitando
+        falsos positivos en empresas con subtotales legítimamente en cero.
+        Las listas en kw_lists_sub se restan (ej. depreciación acumulada).
+        """
+        total = 0.0
+        found_any = False
+        for kw_list in kw_lists_add:
+            val = self._find_value(tablas, kw_list, take_last=usar_acumulado, col_index=col_index)
+            if val != 0:
+                found_any = True
+                total += abs(val) * multiplicador
+        if kw_lists_sub:
+            for kw_list in kw_lists_sub:
+                val = self._find_value(tablas, kw_list, take_last=usar_acumulado, col_index=col_index)
+                if val != 0:
+                    found_any = True
+                    total -= abs(val) * multiplicador
+        return max(total, 0.0) if found_any else 0.0
 
     def _record_rescue(self, concept_key: str, formula: str, value: float) -> None:
         """Registra que un rescate matemático calculó/sobreescribió el valor de un concepto."""
@@ -1021,6 +1090,16 @@ class FinancialCalculator:
         activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_total") * multiplicador
         capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
 
+        if capital_contable == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_capital_social, self.kw_reservas, self.kw_utilidades_acumuladas],
+                idx_b, usar_acumulado, multiplicador,
+            )
+            if rescatado > 0:
+                capital_contable = rescatado
+                self._record_rescue("capital_contable", "suma: capital_social+reservas+utilidades_acum", capital_contable)
+
         # 4) Cálculos
         margen_utilidad = (utilidad_neta / ventas_netas) if ventas_netas else 0
         roa = (utilidad_neta / activo_total) if activo_total else 0
@@ -1091,6 +1170,26 @@ class FinancialCalculator:
         pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=idx_b, concept_key="pasivo_circulante") * multiplicador
         inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=idx_b, concept_key="inventario") * multiplicador
 
+        if activo_circulante == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_efectivo, self.kw_cuentas_por_cobrar, self.kw_inventario, self.kw_pagos_anticipados],
+                idx_b, usar_acumulado, multiplicador,
+            )
+            if rescatado > 0:
+                activo_circulante = rescatado
+                self._record_rescue("activo_circulante", "suma: efectivo+clientes+inventario+anticipos", activo_circulante)
+
+        if pasivo_circulante == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_proveedores, self.kw_ptu_pagar, self.kw_isr_pagar],
+                idx_b, usar_acumulado, multiplicador,
+            )
+            if rescatado > 0:
+                pasivo_circulante = rescatado
+                self._record_rescue("pasivo_circulante", "suma: proveedores+ptu+isr", pasivo_circulante)
+
         if pasivo_circulante < 0:
             pasivo_circulante = abs(pasivo_circulante)
 
@@ -1154,6 +1253,17 @@ class FinancialCalculator:
 
         # Renombramos a capital_contable para evitar confusiones y asegurar la fórmula
         capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda"], concept_key="capital_contable") * multiplicador
+
+        if capital_contable == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_capital_social, self.kw_reservas, self.kw_utilidades_acumuladas],
+                idx_b, usar_acumulado, multiplicador,
+            )
+            if rescatado > 0:
+                capital_contable = rescatado
+                self._record_rescue("capital_contable", "suma: capital_social+reservas+utilidades_acum", capital_contable)
+
         pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["capital contable", "y capital", "+ capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
 
         # Lógica de rescate para Pasivo Total (Ecuación Contable: P = A - C)
@@ -1252,6 +1362,18 @@ class FinancialCalculator:
         cuentas_por_cobrar = self._find_value(tablas_balance, self.kw_cuentas_por_cobrar, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["nacionales", "extranjeros"], concept_key="cuentas_por_cobrar") * multiplicador
         inventario = self._find_value(tablas_balance, self.kw_inventario, take_last=usar_acumulado, col_index=idx_b, concept_key="inventario") * multiplicador
         activo_fijo_neto = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_fijo") * multiplicador
+
+        if activo_fijo_neto == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_terrenos, self.kw_maquinaria_equipo],
+                idx_b, usar_acumulado, multiplicador,
+                kw_lists_sub=[self.kw_depreciacion_acum],
+            )
+            if rescatado > 0:
+                activo_fijo_neto = rescatado
+                self._record_rescue("activo_fijo", "suma: terrenos+maquinaria-depreciacion_acum", activo_fijo_neto)
+
         activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_total") * multiplicador
 
         # Usamos nuestra variable dinámica 'usar_acumulado' en lugar del True hardcodeado
@@ -1361,10 +1483,43 @@ class FinancialCalculator:
         # --- 1. EXTRACCIÓN BÁSICA ---
         activo_total = self._find_value(tablas_balance, self.kw_activo_total, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_total") * multiplicador
         activo_fijo = self._find_value(tablas_balance, self.kw_activo_fijo, take_last=usar_acumulado, col_index=idx_b, concept_key="activo_fijo") * multiplicador
+
+        if activo_fijo == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_terrenos, self.kw_maquinaria_equipo],
+                idx_b, usar_acumulado, multiplicador,
+                kw_lists_sub=[self.kw_depreciacion_acum],
+            )
+            if rescatado > 0:
+                activo_fijo = rescatado
+                self._record_rescue("activo_fijo", "suma: terrenos+maquinaria-depreciacion_acum", activo_fijo)
+
         pasivo_total_doc = self._find_value(tablas_balance, self.kw_pasivo_total, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["capital contable", "y capital", "y hacienda"], concept_key="pasivo_total") * multiplicador
         capital_contable = self._find_value(tablas_balance, self.kw_capital, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "minoritaria", "mayoritaria", "participación", "participacion"], concept_key="capital_contable") * multiplicador
+
+        if capital_contable == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_capital_social, self.kw_reservas, self.kw_utilidades_acumuladas],
+                idx_b, usar_acumulado, multiplicador,
+            )
+            if rescatado > 0:
+                capital_contable = rescatado
+                self._record_rescue("capital_contable", "suma: capital_social+reservas+utilidades_acum", capital_contable)
+
         pasivo_largo_plazo = self._find_value(tablas_balance, self.kw_pasivo_largo_plazo, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["capital", "circulante", "corto", "deudores", "acreedores", "clientes", "activo"], concept_key="pasivo_largo_plazo") * multiplicador
         pasivo_circulante = self._find_value(tablas_balance, self.kw_pasivo_circulante, take_last=usar_acumulado, col_index=idx_b, concept_key="pasivo_circulante") * multiplicador
+
+        if pasivo_circulante == 0:
+            rescatado = self._suma_subcuentas(
+                tablas_balance,
+                [self.kw_proveedores, self.kw_ptu_pagar, self.kw_isr_pagar],
+                idx_b, usar_acumulado, multiplicador,
+            )
+            if rescatado > 0:
+                pasivo_circulante = rescatado
+                self._record_rescue("pasivo_circulante", "suma: proveedores+ptu+isr", pasivo_circulante)
 
         # --- 2. LÓGICA INTELIGENTE PARA CAPITAL SOCIAL ---
         capital_social_doc = self._find_value(tablas_balance, self.kw_capital_social, take_last=usar_acumulado, col_index=idx_b, skip_if_row_contains=["pasivo y capital", "pasivo + capital", "pasivo y hacienda", "minoritario", "mayoritario", "contable"]) * multiplicador
