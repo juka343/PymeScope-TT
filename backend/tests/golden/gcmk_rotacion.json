@@ -7,13 +7,69 @@
     "ventas_netas": 496288.6,
     "costo_ventas": 0.0,
     "dias_calculo": 30,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "cuentas_por_cobrar": {
+        "method": "keyword",
+        "matched_term": "clientes",
+        "row_snippet": "clientes 1,385,929.80 iva cobrado -68,958.08"
+      },
+      "inventario": {
+        "method": "not_found"
+      },
+      "activo_fijo": {
+        "method": "keyword",
+        "matched_term": "activo fijo",
+        "row_snippet": "activo fijo 4,646,054.71"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total de activos",
+        "row_snippet": "total de activos 7,860,188.61"
+      },
+      "ventas_netas": {
+        "method": "keyword",
+        "matched_term": "ingresos por servicios",
+        "row_snippet": "ingresos por servicios 496,288.60 100.00 8,585,303.18 100.00"
+      },
+      "costo_de_ventas": {
+        "method": "not_found"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "cuentas_por_cobrar": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Cuentas por cobrar a clientes"
+      },
+      "inventario": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Inventarios"
+      },
+      "activo_fijo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Propiedades, planta y equipo"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "ventas_netas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Ventas o Ingresos netos"
+      },
+      "costo_de_ventas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Costo de ventas"
+      }
+    }
   },
   "kpis": [
     {
       "label": "Rotación de la Cartera",
       "value": "0.36",
-      "status": "ok"
+      "status": "ok",
+      "nota_periodo": "valor mensual"
     },
     {
       "label": "Periodo Promedio de Recaudo",
@@ -28,12 +84,14 @@
     {
       "label": "Rotación de Activos Fijos",
       "value": "0.11",
-      "status": "ok"
+      "status": "ok",
+      "nota_periodo": "valor mensual"
     },
     {
       "label": "Rotación de Activos Totales",
       "value": "0.06",
-      "status": "warn"
+      "status": "warn",
+      "nota_periodo": "valor mensual"
     }
   ]
 }

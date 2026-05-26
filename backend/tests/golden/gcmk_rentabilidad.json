@@ -4,7 +4,51 @@
     "ventas_netas": 496288.6,
     "activo_total": 7860188.61,
     "capital_contable": 8932937.18,
-    "multiplicador": 1
+    "multiplicador": 1,
+    "_extraction_trace": {
+      "ventas_netas": {
+        "method": "keyword",
+        "matched_term": "ingresos por servicios",
+        "row_snippet": "ingresos por servicios 496,288.60 100.00 8,585,303.18 100.00"
+      },
+      "utilidad_neta": {
+        "method": "not_found"
+      },
+      "utilidad_antes_impuestos": {
+        "method": "keyword",
+        "matched_term": "utilidad antes de impuestos",
+        "row_snippet": "utilidad antes de impuestos 165,258.77 33.30 3,784,287.01 44.08"
+      },
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total de activos",
+        "row_snippet": "total de activos 7,860,188.61"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "capital contable",
+        "row_snippet": "equipo automotriz 1,911,468.71 capital contable 8,932,937.18"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "utilidad_neta": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Utilidad / pérdida del ejercicio"
+      },
+      "ventas_netas": {
+        "norma": "NIF B-3",
+        "cuenta_nif": "Ventas o Ingresos netos"
+      },
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      }
+    }
   },
   "kpis": [
     {
@@ -15,12 +59,14 @@
     {
       "label": "Rendimiento sobre Activos Totales (RAT)",
       "value": "2.10%",
-      "status": "ok"
+      "status": "ok",
+      "nota_periodo": "valor mensual"
     },
     {
       "label": "Rendimiento sobre el Patrimonio",
       "value": "1.85%",
-      "status": "ok"
+      "status": "ok",
+      "nota_periodo": "valor mensual"
     }
   ]
 }

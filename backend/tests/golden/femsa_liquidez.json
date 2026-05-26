@@ -1,22 +1,24 @@
 {
   "datos_crudos": {
-    "activo_circulante": 2853404.97,
-    "pasivo_circulante": 423385.47,
-    "inventario": 0.0,
-    "multiplicador": 1,
+    "activo_circulante": 333560000000.0,
+    "pasivo_circulante": 203393000000.0,
+    "inventario": 66548000000.0,
+    "multiplicador": 1000000,
     "_extraction_trace": {
       "activo_circulante": {
         "method": "keyword",
-        "matched_term": "activo a corto plazo",
-        "row_snippet": "activo a corto plazo 2,853,404.97 pasivo a corto plazo 423,385.47"
+        "matched_term": "total activo circulante",
+        "row_snippet": "total activo circulante 333,560 342,311 (2.6)"
       },
       "pasivo_circulante": {
         "method": "keyword",
-        "matched_term": "pasivo a corto plazo",
-        "row_snippet": "activo a corto plazo 2,853,404.97 pasivo a corto plazo 423,385.47"
+        "matched_term": "pasivo circulante",
+        "row_snippet": "total pasivo circulante 203,393 202,930 0.2"
       },
       "inventario": {
-        "method": "not_found"
+        "method": "keyword",
+        "matched_term": "inventarios",
+        "row_snippet": "inventarios 66,548 67,464 (1.4)"
       }
     },
     "_warnings": null,
@@ -38,17 +40,17 @@
   "kpis": [
     {
       "label": "Razón de Liquidez",
-      "value": "6.74",
+      "value": "1.64",
       "status": "ok"
     },
     {
       "label": "Prueba del Ácido",
-      "value": "6.74",
+      "value": "1.31",
       "status": "ok"
     },
     {
       "label": "Capital de Trabajo",
-      "value": "$2,430,019.50",
+      "value": "$130,167,000,000.00",
       "status": "ok"
     }
   ]

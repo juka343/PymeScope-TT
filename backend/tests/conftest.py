@@ -432,6 +432,124 @@ COCACOLA_CFG = {
 }
 
 # ============================================================
+#  GRUPO BIMBO — trimestral Q1-2025
+#  Formato: corporativo BMV, balance vertical comparativo
+#  (col_actual | col_anterior | col_var%), millones de pesos.
+#  Nota: _detect_scale no detecta escala en balance sin text "millones"
+#  → Liquidez y Estructura usan multiplicador=1 (igual que en producción).
+# ============================================================
+
+BIMBO_BALANCE = {
+    "text_content": (
+        "Grupo Bimbo, S.A.B. de C.V.\n"
+        "Estado de Situación Financiera Consolidado\n"
+        "31 de marzo de 2025"
+    ),
+    "tables_data": [
+        _cells(
+            # col0=concepto, col1=Q1-2025, col2=Q1-2024, col3=var%
+            ("Activo circulante",                   "74,656",  "67,180",  "11.1"),
+            ("Inventarios",                         "17,763",  "18,832",  "(5.7)"),
+            ("Clientes y otras cuentas por cobrar", "27,988",  "26,631",  "5.1"),
+            ("Propiedad, planta y equipo",          "158,326", "155,376", "1.9"),
+            ("Activo total",                        "429,186", "416,804", "3.0"),
+            ("Pasivo circulante",                   "82,589",  "85,155",  "(3.0)"),
+            ("Pasivo total",                        "299,907", "289,107", "3.7"),
+            # Capital contable total aparece ANTES que el mayoritario en el
+            # documento → reversed search encuentra mayoritario primero.
+            # Rentabilidad (sin skip "mayoritario") toma 127,723.
+            # Estructura (con skip "mayoritario") toma 129,279.
+            ("Capital contable",                    "129,279", "127,698", "1.2"),
+            ("Capital contable mayoritario",        "127,723", "125,944", "1.4"),
+        )
+    ],
+}
+
+BIMBO_RESULTADOS = {
+    "text_content": (
+        "Grupo Bimbo, S.A.B. de C.V.\n"
+        "Estado de Resultados Consolidado\n"
+        "Millones de pesos\n"
+        "Primer trimestre terminado el 31 de marzo de 2025"
+    ),
+    "tables_data": [
+        _cells(
+            # col0=concepto, col1=Q1-2025, col2=Q1-2024, col3=var%
+            ("Ventas netas",                                "103,726", "93,641",  "10.8"),
+            ("Costo de ventas",                            "49,262",  "44,940",  "9.6"),
+            ("Gastos de operación",                        "47,976",  "41,826",  "14.7"),
+            ("Utilidad (Pérdida) de Operación",            "6,748",   "6,875",   "(1.8)"),
+            ("Resultado Integral de Financiamiento",       "3,256",   "2,773",   "17.4"),
+            ("Impuestos a la utilidad",                    "1,328",   "1,456",   "(8.8)"),
+            ("Utilidad (Pérdida) de Operaciones Continuas","2,214",   "2,757",   "(19.7)"),
+        )
+    ],
+}
+
+BIMBO_CFG = {
+    "balance":      BIMBO_BALANCE,
+    "resultados":   BIMBO_RESULTADOS,
+    "periodicidad": "trimestral",
+    "col_index":    0,
+}
+
+# ============================================================
+#  FEMSA — trimestral Q1-2025
+#  Formato: corporativo BMV, balance y ER comparativos
+#  con columnas: actual | %actual | anterior | %ant | var | var%
+#  Millones de pesos (detectado en balance → multiplicador=1,000,000 en todos los módulos).
+# ============================================================
+
+FEMSA_BALANCE = {
+    "text_content": (
+        "FOMENTO ECONÓMICO MEXICANO, S.A.B. de C.V.\n"
+        "Estado de Situación Financiera Consolidado\n"
+        "Millones de pesos\n"
+        "31 de marzo de 2025"
+    ),
+    "tables_data": [
+        _cells(
+            # col0=concepto, col1=Q1-2025, col2=Q1-2024, col3=var%
+            ("Total activo circulante",          "333,560", "342,311", "(2.6)"),
+            ("Inventarios",                      "66,548",  "67,464",  "(1.4)"),
+            ("Cuentas por cobrar",               "41,818",  "43,192",  "(3.2)"),
+            ("Propiedad, planta y equipo, neto", "181,957", "177,511", "2.5"),
+            ("Total activos",                    "855,883", "851,536", "0.5"),
+            ("Total pasivo circulante",          "203,393", "202,930", "0.2"),
+            ("Total pasivos",                    "464,107", "470,405", "(1.3)"),
+            ("Total capital contable",           "391,776", "381,131", "2.8"),
+        )
+    ],
+}
+
+FEMSA_RESULTADOS = {
+    "text_content": (
+        "FOMENTO ECONÓMICO MEXICANO, S.A.B. de C.V.\n"
+        "Estado de Resultados Consolidado\n"
+        "Millones de pesos\n"
+        "Primer trimestre terminado el 31 de marzo de 2025"
+    ),
+    "tables_data": [
+        _cells(
+            # col0=concepto, col1=Q1-2025, col2=%25, col3=Q1-2024, col4=%24, col5=var, col6=var%
+            ("Ingresos totales",               "195,820", "100.0", "176,334", "100.0", "11.1", "5.6"),
+            ("Costo de ventas",                "116,902", "59.7",  "108,157", "61.3",  "8.1"),
+            ("Utilidad de operación",          "13,565",  "6.9",   "12,936",  "7.3",   "4.9",  "1.7"),
+            ("Gastos de financiamiento, neto", "1,413",   "3,377", "(58.2)"),
+            ("ISR",                            "4,781",   "3,356", "42.5"),
+            ("(Pérdida) Utilidad neta consolidada", "8,943", "5,794", "54.3"),
+        )
+    ],
+}
+
+FEMSA_CFG = {
+    "balance":      FEMSA_BALANCE,
+    "resultados":   FEMSA_RESULTADOS,
+    "periodicidad": "trimestral",
+    "col_index":    0,
+}
+
+# ============================================================
 #  Mapa global de casos de prueba
 # ============================================================
 ALL_CASES = {
@@ -441,6 +559,8 @@ ALL_CASES = {
     "taas_ene":        TAAS_ENE_CFG,
     "taas_mar":        TAAS_MAR_CFG,
     "cocacola":        COCACOLA_CFG,
+    "bimbo":           BIMBO_CFG,
+    "femsa":           FEMSA_CFG,
 }
 
 GOLDEN_DIR = os.path.join(os.path.dirname(__file__), "golden")

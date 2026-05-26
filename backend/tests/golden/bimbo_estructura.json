@@ -1,42 +1,42 @@
 {
   "datos_crudos": {
-    "activo_total": 4455000.0,
-    "pasivo_total": 1728000.0,
-    "capital_social": 2000000.0,
-    "capital_contable": 2727000.0,
-    "activo_fijo": 2100000.0,
-    "pasivo_largo_plazo": 1200000.0,
+    "activo_total": 429186.0,
+    "pasivo_total": 299907.0,
+    "capital_social": 0.0,
+    "capital_contable": 129279.0,
+    "activo_fijo": 158326.0,
+    "pasivo_largo_plazo": 217318.0,
     "multiplicador": 1,
     "_extraction_trace": {
       "activo_total": {
         "method": "keyword",
-        "matched_term": "total activo",
-        "row_snippet": "total activo 4,455,000 tot. pas+cap 4,455,000"
+        "matched_term": "activo total",
+        "row_snippet": "activo total 429,186 416,804 3.0"
       },
       "activo_fijo": {
         "method": "keyword",
-        "matched_term": "total activo no circulante",
-        "row_snippet": "total activo no circulante 2,100,000 utilid. ejercicios 377,000"
+        "matched_term": "propiedad, planta y equipo",
+        "row_snippet": "propiedad, planta y equipo 158,326 155,376 1.9"
       },
       "pasivo_total": {
         "method": "keyword",
-        "matched_term": "total pasivo",
-        "row_snippet": "no circulante total pasivo 1,728,000"
+        "matched_term": "pasivo total",
+        "row_snippet": "pasivo total 299,907 289,107 3.7"
       },
       "capital_contable": {
         "method": "keyword",
-        "matched_term": "total capital contable",
-        "row_snippet": "total capital contable 2,727,000"
+        "matched_term": "capital contable",
+        "row_snippet": "capital contable 129,279 127,698 1.2"
       },
       "pasivo_largo_plazo": {
         "method": "math_rescue",
         "formula": "pasivo_total - pasivo_circulante",
-        "value": 1200000.0
+        "value": 217318.0
       },
       "pasivo_circulante": {
         "method": "keyword",
-        "matched_term": "pasivo a corto plazo",
-        "row_snippet": "seguros anticipados 25,000 total pasivo a corto plazo 528,000"
+        "matched_term": "pasivo circulante",
+        "row_snippet": "pasivo circulante 82,589 85,155 (3.0)"
       }
     },
     "_warnings": null,
@@ -74,23 +74,23 @@
   "kpis": [
     {
       "label": "Solvencia General",
-      "value": "2.58",
+      "value": "1.43",
       "status": "ok"
     },
     {
       "label": "Seguridad a largo plazo",
-      "value": "1.75",
-      "status": "ok"
-    },
-    {
-      "label": "Inmovilización de Cap. Social",
-      "value": "1.05",
+      "value": "0.73",
       "status": "warn"
     },
     {
+      "label": "Inmovilización de Cap. Social",
+      "value": "N/A",
+      "status": "neutral"
+    },
+    {
       "label": "Inmovilización de Cap. Contable",
-      "value": "0.77",
-      "status": "ok"
+      "value": "1.22",
+      "status": "warn"
     }
   ]
 }

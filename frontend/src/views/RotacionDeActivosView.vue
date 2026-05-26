@@ -173,7 +173,7 @@ onMounted(() => {
     <!-- TITULO -->
     <div class="title">
       <div class="title-row">
-        <h1>Rotación de Activos</h1>
+        <h1>Rotación de activos</h1>
 
         <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
@@ -184,7 +184,7 @@ onMounted(() => {
       <div class="subtitle">
         <p>Diagnóstico de eficiencia operativa</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Balance General y Estado de Resultados</p>
+        <p class="small">Indicadores calculados a partir del Estado de Situación Financiera y Estado de Resultados</p>
       </div>
     </div>
 
@@ -202,6 +202,7 @@ onMounted(() => {
           </div>
 
           <div class="kpi-value">{{ k.value }}</div>
+          <p v-if="k.nota_periodo" class="kpi-nota">{{ k.nota_periodo }}</p>
         </article>
       </section>
 
@@ -513,6 +514,14 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 900;
   margin-top: 10px;
+}
+
+.kpi-nota {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-style: italic;
 }
 
 /* PANEL + TABLE */

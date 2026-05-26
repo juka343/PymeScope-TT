@@ -471,7 +471,7 @@ onMounted(() => {
   <div class="wrap" v-if="!loading && metrics.length > 0">
     <div class="title">
       <div class="title-row">
-        <h1>Estructura Financiera</h1>
+        <h1>Estructura financiera</h1>
         <button class="btn-learn" type="button" @click="centroDeAprendizaje">
           <span class="material-symbols-outlined">info</span>
           <span>Ir a centro de aprendizaje</span>
@@ -481,7 +481,7 @@ onMounted(() => {
       <div class="subtitle">
         <p>Composición del capital y estabilidad financiera de la empresa</p>
         <span class="dot" aria-hidden="true">•</span>
-        <p class="small">Indicadores calculados a partir del Balance General</p>
+        <p class="small">Indicadores calculados a partir del Estado de Situación Financiera</p>
       </div>
     </div>
 

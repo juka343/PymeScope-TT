@@ -1,40 +1,46 @@
 {
   "datos_crudos": {
-    "pasivo_total": 1072748.5699999994,
-    "activo_total": 7860188.61,
-    "capital_social": 8932937.18,
-    "utilidad_operacion": 165258.77,
-    "intereses": 0.0,
-    "multiplicador": 1,
+    "pasivo_total": 464107000000.0,
+    "activo_total": 855883000000.0,
+    "capital_social": 391776000000.0,
+    "utilidad_operacion": 13565000000.0,
+    "intereses": 1413000000.0,
+    "multiplicador": 1000000,
     "_extraction_trace": {
       "activo_total": {
         "method": "keyword",
-        "matched_term": "total de activos",
-        "row_snippet": "total de activos 7,860,188.61"
+        "matched_term": "total activos",
+        "row_snippet": "total activos 855,883 851,536 0.5"
       },
       "capital_contable": {
         "method": "keyword",
-        "matched_term": "capital contable",
-        "row_snippet": "equipo automotriz 1,911,468.71 capital contable 8,932,937.18"
+        "matched_term": "total capital contable",
+        "row_snippet": "total capital contable 391,776 381,131 2.8"
       },
       "pasivo_total": {
-        "method": "math_rescue",
-        "formula": "activo_total - capital_contable",
-        "value": -1072748.57
+        "method": "keyword",
+        "matched_term": "total pasivos",
+        "row_snippet": "total pasivos 464,107 470,405 (1.3)"
       },
       "utilidad_operacion": {
         "method": "keyword",
-        "matched_term": "utilidad de operacion",
-        "row_snippet": "utilidad de operacion 165,258.77 33.30 3,792,675.03 44.18"
+        "matched_term": "utilidad de operación",
+        "row_snippet": "utilidad de operación 13,565 6.9 12,936 7.3 4.9 1.7"
       },
       "gastos_financieros": {
-        "method": "not_found"
+        "method": "keyword",
+        "matched_term": "gastos de financiamiento",
+        "row_snippet": "gastos de financiamiento, neto 1,413 3,377 (58.2)"
       },
       "utilidad_neta": {
-        "method": "not_found"
+        "method": "keyword",
+        "matched_term": "utilidad neta",
+        "row_snippet": "(pérdida) utilidad neta consolidada 8,943 5,794 54.3"
       },
       "impuestos": {
-        "method": "not_found"
+        "method": "keyword",
+        "matched_term": "isr",
+        "row_snippet": "isr 4,781 3,356 42.5"
       }
     },
     "_warnings": null,
@@ -72,18 +78,18 @@
   "kpis": [
     {
       "label": "Apalancamiento",
-      "value": "0.14",
-      "status": "ok"
+      "value": "0.54",
+      "status": "warn"
     },
     {
       "label": "Razón de Cobertura de Intereses",
-      "value": "0.00",
-      "status": "danger"
+      "value": "9.60",
+      "status": "ok"
     },
     {
       "label": "Estabilidad Financiera",
-      "value": "0.12",
-      "status": "ok"
+      "value": "1.18",
+      "status": "warn"
     }
   ]
 }

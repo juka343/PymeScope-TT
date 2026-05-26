@@ -14,6 +14,7 @@ import {
   deleteDoc,
   collection,
   serverTimestamp,
+  deleteField,
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -462,8 +463,8 @@ async function savePeriodToFirestore(period) {
       {
         label: period.label,
         periodDate: period.periodDate,
-        balanceFile: period.balanceFile,
-        resultsFile: period.resultsFile,
+        balanceFile: period.balanceFile ?? deleteField(),
+        resultsFile: period.resultsFile ?? deleteField(),
         updatedAt: serverTimestamp(),
       },
       { merge: true }
@@ -635,7 +636,62 @@ async function removePeriod(periodId) {
 // =====================
 // ANÁLISIS
 // =====================
-function getColIndex(period) {
+
+// Normaliza periodDate al formato que devuelve el backend en /detect-columns:
+//   anual      → "2024"
+//   mensual    → "2024-01"
+//   trimestral → "2024-Q1"
+function getPeriodKey(period) {
+  if (!period.periodDate) return null;
+  const dateStr = String(period.periodDate);
+
+  if (periodicity.value === "anual") {
+    const yearMatch = dateStr.match(/\b(20\d{2})\b/);
+    return yearMatch ? yearMatch[1] : null;
+  }
+
+  const parts = dateStr.split("-");
+  if (parts.length < 2) return null;
+
+  const year = parts[0];
+  const month = parts[1].padStart(2, "0");
+
+  if (periodicity.value === "mensual") {
+    return `${year}-${month}`;
+  }
+
+  if (periodicity.value === "trimestral") {
+    const q = Math.ceil(parseInt(month, 10) / 3);
+    return `${year}-Q${q}`;
+  }
+
+  return null;
+}
+
+// Llama al backend para obtener el mapa {periodo: col_index} a partir de los headers reales.
+// Si falla (red, OCR, etc.), devuelve null y el caller cae al fallback.
+async function detectColumnsForPeriod(period) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/documents/detect-columns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        balance_url: period.balanceFile.url,
+        resultados_url: period.resultsFile.url,
+      }),
+    });
+
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.warn("Detección de columnas falló:", error);
+    return null;
+  }
+}
+
+// Fallback histórico: deduce el col_index a partir de la fecha que indicó el usuario,
+// asumiendo orden cronológico estándar. Se usa solo cuando la detección por backend no encuentra el periodo.
+function getColIndexFallback(period) {
   let indiceColumna = 0;
 
   if (periodicity.value === "mensual" && period.periodDate) {
@@ -683,14 +739,47 @@ function getColIndex(period) {
   return indiceColumna;
 }
 
+// Resuelve los col_index correctos para un periodo, devolviendo un índice
+// independiente para Balance y para Estado de Resultados.
+// Cada documento puede tener su propio orden/cantidad de columnas, así que
+// preguntamos al backend por separado y, si el periodo no aparece en alguno
+// de los dos, caemos al fallback histórico para ese documento.
+async function getColIndex(period) {
+  const periodKey = getPeriodKey(period);
+  const fallback = getColIndexFallback(period);
+
+  if (!periodKey) {
+    return { balance: fallback, resultados: fallback };
+  }
+
+  const detected = await detectColumnsForPeriod(period);
+  if (!detected) {
+    return { balance: fallback, resultados: fallback };
+  }
+
+  const idxBalance =
+    detected.balance && detected.balance[periodKey] !== undefined
+      ? detected.balance[periodKey]
+      : fallback;
+  const idxResultados =
+    detected.resultados && detected.resultados[periodKey] !== undefined
+      ? detected.resultados[periodKey]
+      : fallback;
+
+  return { balance: idxBalance, resultados: idxResultados };
+}
+
 async function analyzePeriod(period) {
+  const indices = await getColIndex(period);
   const payload = {
     project_id: projectId,
     period_id: period.id,
     balance_url: period.balanceFile.url,
     resultados_url: period.resultsFile.url,
     periodicidad: periodicity.value,
-    col_index: getColIndex(period),
+    col_index: indices.balance, // legacy fallback
+    col_index_balance: indices.balance,
+    col_index_resultados: indices.resultados,
     period_date: period.periodDate,
     period_label: period.label,
   };
@@ -741,7 +830,7 @@ async function saveAnalysisResult(res) {
 async function generateAnalysis() {
   if (completePeriods.value.length === 0) {
     toast({
-      message: "Carga al menos un Balance General y un Estado de Resultados.",
+      message: "Carga al menos un Estado de Situación Financiera y un Estado de Resultados.",
       type: "warning",
     });
     return;
@@ -832,7 +921,7 @@ async function generateAnalysis() {
     <div v-if="isProcessing" class="loading-overlay">
       <div class="loading-content">
         <div class="spinner"></div>
-        <h3>Generando Análisis Financiero...</h3>
+        <h3>Generando análisis financiero...</h3>
         <p>Procesando documentos y ejecutando algoritmos de IA.</p>
       </div>
     </div>
@@ -887,7 +976,7 @@ async function generateAnalysis() {
         <div class="info">
           <span class="material-symbols-outlined">info</span>
           <p>
-            Cada periodo requiere un <strong>Balance General</strong> y un
+            Cada periodo requiere un <strong>Estado de Situación Financiera</strong> y un
             <strong>Estado de Resultados</strong> para poder generar el análisis completo.
           </p>
         </div>
@@ -1037,7 +1126,7 @@ async function generateAnalysis() {
               <div class="doc-left">
                 <span class="material-symbols-outlined">description</span>
                 <div>
-                  <p class="doc-title">Balance General</p>
+                  <p class="doc-title">Estado de Situación Financiera</p>
                   <p class="doc-sub">
                     <span v-if="p.balanceFile" class="file-success">
                       {{ p.balanceFile.name }}

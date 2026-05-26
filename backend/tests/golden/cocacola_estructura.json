@@ -6,7 +6,70 @@
     "capital_contable": 146870000000.0,
     "activo_fijo": 111725000000.0,
     "pasivo_largo_plazo": 107901000000.0,
-    "multiplicador": 1000000
+    "multiplicador": 1000000,
+    "_extraction_trace": {
+      "activo_total": {
+        "method": "keyword",
+        "matched_term": "total activos",
+        "row_snippet": "total activos 333,116 total capital 146,870"
+      },
+      "activo_fijo": {
+        "method": "keyword",
+        "matched_term": "propiedad, planta y equipo",
+        "row_snippet": "total propiedad, planta y equipo, neto 111,725 otros pasivos de largo plazo 22,811"
+      },
+      "pasivo_total": {
+        "method": "keyword",
+        "matched_term": "total pasivo",
+        "row_snippet": "activos por derechos de uso 3,461 total pasivo 186,246"
+      },
+      "capital_contable": {
+        "method": "keyword",
+        "matched_term": "total capital",
+        "row_snippet": "total activos 333,116 total capital 146,870"
+      },
+      "pasivo_largo_plazo": {
+        "method": "math_rescue",
+        "formula": "pasivo_total - pasivo_circulante",
+        "value": 107901000000.0
+      },
+      "pasivo_circulante": {
+        "method": "keyword",
+        "matched_term": "pasivo circulante",
+        "row_snippet": "total activos circulantes 86,141 pasivo circulante 78,345"
+      }
+    },
+    "_warnings": null,
+    "fuentes": {
+      "activo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Activo"
+      },
+      "pasivo_total": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Total del Pasivo"
+      },
+      "capital_social": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital social"
+      },
+      "capital_contable": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Capital Contable"
+      },
+      "activo_fijo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Propiedades, planta y equipo"
+      },
+      "pasivo_largo_plazo": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a largo plazo"
+      },
+      "pasivo_circulante": {
+        "norma": "NIF B-6",
+        "cuenta_nif": "Pasivo a corto plazo"
+      }
+    }
   },
   "kpis": [
     {
