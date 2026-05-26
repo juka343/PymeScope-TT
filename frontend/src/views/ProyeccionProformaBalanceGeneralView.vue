@@ -71,8 +71,8 @@ const headerInfo = ref({
   companyName: "",
   generatedPeriod: "...",
   basePeriod: "...",
-  title: "Proyección Proforma - Balance General",
-  subtitle: "Visualiza la estructura financiera proyectada y el impacto de los supuestos en el balance de la empresa.",
+  title: "Proyección Proforma - Estado de Situación Financiera",
+  subtitle: "Visualiza la estructura financiera proyectada y el impacto de los supuestos en el Estado de Situación Financiera de la empresa.",
 });
 
 const sourceSummary = ref({

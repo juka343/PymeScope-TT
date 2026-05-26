@@ -5,6 +5,7 @@ class LineaSupuesto(BaseModel):
     concepto: str
     variacion: Optional[float] = None
     mantener_igual: bool
+    monto: Optional[float] = None  # Monto proyectado en $ — se convierte a % en el backend
 
 class ProyeccionSupuestosRequest(BaseModel):
     project_id: str
@@ -22,6 +23,7 @@ class FilaProyectada(BaseModel):
     valor_base: float
     variacion_aplicada: float
     valor_proyectado: float
+    supuesto_texto: Optional[str] = None
 
 class ResultadoProyeccion(BaseModel):
     tablas_proyectadas: List[FilaProyectada]

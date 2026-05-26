@@ -120,21 +120,47 @@ onMounted(async () => {
   
   const ventasBaseRow = rawRows.find(f => f.concepto.toLowerCase().includes('ventas'));
   const costoBaseRow  = rawRows.find(f => f.concepto.toLowerCase().includes('costo'));
+  // Calcular utilidad neta base correctamente según lo que tiene el PDF
   const ventasBase = ventasBaseRow?.valor_base || 1;
   const costoBase = costoBaseRow?.valor_base || 0;
   const utilidadBrutaBase = ventasBase - costoBase;
-  
+
   const gastosBase = rawRows
-    .filter(f => f.concepto.toLowerCase().includes('gastos') && !f.concepto.toLowerCase().includes('costo'))
-    .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+      .filter(f => 
+          f.concepto.toLowerCase().includes('gastos') && 
+          !f.concepto.toLowerCase().includes('costo')
+      )
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
   const utilidadOperativaBase = utilidadBrutaBase - gastosBase;
-  
+
   const otrosIngresosBase = rawRows
-    .filter(f => f.concepto.toLowerCase().includes('otros ingresos') || f.concepto.toLowerCase().includes('productos financieros'))
-    .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+      .filter(f => 
+          f.concepto.toLowerCase().includes('otros ingresos') || 
+          f.concepto.toLowerCase().includes('productos financieros')
+      )
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
   const utilidadAntesImpuestosBase = utilidadOperativaBase + otrosIngresosBase;
-  const impuestosBase = config.incluirImpuestos ? (utilidadAntesImpuestosBase * 0.30) : 0; 
-  const utilidadNetaBase = utilidadAntesImpuestosBase - impuestosBase;
+
+  // Buscar si el PDF tiene ISR y PTU en el periodo base
+  const ptuBase = rawRows
+      .filter(f => 
+          f.concepto.toLowerCase().includes('ptu') || 
+          f.concepto.toLowerCase().includes('participación de los trabajadores')
+      )
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
+  const isrBase = rawRows
+      .filter(f => f.concepto.toLowerCase() === 'isr')
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
+  const impuestosBaseReales = ptuBase + isrBase;
+
+  // Si el PDF tiene ISR/PTU → restarlos; si no → usar UAI directamente
+  const utilidadNetaBase = impuestosBaseReales > 0 
+      ? utilidadAntesImpuestosBase - impuestosBaseReales  // PDF con impuestos
+      : utilidadAntesImpuestosBase;                        // PDF sin impuestos (ej. TAAS mensual)
 
   // 3. Calcular Deltas
   const deltaVentas = ((results.ventas / ventasBase) - 1) * 100;
@@ -179,7 +205,7 @@ onMounted(async () => {
       type: "row",
       concept: f.concepto,
       base: fmt(f.valor_base),
-      assumption: pct(f.variacion_aplicada),
+      assumption: f.supuesto_texto || pct(f.variacion_aplicada),
       participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
       proforma: fmt(f.valor_proyectado),
       variation: pct(f.variacion_aplicada),
@@ -200,7 +226,7 @@ onMounted(async () => {
       type: "row",
       concept: f.concepto,
       base: fmt(f.valor_base),
-      assumption: pct(f.variacion_aplicada),
+      assumption: f.supuesto_texto || pct(f.variacion_aplicada),
       participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
       proforma: fmt(f.valor_proyectado),
       variation: pct(f.variacion_aplicada),
@@ -229,10 +255,23 @@ onMounted(async () => {
   // --- Sección Impuestos ---
   if (config.incluirImpuestos === true) {
     rows.push({ type: "section", label: "Impuestos" });
+    
+    // Calcular el valor base de impuestos sumando PTU e ISR del periodo base
+    const filasPTU = (results.tablas_proyectadas || []).filter(f =>
+      f.concepto.toLowerCase().includes("ptu") ||
+      f.concepto.toLowerCase().includes("participación de los trabajadores")
+    );
+    const filasISR = (results.tablas_proyectadas || []).filter(f =>
+      f.concepto.toLowerCase() === "isr"
+    );
+
+    const impuestosBase = [...filasPTU, ...filasISR]
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
     rows.push({
       type: "row",
       concept: "Total impuestos (PTU + ISR)",
-      base: "—",
+      base: impuestosBase > 0 ? fmt(impuestosBase) : "—",
       assumption: "Calculado sobre utilidad",
       participation: ((results.impuestos / results.ventas) * 100).toFixed(1) + "%",
       proforma: fmt(results.impuestos),
@@ -537,10 +576,10 @@ async function continueToBalance() {
         <article class="next-card">
           <div class="next-head">
             <div class="next-icon"><span class="material-symbols-outlined">arrow_forward</span></div>
-            <h4>Siguiente paso: Balance General Proforma</h4>
+            <h4>Siguiente paso: Estado de Situación Financiera Proforma</h4>
           </div>
           <p>
-            La <strong>Utilidad neta proyectada de {{ utilidadNetaStr }}</strong> se integrará automáticamente en la sección de Capital Contable del Balance General Proforma a realizarse como paso siguiente.
+            La <strong>Utilidad neta proyectada de {{ utilidadNetaStr }}</strong> se integrará automáticamente en la sección de Capital Contable del Estado de Situación Financiera Proforma a realizarse como paso siguiente.
           </p>
           <div class="next-status">
             <span>Listo para procesar</span>
@@ -559,7 +598,7 @@ async function continueToBalance() {
           <span>{{ isExporting ? 'Exportando...' : 'Exportar proyección' }}</span>
         </button>
         <button class="btn-primary" type="button" @click="continueToBalance">
-          Continuar al Balance
+          Continuar al Estado de Situación Financiera
         </button>
       </div>
     </section>

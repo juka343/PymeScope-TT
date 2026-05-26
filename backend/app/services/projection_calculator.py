@@ -14,10 +14,45 @@ class ProjectionCalculator(FinancialCalculator):
         super().__init__()
 
         self.ALIAS_MAP = {
-            "IVA COBRADO": "IVA causado o trasladado",
-            "IVA A FAVOR EJER ANT": "IVA acreditable",
-            "CASA OFICINA": "Edificios",
-            "EQUIPO AUTOMOTRIZ": "Equipo de transporte"
+            # ── Aliases originales (GCMK) ─────────────────────────────────────────
+            "IVA COBRADO":              "IVA causado o trasladado",
+            "IVA A FAVOR EJER ANT":     "IVA acreditable",
+            "CASA OFICINA":             "Edificios",
+            "EQUIPO AUTOMOTRIZ":        "Equipo de transporte",
+
+            # ── Activo Fijo — variantes sin acento o sin preposición (NIF C-6) ────
+            # Despegue Digital y PDFs informales usan estos formatos
+            "EQUIPO COMPUTO":           "Equipo de cómputo",
+            "EQUIPO DE COMPUTO":        "Equipo de cómputo",
+            "EQUIPOS DE COMPUTO":       "Equipo de cómputo",
+            "EQUIPOS DE CÓMPUTO":       "Equipo de cómputo",
+            "MUEBLES Y ENSERES":        "Mobiliario y equipo de oficina",
+            "EQUIPO DE OFICINA":        "Mobiliario y equipo de oficina",
+            "FLOTILLA":                 "Equipo de transporte",
+            "FLOTILLA VEHICULAR":       "Equipo de transporte",
+            "UNIDADES DE REPARTO":      "Equipo de transporte",
+            "VEHICULOS":                "Equipo de transporte",
+            "VEHÍCULOS":                "Equipo de transporte",
+            "CONSTRUCCIONES":           "Edificios",
+            "INMUEBLES":                "Edificios",
+            "PREDIOS":                  "Terrenos",
+            "MARCAS Y PATENTES":        "Patentes",
+
+            # ── Pagos anticipados — variantes comunes (NIF B-6) ───────────────────
+            "RENTAS ANTICIPADAS":       "Rentas pagadas por anticipado",
+            "SEGUROS ANTICIPADOS":      "Seguros y fianzas",
+            "PRIMAS DE SEGURO":         "Seguros y fianzas",
+            "ANTICIPOS A PROVEEDORES":  "Anticipo a proveedores",
+
+            # ── Capital — variantes comunes (NIF B-6, LGSM) ───────────────────────
+            "CERTIF. APORTACION":       "Capital social",
+            "CERTIF APORTACION":        "Capital social",
+            "CERTIF. APORTACIÓN":       "Capital social",
+            "APORTACIONES DE SOCIOS":   "Capital social",
+            "UTILID. EJERCICIOS":       "Utilidades o pérdidas de ejercicios anteriores",
+            "UTILID. EJERC. ANT.":      "Utilidades o pérdidas de ejercicios anteriores",
+            "UTILIDADES RETENIDAS":     "Utilidades o pérdidas de ejercicios anteriores",
+            "SUPERAVIT ACUMULADO":      "Utilidades o pérdidas de ejercicios anteriores",
         }
 
         # ─── DICCIONARIO DEL ESTADO DE RESULTADOS ───────────────────────────────
@@ -242,10 +277,15 @@ class ProjectionCalculator(FinancialCalculator):
                 # REGLA ESTRICTA 1: Exclusión de la utilidad del ejercicio en curso.
                 # Pass-through explícito para: abreviaturas de "anterior" Y cuentas de pérdida
                 # histórica acumulada ("Pérdida del ejercicio" en TAAS/NIF).
+                # REGLA ESTRICTA 1: Excluir filas con "ejercicio" que no sean históricas.
+                # Solo se permite pasar si la fila claramente se refiere a ejercicios
+                # anteriores o a cuentas de pérdida/depreciación históricas.
+                # Se eliminaron "maquinaria", "equipo", "edificio" como señales —
+                # son demasiado genéricas y pueden aparecer en contextos no históricos.
                 _es_historico = any(x in row_text for x in [
                     "anterior", "ant.", "anter",
                     "pérdida del ejercicio", "perdida del ejercicio",
-                    "deprec", "maquinaria", "equipo", "edificio"
+                    "deprec",
                 ])
                 if "ejercicio" in row_text and not _es_historico:
                     continue
@@ -404,10 +444,15 @@ class ProjectionCalculator(FinancialCalculator):
                 
                 # REGLA ESTRICTA 1: Exclusión de la utilidad del ejercicio en curso.
                 # Pass-through explícito para: abreviaturas de "anterior" Y pérdidas históricas.
+                # REGLA ESTRICTA 1: Excluir filas con "ejercicio" que no sean históricas.
+                # Solo se permite pasar si la fila claramente se refiere a ejercicios
+                # anteriores o a cuentas de pérdida/depreciación históricas.
+                # Se eliminaron "maquinaria", "equipo", "edificio" como señales —
+                # son demasiado genéricas y pueden aparecer en contextos no históricos.
                 _es_historico = any(x in row_text for x in [
                     "anterior", "ant.", "anter",
                     "pérdida del ejercicio", "perdida del ejercicio",
-                    "deprec", "maquinaria", "equipo", "edificio"
+                    "deprec",
                 ])
                 if "ejercicio" in row_text and not _es_historico:
                     continue
@@ -459,10 +504,15 @@ class ProjectionCalculator(FinancialCalculator):
                 
                 # REGLA ESTRICTA 1: Exclusión de la utilidad del ejercicio en curso.
                 # Pass-through explícito para: abreviaturas de "anterior" Y pérdidas históricas.
+                # REGLA ESTRICTA 1: Excluir filas con "ejercicio" que no sean históricas.
+                # Solo se permite pasar si la fila claramente se refiere a ejercicios
+                # anteriores o a cuentas de pérdida/depreciación históricas.
+                # Se eliminaron "maquinaria", "equipo", "edificio" como señales —
+                # son demasiado genéricas y pueden aparecer en contextos no históricos.
                 _es_historico = any(x in row_text for x in [
                     "anterior", "ant.", "anter",
                     "pérdida del ejercicio", "perdida del ejercicio",
-                    "deprec", "maquinaria", "equipo", "edificio"
+                    "deprec",
                 ])
                 if "ejercicio" in row_text and not _es_historico:
                     continue
@@ -547,10 +597,15 @@ class ProjectionCalculator(FinancialCalculator):
                 
                 # REGLA ESTRICTA 1: Exclusión de la utilidad del ejercicio en curso.
                 # Pass-through explícito para: abreviaturas de "anterior" Y pérdidas históricas.
+                # REGLA ESTRICTA 1: Excluir filas con "ejercicio" que no sean históricas.
+                # Solo se permite pasar si la fila claramente se refiere a ejercicios
+                # anteriores o a cuentas de pérdida/depreciación históricas.
+                # Se eliminaron "maquinaria", "equipo", "edificio" como señales —
+                # son demasiado genéricas y pueden aparecer en contextos no históricos.
                 _es_historico = any(x in row_text for x in [
                     "anterior", "ant.", "anter",
                     "pérdida del ejercicio", "perdida del ejercicio",
-                    "deprec", "maquinaria", "equipo", "edificio"
+                    "deprec",
                 ])
                 if "ejercicio" in row_text and not _es_historico:
                     continue
@@ -697,8 +752,12 @@ class ProjectionCalculator(FinancialCalculator):
                     if any(x in cell_text for x in ["periodo", "period", "corriente", "actual"]):
                         return int(cell.get("col", 0))
 
-        # ESTRATEGIA 4: Primera columna numérica de datos
+        # ESTRATEGIA 4: Columna numérica más reciente de datos
         # Funciona con: PDFs sin headers claros (SAT, genéricos)
+        # Para PDFs comparativos (2 periodos), toma la ÚLTIMA columna numérica
+        # porque en formato mexicano el periodo más reciente va a la derecha.
+        # NIF B-3 párrafo 16: "se presentará información comparativa del
+        # periodo anterior" — el periodo actual siempre es el más a la derecha.
         for table in tablas_ocr:
             rows = {}
             for cell in table:
@@ -711,6 +770,11 @@ class ProjectionCalculator(FinancialCalculator):
                     if val is not None and abs(val) > 100:
                         cols_numericas.append(int(cell.get("col",0)))
                 if len(cols_numericas) >= 2:
+                    # Tomar la ÚLTIMA columna numérica — periodo más reciente
+                    # según convención NIF B-3 de presentación comparativa
+                    return cols_numericas[-1]
+                elif len(cols_numericas) == 1:
+                    # Solo hay una columna numérica — tomar esa directamente
                     return cols_numericas[0]
 
         return None
@@ -732,7 +796,30 @@ class ProjectionCalculator(FinancialCalculator):
         self._preprocess_ocr_data(ocr_data)
         tablas_ocr = ocr_data.get("tables_data", []) or []
 
+
+        def _get_sup_texto(s):
+            if s is None:
+                return "-"
+            if getattr(s, 'mantener_igual', False):
+                return "Mantener igual"
+            if getattr(s, 'monto', None) is not None:
+                return f"${s.monto:,.2f}"
+            if getattr(s, 'variacion', None) is not None:
+                return f"{s.variacion:+.2f}%"
+            return "-"
+
         target_col_index = self._detectar_columna_periodo(tablas_ocr, periodo_base)
+
+        # ── Rescate semántico por sección NIF ─────────────────────────────────────
+        # Activa el embedding SOLO cuando keyword search falla (Nivel 3).
+        # Nunca interfiere con _get_exact_first ni _get_all_matches_sum (Nivel 1).
+        SECTION_CONCEPT_MAP_ER = {
+            "ingresos":   "ventas_netas",            # NIF B-3 Ventas o Ingresos netos
+            "costos":     "costo_de_ventas",         # NIF B-3 Costo de ventas
+            "gastos":     "utilidad_operacion",      # NIF B-3 Gastos de operación (proxy)
+            "financiero": "gastos_financieros",      # NIF B-3 RIF
+            "impuestos":  "impuestos",               # NIF D-3, D-4
+        }
 
         # 1. Identificar Ventas Base (Bypass forzado a la columna mensual/anual)
         ventas_base = self._get_exact_first(ocr_data, "ing por servicios", target_col_index=target_col_index) 
@@ -743,7 +830,13 @@ class ProjectionCalculator(FinancialCalculator):
             
         if ventas_base is None:
             kw_ventas = self.concept_keywords.get("Ventas netas / Ingresos por servicios", self.kw_ventas_netas)
-            ventas_base = self._find_value(tablas_ocr, kw_ventas, take_last=False)
+            ventas_base = self._find_value(
+                tablas_ocr, kw_ventas,
+                take_last=False,
+                concept_key="ventas_netas"  # NIF B-3 rescate semántico
+            )
+            if ventas_base:
+                print(f"  [RESCATE ER] ventas_base via embedding: {float(ventas_base):,.2f}")
             
         ventas_base = abs(Decimal(str(ventas_base))) if ventas_base else Decimal("0.00")
 
@@ -791,14 +884,27 @@ class ProjectionCalculator(FinancialCalculator):
                 var_usr = Decimal(str(sup.variacion))
                 return v_b * (Decimal("1") + (var_usr / Decimal("100"))) * (Decimal("1") + (infl_esp / Decimal("100")))
 
-        def extract_value(kw_list):
+        def extract_value(kw_list, seccion=None):
             v = None
             for keyword in kw_list:
-                v = self._get_exact_first(ocr_data, keyword, target_col_index=target_col_index, consumed_set=filas_consumidas)
+                v = self._get_exact_first(
+                    ocr_data, keyword,
+                    target_col_index=target_col_index,
+                    consumed_set=filas_consumidas
+                )
                 if v is not None:
                     break
             if v is None:
-                v = self._find_value(tablas_ocr, kw_list, take_last=False)
+                # Rescate semántico — Nivel 3, solo si keyword falla
+                concept_key = SECTION_CONCEPT_MAP_ER.get(seccion) if seccion else None
+                v = self._find_value(
+                    tablas_ocr, kw_list,
+                    take_last=False,
+                    concept_key=concept_key
+                )
+                if v and concept_key:
+                    print(f"  [RESCATE ER] seccion='{seccion}' "
+                          f"concept_key='{concept_key}' valor={float(v):,.2f}")
             if v is not None:
                 return Decimal(str(v))
             return Decimal("0.00")
@@ -811,11 +917,12 @@ class ProjectionCalculator(FinancialCalculator):
                     "valor_base": float(ventas_base),
                     "variacion_aplicada": sup.variacion if not sup.mantener_igual else 0.0,
                     "valor_proyectado": float(ventas_proy)
+                , "supuesto_texto": _get_sup_texto(sup)
                 })
                 continue
             
             kw = self.er_keywords.get(sup.concepto, [sup.concepto.lower()])
-            v_base = extract_value(kw)
+            v_base = extract_value(kw, seccion="ingresos")
             v_proy = solve_rubro(sup, v_base, ventas_proy, ventas_base)
             
             # Separar productos financieros de otros ingresos operativos
@@ -828,7 +935,8 @@ class ProjectionCalculator(FinancialCalculator):
                 "concepto": sup.concepto,
                 "valor_base": float(v_base),
                 "variacion_aplicada": ((float(v_proy) / float(v_base)) - 1) * 100 if v_base != Decimal("0.00") and v_base != Decimal("0") else 0.0,
-                "valor_proyectado": float(self._redondear(v_proy))
+                "valor_proyectado": float(self._redondear(v_proy)),
+                "supuesto_texto": _get_sup_texto(sup)
             })
 
         # --- PROCESAR COSTOS Y GASTOS (CON BYPASS EXTENDIDO) ---
@@ -836,7 +944,7 @@ class ProjectionCalculator(FinancialCalculator):
             
             # Escudo A: Gastos de Administración (Separación de Gastos Generales)
             if sup.concepto == "Gastos de administración":
-                v_admin = abs(extract_value(["gastos de administración", "gastos de administracion"]))
+                v_admin = abs(extract_value(["gastos de administración", "gastos de administracion"], seccion="gastos"))
                 v_grales = self._get_exact_first(ocr_data, "gastos generales", target_col_index=target_col_index, consumed_set=filas_consumidas)
                 v_grales = abs(Decimal(str(v_grales))) if v_grales is not None else Decimal("0.00")
                 
@@ -855,11 +963,11 @@ class ProjectionCalculator(FinancialCalculator):
                 
             # Escudo B: Otros Gastos
             elif sup.concepto == "Otros gastos":
-                v_base = abs(extract_value(["otros gastos y pérdidas", "otros egresos"]))
+                v_base = abs(extract_value(["otros gastos y pérdidas", "otros egresos"], seccion="gastos"))
                     
             # Escudo C: Costo de Ventas (Reconstrucción Forzada)
             elif sup.concepto == "Costo de ventas/Costo por servicios":
-                v_base = abs(extract_value(self.kw_costo_de_ventas))
+                v_base = abs(extract_value(self.kw_costo_de_ventas, seccion="costos"))
                 
                 if v_base > Decimal("0") and ventas_base > Decimal("0") and (v_base / ventas_base) < Decimal("0.10"): 
                     # Extraemos la primera compra directamente del texto
@@ -874,7 +982,13 @@ class ProjectionCalculator(FinancialCalculator):
             
             else:
                 kw = self.er_keywords.get(sup.concepto, [sup.concepto.lower()])
-                v_base = abs(extract_value(kw))
+                # Gastos financieros usan su propia sección NIF B-3 RIF
+                # para que el embedding compare contra "gastos_financieros"
+                # y no contra "utilidad_operacion" (proxy de gastos operativos)
+                if "financiero" in sup.concepto.lower():
+                    v_base = abs(extract_value(kw, seccion="financiero"))
+                else:
+                    v_base = abs(extract_value(kw, seccion="gastos"))
             
             v_proy = solve_rubro(sup, v_base, ventas_proy, ventas_base)
             
@@ -891,7 +1005,8 @@ class ProjectionCalculator(FinancialCalculator):
                 "concepto": sup.concepto,
                 "valor_base": float(v_base),
                 "variacion_aplicada": ((float(v_proy) / float(v_base)) - 1) * 100 if v_base != Decimal("0.00") and v_base != Decimal("0") else 0.0,
-                "valor_proyectado": float(self._redondear(v_proy))
+                "valor_proyectado": float(self._redondear(v_proy)),
+                "supuesto_texto": _get_sup_texto(sup)
             })
 
         # 4. Cálculo de cascada parcial (Utilidad Antes de Impuestos)
@@ -965,12 +1080,34 @@ class ProjectionCalculator(FinancialCalculator):
 
         # --- CÁLCULO DE PTU ---
         ptu_viene_del_doc = v_ptu_base > Decimal("0")
-        ptu_activado_por_usuario = sup_ptu is not None and sup_ptu.variacion is not None and sup_ptu.variacion > 0
+        ptu_activado_por_usuario = (
+            sup_ptu is not None
+            and sup_ptu.variacion is not None
+            and sup_ptu.variacion > 0
+        )
+
+        # Inicializar siempre — evita UnboundLocalError si ninguna rama aplica
+        ptu_proy = Decimal("0.00")
+        tasa_ptu_aplicada = 0.0
 
         if uai_proy > Decimal("0") and (ptu_viene_del_doc or ptu_activado_por_usuario):
-            if sup_ptu and sup_ptu.variacion is not None and sup_ptu.variacion > 0:
+
+            if ptu_activado_por_usuario:
+                # Usuario definió tasa → aplicar sobre UAI
                 tasa_ptu = Decimal(str(sup_ptu.variacion)) / Decimal("100")
+                ptu_proy = self._redondear(uai_proy * tasa_ptu)
+                tasa_ptu_aplicada = float(sup_ptu.variacion)
+                filas_tabla.append({
+                    "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
+                    "valor_base": float(v_ptu_base),
+                    "variacion_aplicada": tasa_ptu_aplicada,
+                    "valor_proyectado": float(ptu_proy)
+                , "supuesto_texto": _get_sup_texto(sup_ptu)
+                })
+
             elif ptu_viene_del_doc:
+                # PDF tiene PTU histórico pero usuario no activó tasa
+                # → conservar histórico, no proyectar nuevo valor
                 ptu_proy = Decimal("0.00")
                 tasa_ptu_aplicada = 0.0
                 filas_tabla.append({
@@ -978,19 +1115,11 @@ class ProjectionCalculator(FinancialCalculator):
                     "valor_base": float(v_ptu_base),
                     "variacion_aplicada": 0.0,
                     "valor_proyectado": 0.0
+                , "supuesto_texto": "-"
                 })
-                tasa_ptu = None
-            
-            if tasa_ptu is not None:
-                ptu_proy = self._redondear(uai_proy * tasa_ptu)
-                tasa_ptu_aplicada = float(tasa_ptu * Decimal("100"))
-                filas_tabla.append({
-                    "concepto": "PTU (Participación de los Trabajadores en las Utilidades)",
-                    "valor_base": float(v_ptu_base),
-                    "variacion_aplicada": tasa_ptu_aplicada,
-                    "valor_proyectado": float(ptu_proy)
-                })
+
         else:
+            # UAI <= 0 o no hay PTU → $0
             ptu_proy = Decimal("0.00")
             tasa_ptu_aplicada = 0.0
             filas_tabla.append({
@@ -998,12 +1127,13 @@ class ProjectionCalculator(FinancialCalculator):
                 "valor_base": float(v_ptu_base),
                 "variacion_aplicada": 0.0,
                 "valor_proyectado": 0.0
-            })
+            , "supuesto_texto": "-"
+                })
 
         # --- CÁLCULO DE ISR ---
         sup_isr = next((s for s in supuestos_impuestos if s.concepto == "ISR"), None)
         kw_isr = self.er_keywords.get("ISR", ["isr"])
-        v_isr_base = abs(extract_value(kw_isr))
+        v_isr_base = abs(extract_value(kw_isr, seccion="impuestos"))
 
         isr_viene_del_doc = v_isr_base > Decimal("0")
         isr_activado_por_usuario = sup_isr is not None and sup_isr.variacion is not None and sup_isr.variacion > 0
@@ -1026,6 +1156,7 @@ class ProjectionCalculator(FinancialCalculator):
             "valor_base": float(v_isr_base),
             "variacion_aplicada": tasa_isr_aplicada,
             "valor_proyectado": float(isr_proy)
+        , "supuesto_texto": _get_sup_texto(sup_isr)
         })
 
         total_impuestos_proyectados = ptu_proy + isr_proy
@@ -1110,7 +1241,41 @@ class ProjectionCalculator(FinancialCalculator):
         filas_tabla = []
 
         # DETECCIÓN DE COLUMNA — usa el detector en cascada del ER
+
+        def _get_sup_texto(s):
+            if s is None:
+                return "-"
+            if getattr(s, 'mantener_igual', False):
+                return "Mantener igual"
+            if getattr(s, 'monto', None) is not None:
+                return f"${s.monto:,.2f}"
+            if getattr(s, 'variacion', None) is not None:
+                return f"{s.variacion:+.2f}%"
+            return "-"
+
         target_col_index = self._detectar_columna_periodo(tablas_ocr, periodo_base)
+        
+        # ── Rescate semántico por sección NIF ─────────────────────────────────────
+        SECTION_CONCEPT_MAP_BG = {
+            "total_activo_circulante":    "activo_circulante",    # NIF B-6, C-1, C-3, C-4
+            "total_activo_no_circulante": "activo_fijo_detalle",  # NIF C-6, C-8
+            "total_pasivo_corto":         "pasivo_circulante",    # NIF C-9, C-18
+            "total_pasivo_largo":         "pasivo_largo_plazo",   # NIF C-18
+            "total_capital_contribuido":  "capital_social",       # NIF B-6, C-11
+            "total_capital_ganado":       "capital_contable",     # NIF B-6, LGSM
+        }
+
+        # Mapa especial para cuentas individuales del activo circulante
+        # que necesitan un concept_key más específico que "activo_circulante"
+        CUENTA_CONCEPT_MAP_BG = {
+            "Caja":                    "caja_bancos",
+            "Bancos":                  "caja_bancos",
+            "Inversiones temporales":  "inversiones_temporales",
+            "IVA acreditable":         "pagos_anticipados",
+            "Impuestos y derechos":    "pagos_anticipados",
+            "Seguros y fianzas":       "pagos_anticipados",
+            "Rentas pagadas por anticipado": "pagos_anticipados",
+        }
         
         # Detectar tipo de periodo para cuentas especiales anuales
         es_anual = periodicidad == "anual"
@@ -1294,7 +1459,7 @@ class ProjectionCalculator(FinancialCalculator):
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Mobiliario y equipo de oficina":
-                    kw_mob = self.bg_keywords.get("Mobiliario", ["mobiliario", "muebles y enseres"])
+                    kw_mob = self.bg_keywords.get("Mobiliario y equipo de oficina", ["mobiliario", "muebles y enseres"])
                     v_mob = self._get_all_matches_sum(ocr_data, kw_mob, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     if v_mob == Decimal("0"):
                         v_mob = self._get_exact_first(ocr_data, "muebles y enseres", target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
@@ -1303,6 +1468,26 @@ class ProjectionCalculator(FinancialCalculator):
                     v_base_raw = (v_mob or Decimal("0.00")) + (v_comunicacion or Decimal("0.00"))
                     v_base_extraido = extraer_valor_con_signo(v_base_raw, "mobiliario y comunicación", sup.concepto, key_total)
                     v_base = Decimal(str(v_base_extraido)) if v_base_extraido is not None else Decimal("0.00")
+                    
+                    # Si el keyword no encontró nada, intentar rescate semántico
+                    if v_base == Decimal("0.00"):
+                        texto_ocr_completo = " ".join([
+                            str(cell.get("text", "")).lower()
+                            for table in tablas_ocr
+                            for cell in table
+                        ])
+                        kw_mob = self.bg_keywords.get("Mobiliario y equipo de oficina", ["mobiliario"])
+                        if any(k.lower() in texto_ocr_completo for k in kw_mob):
+                            v_fallback = self._find_value(
+                                tablas_ocr, kw_mob,
+                                take_last=False,
+                                concept_key="activo_fijo_detalle"  # NIF C-6
+                            )
+                            if v_fallback:
+                                v_base = abs(Decimal(str(v_fallback)))
+                                print(f"  [RESCATE BG] 'Mobiliario y equipo de oficina' "
+                                      f"concept_key='activo_fijo_detalle' valor={float(v_base):,.2f}")
+                                      
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Equipo de cómputo":
@@ -1310,6 +1495,27 @@ class ProjectionCalculator(FinancialCalculator):
                     v_computo = self._get_all_matches_sum(ocr_data, kw_comp, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     v_base_extraido = extraer_valor_con_signo(v_computo or Decimal("0.00"), "equipo de cómputo", sup.concepto, key_total)
                     v_base = Decimal(str(v_base_extraido)) if v_base_extraido is not None else Decimal("0.00")
+                    
+                    # Si el keyword no encontró nada, intentar rescate semántico
+                    if v_base == Decimal("0.00"):
+                        # Verificar si algún keyword existe en el texto del OCR
+                        texto_ocr_completo = " ".join([
+                            str(cell.get("text", "")).lower()
+                            for table in tablas_ocr
+                            for cell in table
+                        ])
+                        kw_computo = self.bg_keywords.get("Equipo de cómputo", ["equipo de cómputo"])
+                        if any(k.lower() in texto_ocr_completo for k in kw_computo):
+                            v_fallback = self._find_value(
+                                tablas_ocr, kw_computo,
+                                take_last=False,
+                                concept_key="activo_fijo_detalle"  # NIF C-6
+                            )
+                            if v_fallback:
+                                v_base = abs(Decimal(str(v_fallback)))
+                                print(f"  [RESCATE BG] 'Equipo de cómputo' "
+                                      f"concept_key='activo_fijo_detalle' valor={float(v_base):,.2f}")
+                                      
                     v_proy = solve_balance_rubro(sup, v_base)
 
                 elif sup.concepto == "Depreciación acumulada":
@@ -1317,7 +1523,19 @@ class ProjectionCalculator(FinancialCalculator):
                     v_base_val = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
                     
                     if v_base_val == Decimal("0"):
-                        v_base_val = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)
+                        # Usar keywords completos en lugar de "deprec" solo para evitar
+                        # sumar subcuentas individuales (deprec. edificios + deprec. maquinaria + total)
+                        kw_dep_especificos = [
+                            "depreciación acumulada", "depreciacion acumulada",
+                            "deprec. acum.", "dep. acum.", "(-) deprec. acum.",
+                            "deprec acum", "dep. acumulada"
+                        ]
+                        v_base_val = self._get_all_matches_sum(
+                            ocr_data, kw_dep_especificos,
+                            target_col_index=target_col_index,
+                            target_relative_index=target_relative_index,
+                            consumed_set=filas_consumidas
+                        )
                         
                     v_base = Decimal(str(v_base_val)) if v_base_val is not None else Decimal("0.00")
                     v_base = -abs(v_base) if v_base != Decimal("0") else Decimal("0.00")
@@ -1394,7 +1612,46 @@ class ProjectionCalculator(FinancialCalculator):
                     
                     if v_base_val is None:
                         if sup.concepto not in ["Marcas", "Patentes"]:
-                            v_base_val = self._find_value(tablas_ocr, kw, take_last=False)
+                            # El rescate semántico solo tiene sentido cuando el keyword
+                            # encontró texto en el PDF pero no pudo leer el valor numérico.
+                            # Si _get_all_matches_sum_with_text retorna (None, "") significa
+                            # que la cuenta no existe en el PDF → $0 es correcto, no activar.
+                            #
+                            # Para activar el rescate semántico de forma segura, primero
+                            # verificamos si algún keyword del concepto aparece en el texto
+                            # del OCR. Si no aparece ninguno → la cuenta no existe → no rescatar.
+                            
+                            texto_ocr_completo = " ".join([
+                                str(cell.get("text", "")).lower()
+                                for table in tablas_ocr
+                                for cell in table
+                            ])
+                            
+                            # ¿Algún keyword del concepto aparece en el texto del PDF?
+                            keyword_encontrado_en_texto = any(
+                                k.lower() in texto_ocr_completo
+                                for k in kw
+                            )
+                            
+                            if not keyword_encontrado_en_texto:
+                                # El PDF no tiene esta cuenta → $0 legítimo, no rescatar
+                                v_base_val = None  # se convertirá en Decimal("0.00") abajo
+                            else:
+                                # El keyword SÍ existe en el texto pero el motor no lo leyó bien
+                                # → activar rescate semántico
+                                concept_key = (
+                                    CUENTA_CONCEPT_MAP_BG.get(sup.concepto)
+                                    or SECTION_CONCEPT_MAP_BG.get(key_total)
+                                )
+                                v_base_val = self._find_value(
+                                    tablas_ocr, kw,
+                                    take_last=False,
+                                    concept_key=concept_key
+                                )
+                                if v_base_val and concept_key:
+                                    print(f"  [RESCATE BG] '{sup.concepto}' "
+                                          f"concept_key='{concept_key}' "
+                                          f"valor={float(v_base_val):,.2f}")
                     
                     v_base_extraido = extraer_valor_con_signo(v_base_val, row_text_lower, sup.concepto, key_total)
                     v_base = Decimal(str(v_base_extraido)) if v_base_extraido is not None else Decimal("0.00")
@@ -1407,6 +1664,7 @@ class ProjectionCalculator(FinancialCalculator):
                     "valor_base": float(v_base),
                     "variacion_aplicada": ((float(v_proy) / float(v_base)) - 1) * 100 if v_base != Decimal("0.00") and v_base != Decimal("0") else 0.0,
                     "valor_proyectado": float(v_proy)
+                , "supuesto_texto": _get_sup_texto(sup)
                 })
 
         # Procesar cada sección siguiendo el orden del balance
@@ -1421,12 +1679,33 @@ class ProjectionCalculator(FinancialCalculator):
             v_dep_base_val = self._get_all_matches_sum(ocr_data, kw_dep, target_col_index=target_col_index, target_relative_index=target_relative_index)
             
             if v_dep_base_val == Decimal("0"):
-                v_dep_base_val = self._get_all_matches_sum(ocr_data, ["deprec"], target_col_index=target_col_index, target_relative_index=target_relative_index)
+                kw_dep_especificos = [
+                    "depreciación acumulada", "depreciacion acumulada",
+                    "deprec. acum.", "dep. acum.", "(-) deprec. acum.",
+                    "deprec acum", "dep. acumulada"
+                ]
+                v_dep_base_val = self._get_all_matches_sum(
+                    ocr_data, kw_dep_especificos,
+                    target_col_index=target_col_index,
+                    target_relative_index=target_relative_index
+                )
             
             v_dep_base = Decimal(str(v_dep_base_val)) if v_dep_base_val is not None else Decimal("0.00")
             
             if v_dep_base == Decimal("0"):
-                v_dep_val = self._find_value(tablas_ocr, kw_dep, take_last=True)
+                texto_ocr_completo = " ".join([
+                    str(cell.get("text", "")).lower()
+                    for table in tablas_ocr
+                    for cell in table
+                ])
+                if any(k.lower() in texto_ocr_completo for k in kw_dep):
+                    v_dep_val = self._find_value(
+                        tablas_ocr, kw_dep,
+                        take_last=True,
+                        concept_key="activo_fijo_detalle"  # NIF C-6
+                    )
+                else:
+                    v_dep_val = None
                 v_dep_base = Decimal(str(v_dep_val)) if v_dep_val is not None else Decimal("0.00")
             
             # Forzar a negativo para que descuente del activo
@@ -1440,6 +1719,7 @@ class ProjectionCalculator(FinancialCalculator):
                     "valor_base": float(v_dep_base),
                     "variacion_aplicada": 0,
                     "valor_proyectado": float(v_dep_proy)
+                , "supuesto_texto": "-"
                 })
         procesar_seccion(pasivo_corto_plazo, "total_pasivo_corto")
 
@@ -1466,6 +1746,7 @@ class ProjectionCalculator(FinancialCalculator):
                 "valor_base": float(v_ret),
                 "variacion_aplicada": 0.0,
                 "valor_proyectado": float(v_ret)
+            , "supuesto_texto": "-"
             })
 
         procesar_seccion(pasivo_largo_plazo, "total_pasivo_largo")

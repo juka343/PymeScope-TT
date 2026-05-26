@@ -207,19 +207,49 @@ onMounted(async () => {
       if (sup.ingresos) {
         ingresosRows.value = ingresosRows.value.map(baseRow => {
           const loadedRow = sup.ingresos.find(r => r.concepto === baseRow.concepto);
-          return loadedRow ? { ...baseRow, variacion: loadedRow.variacion, mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false } : baseRow;
+          return loadedRow ? {
+            ...baseRow,
+            variacion: loadedRow.variacion,
+            mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false,
+            modoInput: loadedRow.modoInput
+              ? loadedRow.modoInput
+              : (loadedRow.monto != null ? "monto" : "pct"),
+            montoInput: loadedRow.montoInput != null
+              ? loadedRow.montoInput
+              : (loadedRow.monto != null ? String(loadedRow.monto) : "")
+          } : baseRow;
         });
       }
       if (sup.costos) {
         costosRows.value = costosRows.value.map(baseRow => {
           const loadedRow = sup.costos.find(r => r.concepto === baseRow.concepto);
-          return loadedRow ? { ...baseRow, variacion: loadedRow.variacion, mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false } : baseRow;
+          return loadedRow ? {
+            ...baseRow,
+            variacion: loadedRow.variacion,
+            mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false,
+            modoInput: loadedRow.modoInput
+              ? loadedRow.modoInput
+              : (loadedRow.monto != null ? "monto" : "pct"),
+            montoInput: loadedRow.montoInput != null
+              ? loadedRow.montoInput
+              : (loadedRow.monto != null ? String(loadedRow.monto) : "")
+          } : baseRow;
         });
       }
       if (sup.impuestos) {
         impuestosRows.value = impuestosRows.value.map(baseRow => {
           const loadedRow = sup.impuestos.find(r => r.concepto === baseRow.concepto);
-          return loadedRow ? { ...baseRow, variacion: loadedRow.variacion, mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false } : baseRow;
+          return loadedRow ? {
+            ...baseRow,
+            variacion: loadedRow.variacion,
+            mantener_igual: loadedRow.mantener_igual ?? loadedRow.mantenerIgual ?? false,
+            modoInput: loadedRow.modoInput
+              ? loadedRow.modoInput
+              : (loadedRow.monto != null ? "monto" : "pct"),
+            montoInput: loadedRow.montoInput != null
+              ? loadedRow.montoInput
+              : (loadedRow.monto != null ? String(loadedRow.monto) : "")
+          } : baseRow;
         });
       }
       if (typeof sup.incluirImpuestos === 'boolean') incluirImpuestos.value = sup.incluirImpuestos;
@@ -230,23 +260,23 @@ onMounted(async () => {
 });
 
 const ingresosRows = ref([
-  { concepto: "Ventas netas / Ingresos por servicios", variacion: "", mantener_igual: false, isMotor: true, isVariable: false },
-  { concepto: "Otros ingresos", variacion: "", mantener_igual: false, isVariable: false },
-  { concepto: "Productos financieros", variacion: null, mantener_igual: false, isVariable: true },
+  { concepto: "Ventas netas / Ingresos por servicios", variacion: "", mantener_igual: false, isMotor: true, isVariable: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Otros ingresos", variacion: "", mantener_igual: false, isVariable: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Productos financieros", variacion: null, mantener_igual: false, isVariable: true, modoInput: "pct", montoInput: "" },
 ]);
 
 const costosRows = ref([
-  { concepto: "Costo de ventas/Costo por servicios", subtitulo: "", variacion: null, mantener_igual: false, isVariable: true },
-  { concepto: "Gastos de venta", subtitulo: "", variacion: null, mantener_igual: false, isVariable: true },
-  { concepto: "Gastos de administración", subtitulo: "Operativos y administrativos", variacion: "", mantener_igual: false, isVariable: false },
-  { concepto: "Gastos de nómina", subtitulo: "Sueldos y salarios", variacion: "", mantener_igual: false, isVariable: false },
-  { concepto: "Gastos financieros", subtitulo: "Intereses y comisiones", variacion: "", mantener_igual: false, isVariable: false },
-  { concepto: "Otros gastos", subtitulo: "", variacion: "", mantener_igual: false, isVariable: false },
+  { concepto: "Costo de ventas/Costo por servicios", subtitulo: "", variacion: null, mantener_igual: false, isVariable: true, modoInput: "pct", montoInput: "" },
+  { concepto: "Gastos de venta", subtitulo: "", variacion: null, mantener_igual: false, isVariable: true, modoInput: "pct", montoInput: "" },
+  { concepto: "Gastos de administración", subtitulo: "Operativos y administrativos", variacion: "", mantener_igual: false, isVariable: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Gastos de nómina", subtitulo: "Sueldos y salarios", variacion: "", mantener_igual: false, isVariable: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Gastos financieros", subtitulo: "Intereses y comisiones", variacion: "", mantener_igual: false, isVariable: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Otros gastos", subtitulo: "", variacion: "", mantener_igual: false, isVariable: false, modoInput: "pct", montoInput: "" },
 ]);
 
 const impuestosRows = ref([
-  { concepto: "ISR", variacion: null, mantener_igual: false, isVariable: true },
-  { concepto: "PTU (Participación de los Trabajadores en las Utilidades)", variacion: null, mantener_igual: false, isVariable: true },
+  { concepto: "ISR", variacion: null, mantener_igual: false, isVariable: true, modoInput: "pct", montoInput: "" },
+  { concepto: "PTU (Participación de los Trabajadores en las Utilidades)", variacion: null, mantener_igual: false, isVariable: true, modoInput: "pct", montoInput: "" },
 ]);
 
 const incluirImpuestos = ref(true);
@@ -256,8 +286,18 @@ function cancelar() {
 }
 
 function isFilaVacia(row) {
+  // Cuentas isVariable nunca son obligatorias — vacío = heredar % de ventas
   if (row.isVariable) return false;
-  return !row.mantener_igual && (row.variacion === "" || row.variacion === null || row.variacion === undefined);
+  // Cuentas congeladas nunca están vacías
+  if (row.mantener_igual) return false;
+
+  // Modo monto ($): vacío si no hay monto ingresado
+  if (row.modoInput === "monto") {
+    return row.montoInput === "" || row.montoInput === null || row.montoInput === undefined;
+  }
+
+  // Modo porcentaje (%) — comportamiento original
+  return row.variacion === "" || row.variacion === null || row.variacion === undefined;
 }
 
 async function generarProyeccion() {
@@ -286,18 +326,35 @@ async function generarProyeccion() {
   }
 
   if (hayFilasVacias) {
-    errorBanner.value = "Todos los campos deben tener una variación (%) o estar marcados como \"Mantener igual\".";
+    errorBanner.value = "Todos los campos deben tener una variación o estar marcados como \"Mantener igual\".";
     return;
   }
 
   isProcessing.value = true;
 
   try {
-    const formatRow = (row) => ({
-      concepto: row.concepto,
-      variacion: (row.isVariable && (row.variacion === "" || row.variacion === null) && !row.mantener_igual) ? null : (isNaN(parseFloat(row.variacion)) ? 0 : parseFloat(row.variacion)),
-      mantener_igual: row.mantener_igual
-    });
+    const formatRow = (row) => {
+      // Modo monto ($): enviar variacion=null y monto=valor ingresado
+      if (row.modoInput === "monto" && !row.mantener_igual) {
+        const montoVal = parseFloat(row.montoInput);
+        return {
+          concepto: row.concepto,
+          variacion: null,
+          mantener_igual: false,
+          monto: isNaN(montoVal) ? null : montoVal
+        };
+      }
+
+      // Modo porcentaje (%) — comportamiento original
+      return {
+        concepto: row.concepto,
+        variacion: (row.isVariable && (row.variacion === "" || row.variacion === null) && !row.mantener_igual)
+          ? null
+          : (isNaN(parseFloat(row.variacion)) ? 0 : parseFloat(row.variacion)),
+        mantener_igual: row.mantener_igual,
+        monto: null
+      };
+    };
 
     const payload = {
       project_id: projectId,
@@ -483,7 +540,7 @@ async function generarProyeccion() {
       <div class="assumptions-table">
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
-          <div class="col-variacion center">Variación (%)</div>
+          <div class="col-variacion center">Variación</div>
           <div class="col-check right">Mantener igual</div>
         </div>
 
@@ -492,14 +549,55 @@ async function generarProyeccion() {
             <div class="concept-text">{{ row.concepto }}</div>
           </div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!row.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': row.modoInput === 'pct' }]"
+                @click="row.modoInput = 'pct'; row.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': row.modoInput === 'monto' }]"
+                @click="row.modoInput = 'monto'; row.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="row.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="row.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }"
+                type="number"
+                step="0.1"
+                :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'"
+                :disabled="row.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="row.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="row.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="row.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-if="!row.isMotor" v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+            <input v-if="!row.isMotor" v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (
+              (row.modoInput === 'pct' && row.variacion !== null && row.variacion !== '') ||
+              (row.modoInput === 'monto' && row.montoInput !== null && row.montoInput !== '')
+            )" />
           </div>
         </div>
       </div>
@@ -524,14 +622,55 @@ async function generarProyeccion() {
             <p v-if="row.subtitulo" class="concept-sub">{{ row.subtitulo }}</p>
           </div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="row.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }" type="number" step="0.1" :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'" :disabled="row.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!row.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': row.modoInput === 'pct' }]"
+                @click="row.modoInput = 'pct'; row.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': row.modoInput === 'monto' }]"
+                @click="row.modoInput = 'monto'; row.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="row.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="row.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }"
+                type="number"
+                step="0.1"
+                :placeholder="row.isVariable ? 'Heredará % de ventas' : '0.0'"
+                :disabled="row.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="row.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="row.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(row) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="row.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(row)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (row.variacion !== null && row.variacion !== '' )" />
+            <input v-model="row.mantener_igual" class="checkbox" type="checkbox" :disabled="!row.mantener_igual && (
+              (row.modoInput === 'pct' && row.variacion !== null && row.variacion !== '') ||
+              (row.modoInput === 'monto' && row.montoInput !== null && row.montoInput !== '')
+            )" />
           </div>
         </div>
       </div>
@@ -989,5 +1128,58 @@ async function generarProyeccion() {
   border-color: #ef4444 !important;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18) !important;
   background: #fff5f5 !important;
+}
+
+.mode-toggle-wrap {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.mode-btn {
+  padding: 2px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-btn:hover {
+  border-color: #299de0;
+  color: #299de0;
+}
+
+.mode-btn-active {
+  background: #299de0;
+  border-color: #299de0;
+  color: #ffffff;
+}
+
+.input-with-prefix {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.prefix {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  padding: 0 8px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.input-with-prefix .input {
+  border-radius: 0 6px 6px 0;
 }
 </style>
