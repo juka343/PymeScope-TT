@@ -262,7 +262,7 @@ onMounted(async () => {
 const ingresosRows = ref([
   { concepto: "Ventas netas / Ingresos por servicios", variacion: "", mantener_igual: false, isMotor: true, isVariable: false, modoInput: "pct", montoInput: "" },
   { concepto: "Otros ingresos", variacion: "", mantener_igual: false, isVariable: false, modoInput: "pct", montoInput: "" },
-  { concepto: "Productos financieros", variacion: null, mantener_igual: false, isVariable: true, modoInput: "pct", montoInput: "" },
+  { concepto: "Productos financieros", variacion: "", mantener_igual: false, isVariable: false, modoInput: "pct", montoInput: "" },
 ]);
 
 const costosRows = ref([

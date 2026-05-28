@@ -49,17 +49,55 @@ class ProjectionCalculator(FinancialCalculator):
             "CERTIF APORTACION":        "Capital social",
             "CERTIF. APORTACIÓN":       "Capital social",
             "APORTACIONES DE SOCIOS":   "Capital social",
+            "CAP. SOCIAL":              "Capital social",           # ← NUEVO: CASO 5 BG
+            "CAPITAL SOCIAL":           "Capital social",           # ← NUEVO: variante explícita
             "UTILID. EJERCICIOS":       "Utilidades o pérdidas de ejercicios anteriores",
             "UTILID. EJERC. ANT.":      "Utilidades o pérdidas de ejercicios anteriores",
             "UTILIDADES RETENIDAS":     "Utilidades o pérdidas de ejercicios anteriores",
             "SUPERAVIT ACUMULADO":      "Utilidades o pérdidas de ejercicios anteriores",
+            "UTILIDADES":               "Utilidades o pérdidas de ejercicios anteriores", # ← NUEVO: CASO 5 BG
+
+            # ── Empresas públicas — Activo Fijo consolidado (NIF C-6) ─────────────
+            "PROPIEDAD, PLANTA Y EQUIPO":        "Maquinaria y equipo",
+            "PROPIEDAD PLANTA Y EQUIPO":         "Maquinaria y equipo",
+            "PROPIEDADES, PLANTA Y EQUIPO":      "Maquinaria y equipo",
+            "PROPIEDAD DE INVERSION":            "Edificios",
+
+            # ── Empresas públicas — Capital consolidado (NIF B-8 / NIIF 10) ───────
+            "CAPITAL CONTABLE MAYORITARIO":      "Capital social",
+            "CAPITAL CONTABLE MINORITARIO":      "Participación no controladora",
+            "CAPITAL CONTABLE CONTROLADORA":     "Capital social",
+            "PARTICIPACION CONTROLADORA":        "Capital social",
+            "PARTICIPACION NO CONTROLADORA":     "Participación no controladora",
+
+            # ── Activo Fijo — abreviaciones con punto (NIF C-6) ───────────────────
+            "EQ. TRANSPORTE":           "Equipo de transporte",    # ← NUEVO: CASO 5 BG
+            "EQ. CÓMPUTO":              "Equipo de cómputo",       # ← NUEVO: CASO 5 BG
+            "EQ. COMPUTO":              "Equipo de cómputo",       # ← NUEVO: CASO 5 BG
+            "EQ DE TRANSPORTE":         "Equipo de transporte",    # ← NUEVO: variante sin punto
+            "EQ DE COMPUTO":            "Equipo de cómputo",       # ← NUEVO: variante sin punto
+
+            # ── Intangibles y otros activos (NIF C-8) ─────────────────────────────
+            "GASTOS INSTALACIÓN":       "Gastos de instalación",   # ← NUEVO: CASO 5 BG
+            "GASTOS INSTALACION":       "Gastos de instalación",   # ← NUEVO: sin acento
+            "GASTOS DE INSTALACION":    "Gastos de instalación",   # ← NUEVO: variante larga
+            "GASTOS DE INSTALACIÓN":    "Gastos de instalación",   # ← NUEVO: variante larga con acento
+
+            # ── ER — variantes de gastos operativos (NIF B-3) ─────────────────────
+            "GASTOS DE OPERACION":       "Gastos de venta",        # existente
+            "GASTOS DE OPERACIÓN":       "Gastos de venta",        # existente
+            "GASTOS DE ADMINISTRACION":  "Gastos de administración", # ← NUEVO: GCMK sin acento
         }
 
         # ─── DICCIONARIO DEL ESTADO DE RESULTADOS ───────────────────────────────
         # Alias para cuentas de INGRESOS, COSTOS, GASTOS e IMPUESTOS (gasto).
         # Nunca debe usarse al procesar el Balance General.
         self.er_keywords: Dict[str, List[str]] = {
-            "Ventas netas / Ingresos por servicios": self.kw_ventas_netas,
+            "Ventas netas / Ingresos por servicios": [
+                "ventas netas",         # ← NUEVO: formato más común en PDFs mexicanos
+                "ventas netas anuales", # ← NUEVO: variante anual
+                *self.kw_ventas_netas,  # mantiene todos los keywords existentes
+            ],
             "Costo de ventas/Costo por servicios":   self.kw_costo_de_ventas,
             "Gastos financieros":                    self.kw_intereses,
             "Otros ingresos": [
@@ -131,9 +169,39 @@ class ProjectionCalculator(FinancialCalculator):
             "Equipo de cómputo":         ["equipo de cómputo", "cómputo", "equipo cómputo"],
             "Marcas":                    ["marcas"],
             "Patentes":                  ["patentes", "marcas y patentes"],
+            "Licencias de software": [
+                "licencias de software",
+                "licencias",
+                "software",
+                # ── NUEVO: intangibles y cargos diferidos (NIF C-8) ───────────────
+                # Los gastos de instalación son activos intangibles amortizables
+                # sin sustancia física — se agrupan aquí al no tener cuenta propia.
+                "gastos de instalación",      # ← CASO 5 BG — post-ALIAS_MAP
+                "gastos de instalacion",      # ← sin acento
+                "gastos preoperativos",       # ← variante común en PyMEs
+                "cargos diferidos",           # ← término SAT y planes de cuentas MX
+                "mejoras a locales",          # ← mejoras a locales arrendados
+                "gastos de organización",     # ← gastos preoperativos de inicio
+                "gastos de organizacion",     # ← sin acento
+            ],
             "Depreciación acumulada": [
                 "depreciación acumulada", "deprec. acum.", "dep. acum.", "dep. acumulada",
                 "depreciacion acumulada", "depreciacion", "deprec acum", "(-) deprec. acum.",
+            ],
+            # ── Activos por Derechos de Uso — NIIF 16 / NIF D-5 ──────────────────
+            # Empresas públicas y grandes empresas presentan esta cuenta separada
+            # del activo fijo. Se congela bajo juicio crítico.
+            "Activos por derechos de uso": [
+                "activos por derechos de uso",
+                "activos por derecho de uso",      # ← singular
+                "derecho de uso",
+                "derechos de uso",
+                "activos por arrendamiento",
+                "activo por arrendamiento",
+                "propiedad de arrendamiento",      # ← variante NIIF
+                "activo de arrendamiento",         # ← variante
+                "right of use",
+                "rou assets",                      # ← IFRS inglés abreviado
             ],
             # Pasivo Corto Plazo
             "Cuentas por pagar a proveedores":           ["proveedores", "cuentas por pagar a proveedores"],
@@ -154,13 +222,65 @@ class ProjectionCalculator(FinancialCalculator):
                 "retenciones por enterar",
                 "impuestos retenidos por enterar",
             ],
+            # ── Pasivo por Arrendamiento Corto Plazo — NIIF 16 / NIF D-5 ─────────
+            "Pasivo por arrendamiento a corto plazo": [
+                "pasivo por arrendamiento a corto plazo",
+                "pasivos por arrendamiento a corto plazo",  # ← plural
+                "vencimientos de arrendamientos de l.p. en c.p.",
+                "vencimientos de arrendamientos",
+                "arrendamiento corto plazo",
+                "arrendamiento c.p.",
+                "porcion circulante arrendamiento",         # ← variante
+                "porción circulante arrendamiento",         # ← con acento
+                "lease liability current",
+            ],
             # Pasivo Largo Plazo
             "Acreedores diversos a largo plazo":    ["acreedores diversos a largo plazo", "pasivo l.p.", "pasivo a largo plazo"],
             "Cuentas por pagar a largo plazo":      ["cuentas por pagar a largo plazo", "deuda a largo plazo"],
             "Cobros anticipados a largo plazo":     ["cobros anticipados a largo plazo"],
+            # ── Pasivo por Arrendamiento Largo Plazo — NIIF 16 / NIF D-5 ─────────
+            "Pasivo por arrendamiento a largo plazo": [
+                "pasivo por arrendamiento a largo plazo",
+                "pasivos por arrendamiento a largo plazo",  # ← plural
+                "arrendamientos l.p.",
+                "arrendamiento largo plazo",
+                "arrendamiento l.p.",
+                "arrendamientos a largo plazo",             # ← variante
+                "pasivo arrendamiento largo plazo",         # ← sin preposición
+                "lease liability non current",
+                "lease liability long term",                # ← IFRS variante
+            ],
+            # ── Obligaciones Laborales Largo Plazo — NIF D-3 ─────────────────────
+            "Obligaciones laborales": [
+                "obligaciones laborales",
+                "beneficios a empleados",
+                "pensiones y jubilaciones",
+                "plan de pensiones",
+                "retiro y jubilación",
+                "retiro y jubilacion",
+            ],
             # Capital
             "Capital social":  self.kw_capital_social + ["certif. aportación", "certificados de aportación"],
             "Reserva legal":   ["reserva legal", "reservas"],
+            "Otros resultados integrales": [
+                "otros resultados integrales",
+                "resultado integral",
+                # ── NUEVO: Contalink — resultado acumulado del ejercicio en curso ──────
+                # Contalink presenta la utilidad acumulada del año en una cuenta separada
+                # llamada "Resultado del ejercicio en curso" dentro del Capital Ganado.
+                # Al no tener cuenta propia en el formulario, se mapea a "Otros resultados
+                # integrales" que:
+                #   1. Está en Capital Ganado (NIF B-6 párr. 68) — sección correcta
+                #   2. No tiene handler especial — se congela bajo juicio crítico
+                #   3. No interfiere con "Utilidad o pérdida del ejercicio" (handler automático)
+                #   4. No interfiere con "Utilidades de ejercicios anteriores" (lógica anual)
+                "resultado del ejercicio en curso",
+                "resultado en curso",
+                "utilidad en curso",
+                "pérdida en curso",
+                "perdida en curso",
+                "resultado acumulado en curso",
+            ],
             "Utilidades o pérdidas de ejercicios anteriores": [
                 # GCMK — abreviaciones específicas
                 "resuls. ejercicios ant.",
@@ -177,8 +297,27 @@ class ProjectionCalculator(FinancialCalculator):
                 "perdidas acumuladas",
                 "utilid. ejercicios",
                 "resuls. ejercicios",
+                # ── NUEVO ──────────────────────────────────────────────────────────
+                # El ALIAS_MAP convierte "UTILIDADES" y "UTILID. EJERCICIOS" en la
+                # cadena completa "UTILIDADES O PÉRDIDAS DE EJERCICIOS ANTERIORES".
+                # Ningún keyword anterior la capturaba como substring — por eso el
+                # motor extraía $0 y proyectaba solo la utilidad neta base del ER.
+                "utilidades o pérdidas de ejercicios anteriores",
+                "utilidades o perdidas de ejercicios anteriores",
                 # Contalink — se procesa con lógica de row mínimo
                 "resultado del ejercicio",
+            ],
+            # ── Participación No Controladora — NIF B-8 / NIIF 10 ────────────────
+            # En estados consolidados forma parte del capital contable total.
+            # Se congela bajo juicio crítico — no tiene handler especial.
+            "Participación no controladora": [
+                "participación no controladora",
+                "participacion no controladora",
+                "capital contable minoritario",
+                "interés minoritario",
+                "intereses minoritarios",
+                "participación minoritaria",
+                "non-controlling interest",
             ],
         }
 
@@ -245,7 +384,12 @@ class ProjectionCalculator(FinancialCalculator):
                 text = str(cell.get("text", "")).strip()
                 if not text:
                     continue
-                text_upper = text.upper()
+                # Normalizar saltos de línea antes de buscar aliases.
+                # Azure OCR puede partir celdas con \n
+                # Ej: "Seguros\nAnticipados" → "Seguros Anticipados"
+                # Ej: "Certif.\nAportación"  → "Certif. Aportación"
+                # Ej: "Deprec.\nAcum."       → "Deprec. Acum."
+                text_upper = text.upper().replace("\n", " ").replace("  ", " ").strip()
                 for alias, standard in self.ALIAS_MAP.items():
                     if alias in text_upper:
                         # Reemplaza el alias por el estándar manteniendo mayúsculas/minúsculas originales si es posible, 
@@ -699,82 +843,177 @@ class ProjectionCalculator(FinancialCalculator):
 
         return "anual"  # fallback conservador
 
+    def _extraer_señales_periodo(self, texto: str) -> dict:
+        """
+        Extrae del texto las señales de periodo relevantes: mes, año, trimestre.
+        Ignora palabras no informativas como PERIODO, Ejercicio, Al, de, ($), etc.
+
+        Ejemplos:
+        "Febrero 2026 ($)"                   → { mes: "febrero", año: "2026", trimestre: None }
+        "PERIODO Febrero 2026"               → { mes: "febrero", año: "2026", trimestre: None }
+        "Al 28 de Febrero de 2026"           → { mes: "febrero", año: "2026", trimestre: None }
+        "Ejercicio 2025"                     → { mes: None,      año: "2025", trimestre: None }
+        "2025 ($)"                           → { mes: None,      año: "2025", trimestre: None }
+        "Q1 2026"                            → { mes: None,      año: "2026", trimestre: "q1" }
+        "Ene-Mar 2026 ($)"                   → { mes: None,      año: "2026", trimestre: "q1" }
+        "1er Trimestre 2026"                 → { mes: None,      año: "2026", trimestre: "q1" }
+        """
+        texto_lower = str(texto).lower().strip()
+
+        meses = {
+            "enero": "01", "febrero": "02", "marzo": "03",
+            "abril": "04", "mayo": "05", "junio": "06",
+            "julio": "07", "agosto": "08", "septiembre": "09",
+            "octubre": "10", "noviembre": "11", "diciembre": "12",
+            # Abreviaciones comunes en PDFs mexicanos
+            "ene": "01", "feb": "02", "mar": "03",
+            "abr": "04", "may": "05", "jun": "06",
+            "jul": "07", "ago": "08", "sep": "09",
+            "oct": "10", "nov": "11", "dic": "12",
+        }
+
+        trimestres = {
+            "q1": "q1", "q2": "q2", "q3": "q3", "q4": "q4",
+            "t1": "q1", "t2": "q2", "t3": "q3", "t4": "q4",
+            "1er trimestre": "q1", "2do trimestre": "q2",
+            "3er trimestre": "q3", "4to trimestre": "q4",
+            "primer trimestre": "q1", "segundo trimestre": "q2",
+            "tercer trimestre": "q3", "cuarto trimestre": "q4",
+            "ene-mar": "q1", "abr-jun": "q2",
+            "jul-sep": "q3", "oct-dic": "q4",
+            "enero-marzo": "q1", "abril-junio": "q2",
+            "julio-septiembre": "q3", "octubre-diciembre": "q4",
+        }
+
+        señales = { "mes": None, "año": None, "trimestre": None }
+
+        # ── Caso especial: formato bursátil mexicano "1T25", "2T24", etc. ─────
+        # Debe procesarse ANTES del regex de año y del loop de trimestres
+        # para evitar falsos positivos:
+        #   "1t25" contiene "t2" como substring → sin este fix detectaría Q2
+        #   "25" es año de 2 dígitos → el regex \b(20\d{2})\b no lo captura
+        # Regex: \b([1-4])[tT](\d{2})\b
+        #   [1-4]   → número de trimestre (1, 2, 3 o 4)
+        #   [tT]    → letra T mayúscula o minúscula
+        #   (\d{2}) → año de 2 dígitos (25, 24, 26...)
+        # Ejemplos: "1T25"→Q1/2025, "2T24"→Q2/2024, "3T26"→Q3/2026
+        # Verificado: no afecta ningún formato anterior (mensual, anual, Q1 2026, T1 2026)
+        match_bursatil = re.search(r'\b([1-4])[tT](\d{2})\b', texto_lower)
+        if match_bursatil:
+            señales["trimestre"] = f"q{match_bursatil.group(1)}"
+            señales["año"] = "20" + match_bursatil.group(2)
+            return señales  # retorno temprano — formato identificado sin ambigüedad
+        # ─────────────────────────────────────────────────────────────────────
+
+        # Extraer año — 4 dígitos entre 2000 y 2099
+        match_año = re.search(r'\b(20\d{2})\b', texto_lower)
+        if match_año:
+            señales["año"] = match_año.group(1)
+
+        # Extraer trimestre — antes que mes para evitar que "marzo" de "ene-mar" matchee como mes
+        for kw, valor in trimestres.items():
+            if kw in texto_lower:
+                señales["trimestre"] = valor
+                break
+
+        # Extraer mes — solo si no encontró trimestre
+        if not señales["trimestre"]:
+            for nombre in meses:
+                if nombre in texto_lower:
+                    señales["mes"] = nombre
+                    break
+
+        return señales
+
+    def _señales_coinciden(self, señales_base: dict, señales_header: dict) -> bool:
+        """
+        Verifica si las señales del periodo_base del usuario coinciden
+        con las señales extraídas del header del PDF.
+        Solo compara lo que es relevante para el tipo de periodo.
+
+        Reglas:
+        - El año siempre debe coincidir si ambos lo tienen
+        - Periodo mensual  → el mes debe coincidir
+        - Periodo trimestral → el trimestre debe coincidir
+        - Periodo anual    → solo el año importa
+        """
+        # Si alguno no tiene señales útiles — no coincide
+        if not any(señales_header.values()):
+            return False
+
+        # El año debe coincidir si ambos lo tienen
+        if señales_base["año"] and señales_header["año"]:
+            if señales_base["año"] != señales_header["año"]:
+                return False
+
+        # Periodo mensual — el mes debe coincidir
+        if señales_base["mes"]:
+            return señales_base["mes"] == señales_header["mes"]
+
+        # Periodo trimestral — el trimestre debe coincidir
+        if señales_base["trimestre"]:
+            return señales_base["trimestre"] == señales_header["trimestre"]
+
+        # Periodo anual — solo el año importa
+        if señales_base["año"]:
+            return señales_header["año"] == señales_base["año"]
+
+        return False
+
     def _detectar_columna_periodo(self, tablas_ocr, periodo_base):
         """
-        Detecta la columna correcta del periodo base en cascada.
-        Funciona con cualquier formato de estado de resultados.
+        Detecta la columna correcta del periodo base comparando señales extraídas.
+
+        Estrategia principal: extrae mes/año/trimestre del periodo_base del usuario
+        y busca en los headers del PDF la celda cuyas señales coincidan.
+        Ignora palabras no informativas como PERIODO, Ejercicio, ($), Al, de, etc.
+
+        Funciona con cualquier combinación de:
+        - Periodicidad mensual:    "Febrero 2026" vs "PERIODO Febrero 2026 ($)"
+        - Periodicidad trimestral: "Q1 2026"      vs "Ene-Mar 2026 ($)"
+        - Periodicidad anual:      "Ejercicio 2025" vs "2025 ($)"
+
+        Fallback (Estrategia 4): si ningún header coincide, toma la última
+        columna numérica — el periodo más reciente va a la derecha (NIF B-3 párr. 16).
         """
         if not periodo_base:
             return None
 
-        texto_limpio = str(periodo_base).lower().strip()
+        # Extraer las señales del periodo que el usuario seleccionó
+        señales_base = self._extraer_señales_periodo(periodo_base)
 
-        meses = ["enero","febrero","marzo","abril","mayo","junio",
-                 "julio","agosto","septiembre","octubre","noviembre","diciembre"]
-
-        mes_base = next((m for m in meses if m in texto_limpio), None)
-        año_base = next((w for w in texto_limpio.split() if w.isdigit() and len(w)==4), None)
-
-        # ESTRATEGIA 1: Buscar el nombre del mes en headers
-        # Funciona con: "ENERO", "FEBRERO", etc.
-        if mes_base:
-            for table in tablas_ocr:
-                rows = {}
-                for cell in table:
-                    rows.setdefault(int(cell.get("row",0)), []).append(cell)
-                for r_idx in sorted(rows.keys())[:5]:
-                    for cell in rows[r_idx]:
-                        if mes_base in str(cell.get("text","")).lower():
-                            return int(cell.get("col", 0))
-
-        # ESTRATEGIA 2: Buscar el año en headers
-        # Funciona con: "2025", "2024" (formato comparativo Contpaq/COI)
-        if año_base:
-            for table in tablas_ocr:
-                rows = {}
-                for cell in table:
-                    rows.setdefault(int(cell.get("row",0)), []).append(cell)
-                for r_idx in sorted(rows.keys())[:5]:
-                    for cell in rows[r_idx]:
-                        cell_text = str(cell.get("text","")).strip()
-                        if cell_text == año_base:
-                            return int(cell.get("col", 0))
-
-        # ESTRATEGIA 3: Buscar "PERIODO" o variantes en headers
-        # Funciona con: formato Contalink (PERIODO / ACUMULADO)
+        # ESTRATEGIAS 1-3 unificadas:
+        # Recorrer los primeros 5 headers de cada tabla y comparar señales
         for table in tablas_ocr:
             rows = {}
             for cell in table:
-                rows.setdefault(int(cell.get("row",0)), []).append(cell)
+                rows.setdefault(int(cell.get("row", 0)), []).append(cell)
             for r_idx in sorted(rows.keys())[:5]:
                 for cell in rows[r_idx]:
-                    cell_text = str(cell.get("text","")).lower()
-                    if any(x in cell_text for x in ["periodo", "period", "corriente", "actual"]):
+                    señales_header = self._extraer_señales_periodo(
+                        cell.get("text", "")
+                    )
+                    if self._señales_coinciden(señales_base, señales_header):
                         return int(cell.get("col", 0))
 
-        # ESTRATEGIA 4: Columna numérica más reciente de datos
-        # Funciona con: PDFs sin headers claros (SAT, genéricos)
-        # Para PDFs comparativos (2 periodos), toma la ÚLTIMA columna numérica
-        # porque en formato mexicano el periodo más reciente va a la derecha.
-        # NIF B-3 párrafo 16: "se presentará información comparativa del
-        # periodo anterior" — el periodo actual siempre es el más a la derecha.
+        # ESTRATEGIA 4: Fallback — columna numérica más reciente
+        # Para PDFs sin headers claros o con formato no estándar.
+        # NIF B-3 párrafo 16: el periodo actual siempre va a la derecha
+        # en presentaciones comparativas.
         for table in tablas_ocr:
             rows = {}
             for cell in table:
-                rows.setdefault(int(cell.get("row",0)), []).append(cell)
+                rows.setdefault(int(cell.get("row", 0)), []).append(cell)
             for r_idx in sorted(rows.keys()):
-                row_cells = sorted(rows[r_idx], key=lambda x: int(x.get("col",0)))
+                row_cells = sorted(rows[r_idx], key=lambda x: int(x.get("col", 0)))
                 cols_numericas = []
                 for cell in row_cells:
-                    val = self._clean_number(str(cell.get("text","")))
+                    val = self._clean_number(str(cell.get("text", "")))
                     if val is not None and abs(val) > 100:
-                        cols_numericas.append(int(cell.get("col",0)))
+                        cols_numericas.append(int(cell.get("col", 0)))
                 if len(cols_numericas) >= 2:
-                    # Tomar la ÚLTIMA columna numérica — periodo más reciente
-                    # según convención NIF B-3 de presentación comparativa
                     return cols_numericas[-1]
                 elif len(cols_numericas) == 1:
-                    # Solo hay una columna numérica — tomar esa directamente
                     return cols_numericas[0]
 
         return None
@@ -792,7 +1031,17 @@ class ProjectionCalculator(FinancialCalculator):
         inflacion_esperada: float = 0.0,
         periodo_base: str = None
     ) -> Dict[str, Any]:
-        
+        # ── LOG TEMPORAL: ver estructura OCR raw ──────────────────────────────
+        # Eliminar después de diagnosticar el PDF de GCMK
+        import json
+        tablas_debug = ocr_data.get("tables_data", [])
+        print(f"  [OCR DEBUG] Tablas encontradas: {len(tablas_debug)}")
+        for t_idx, table in enumerate(tablas_debug):
+            print(f"  [OCR DEBUG] Tabla {t_idx+1}: {len(table)} celdas")
+            for cell in table[:20]:  # primeras 20 celdas
+                print(f"    row={cell.get('row')} col={cell.get('col')} text='{cell.get('text','')}'")
+        # ─────────────────────────────────────────────────────────────────────
+
         self._preprocess_ocr_data(ocr_data)
         tablas_ocr = ocr_data.get("tables_data", []) or []
 
@@ -822,9 +1071,14 @@ class ProjectionCalculator(FinancialCalculator):
         }
 
         # 1. Identificar Ventas Base (Bypass forzado a la columna mensual/anual)
-        ventas_base = self._get_exact_first(ocr_data, "ing por servicios", target_col_index=target_col_index) 
+        # Secuencia de búsqueda por keywords directos — de más específico a más general
+        ventas_base = self._get_exact_first(ocr_data, "ventas netas", target_col_index=target_col_index)
+        if ventas_base is None:
+            ventas_base = self._get_exact_first(ocr_data, "ing por servicios", target_col_index=target_col_index)
         if ventas_base is None:
             ventas_base = self._get_exact_first(ocr_data, "ingresos por servicios", target_col_index=target_col_index)
+        if ventas_base is None:
+            ventas_base = self._get_exact_first(ocr_data, "ingresos totales", target_col_index=target_col_index)
         if ventas_base is None:
             ventas_base = self._get_exact_first(ocr_data, "ingresos", target_col_index=target_col_index)
             
@@ -1238,6 +1492,25 @@ class ProjectionCalculator(FinancialCalculator):
         
         self._preprocess_ocr_data(ocr_data)
         tablas_ocr = ocr_data.get("tables_data", []) or []
+
+        # ── LOG TEMPORAL: diagnóstico cuentas NIIF 16 y capital minoritario ───
+        # Eliminar después de diagnosticar Bimbo
+        # Primero identificar las filas de interés
+        filas_interes = set()
+        palabras_buscar = ["derecho", "arrendamiento", "minoritario", "planta", "capital contable"]
+        for t_idx, table in enumerate(tablas_ocr):
+            for cell in table:
+                texto = str(cell.get("text", "")).lower()
+                if any(p in texto for p in palabras_buscar):
+                    filas_interes.add((t_idx, int(cell.get("row", 0))))
+
+        # Luego mostrar TODAS las celdas de esas filas
+        for t_idx, table in enumerate(tablas_ocr):
+            for cell in table:
+                if (t_idx, int(cell.get("row", 0))) in filas_interes:
+                    print(f"  [BG DEBUG] row={cell.get('row')} col={cell.get('col')} text='{cell.get('text','')}'")
+        # ─────────────────────────────────────────────────────────────────────
+
         filas_tabla = []
 
         # DETECCIÓN DE COLUMNA — usa el detector en cascada del ER
@@ -1254,6 +1527,50 @@ class ProjectionCalculator(FinancialCalculator):
             return "-"
 
         target_col_index = self._detectar_columna_periodo(tablas_ocr, periodo_base)
+
+        # ── Detectar columna dual para BG de doble bloque horizontal ──────────
+        # NIF B-6 permite dos formatos de presentación:
+        #
+        # Formato reporte (vertical) — una sola columna de cuentas:
+        #   col 0=Concepto  col 1=2025  col 2=2024
+        #   → target_col_index_pasivo = None (flujo normal sin cambios)
+        #
+        # Formato cuenta (horizontal) — Activo y Pasivo lado a lado:
+        #   col 0=ACTIVO  col 1=2025  col 2=2024  col 3=PASIVO  col 4=2025  col 5=2024
+        #   → Hay DOS columnas con el mismo periodo
+        #   → target_col_index        = cols_coincidentes[0]   (bloque izquierdo — Activo)
+        #   → target_col_index_pasivo = cols_coincidentes[-1]  (bloque derecho — Pasivo+Capital)
+        #
+        # Se usa [0] y [-1] (primero y último) para cubrir también el caso de
+        # formato cuenta con 3 periodos comparativos (NIF B-3 párr. 16):
+        #   col 0=ACTIVO  col 1=2025  col 2=2024  col 3=2023  col 4=PASIVO  col 5=2025 ...
+        #   → cols_coincidentes para 2025 = [col 1, col 5] → [0]=col 1, [-1]=col 5 ✅
+
+        target_col_index_pasivo = None
+        señales_base = self._extraer_señales_periodo(periodo_base or "")
+        cols_coincidentes = []
+
+        for table in tablas_ocr:
+            rows = {}
+            for cell in table:
+                rows.setdefault(int(cell.get("row", 0)), []).append(cell)
+            for r_idx in sorted(rows.keys())[:5]:
+                row_cells = sorted(rows[r_idx], key=lambda c: int(c.get("col", 0)))
+                cols_coincidentes = [
+                    int(c.get("col", 0))
+                    for c in row_cells
+                    if self._señales_coinciden(
+                        señales_base,
+                        self._extraer_señales_periodo(str(c.get("text", "")))
+                    )
+                ]
+                # Dos o más columnas con el mismo periodo = formato cuenta (doble bloque)
+                if len(cols_coincidentes) >= 2:
+                    target_col_index = cols_coincidentes[0]    # Activo — bloque izquierdo
+                    target_col_index_pasivo = cols_coincidentes[-1]  # Pasivo+Capital — bloque derecho
+                    break
+            if target_col_index_pasivo:
+                break
         
         # ── Rescate semántico por sección NIF ─────────────────────────────────────
         SECTION_CONCEPT_MAP_BG = {
@@ -1281,8 +1598,9 @@ class ProjectionCalculator(FinancialCalculator):
         es_anual = periodicidad == "anual"
         
         target_relative_index = 0
+        target_relative_index_pasivo = 0
 
-        # Calcular target_relative_index para compatibilidad con _get_all_matches_sum
+        # Calcular target_relative_index para el bloque Activo (izquierda)
         if target_col_index is not None:
             for table in tablas_ocr:
                 rows = {}
@@ -1290,7 +1608,7 @@ class ProjectionCalculator(FinancialCalculator):
                     rows.setdefault(int(cell.get("row", 0)), []).append(cell)
                 for r_idx in sorted(rows.keys())[:5]:
                     row_cells = sorted(rows[r_idx], key=lambda c: int(c.get("col", 0)))
-                    cols_numericas = [c for c in row_cells if int(c.get("col", 0)) > 0 
+                    cols_numericas = [c for c in row_cells if int(c.get("col", 0)) > 0
                                     and str(c.get("text", "")).strip()]
                     for p_idx, p_cell in enumerate(cols_numericas):
                         if int(p_cell.get("col", 0)) == target_col_index:
@@ -1299,6 +1617,26 @@ class ProjectionCalculator(FinancialCalculator):
                     if target_relative_index > 0:
                         break
                 if target_relative_index > 0:
+                    break
+
+        # Calcular target_relative_index para el bloque Pasivo+Capital (derecha)
+        # Solo aplica cuando se detectó formato cuenta (doble bloque horizontal)
+        if target_col_index_pasivo is not None:
+            for table in tablas_ocr:
+                rows = {}
+                for cell in table:
+                    rows.setdefault(int(cell.get("row", 0)), []).append(cell)
+                for r_idx in sorted(rows.keys())[:5]:
+                    row_cells = sorted(rows[r_idx], key=lambda c: int(c.get("col", 0)))
+                    cols_numericas = [c for c in row_cells if int(c.get("col", 0)) > 0
+                                    and str(c.get("text", "")).strip()]
+                    for p_idx, p_cell in enumerate(cols_numericas):
+                        if int(p_cell.get("col", 0)) == target_col_index_pasivo:
+                            target_relative_index_pasivo = p_idx
+                            break
+                    if target_relative_index_pasivo > 0:
+                        break
+                if target_relative_index_pasivo > 0:
                     break
         
 
@@ -1322,7 +1660,14 @@ class ProjectionCalculator(FinancialCalculator):
             if "depreciación" in concepto_nombre.lower() or "depreciacion" in concepto_nombre.lower() or "dep." in concepto_nombre.lower():
                 return -abs(valor)
             # ACTIVOS FIJOS: Siempre positivos
-            if any(x in concepto_nombre.lower() for x in ["mobiliario", "equipo", "maquinaria", "transporte", "edificio"]):
+            if any(x in concepto_nombre.lower() for x in [
+                "mobiliario", "equipo", "maquinaria", "transporte", "edificio",
+                "licencias", "patentes", "marcas", "franquicias",
+                "crédito mercantil", "credito mercantil",
+                "depósitos", "depositos", "terrenos",
+                "gastos de instalación", "gastos de instalacion",
+                "gastos preoperativos", "cargos diferidos",
+            ]):
                 return abs(valor)
                 
             return final_valor
@@ -1596,7 +1941,15 @@ class ProjectionCalculator(FinancialCalculator):
                     
                     # Flags contextuales dinámicos
                     _is_pasivo = "pasivo" in key_total.lower()
-                    _ACTIVOS_FIJOS = ["edificio", "maquinaria", "transporte", "mobiliario", "cómputo", "computo", "herramienta"]
+                    _ACTIVOS_FIJOS = [
+                        "edificio", "maquinaria", "transporte", "mobiliario",
+                        "cómputo", "computo", "herramienta",
+                        "licencias", "patentes", "marcas", "franquicias",
+                        "crédito mercantil", "credito mercantil",
+                        "depósitos", "depositos", "terrenos",
+                        "gastos de instalación", "gastos de instalacion",
+                        "gastos preoperativos", "cargos diferidos",
+                    ]
                     _is_fixed_asset = any(x in sup.concepto.lower() for x in _ACTIVOS_FIJOS)
                     
                     v_base_ocr, row_text_lower = self._get_all_matches_sum_with_text(
@@ -1669,6 +2022,87 @@ class ProjectionCalculator(FinancialCalculator):
 
         # Procesar cada sección siguiendo el orden del balance
         procesar_seccion(activo_circulante, "total_activo_circulante")
+
+        # ── RESCATE: Activo Circulante Consolidado ────────────────────────────
+        # Algunos PDFs presentan el activo circulante como un total único
+        # sin subcuentas desglosadas (ej. "Circulante 800,000").
+        # En ese caso todas las subcuentas retornan $0 y el total queda en $0.
+        #
+        # Flujo del rescate:
+        # 1. Detecta que total_activo_circulante == $0
+        # 2. Busca "circulante" o variantes en el OCR
+        # 3. Si encuentra un total → crea una fila consolidada
+        # 4. Si el usuario ingresó un monto en modo $ en alguna subcuenta
+        #    → usa ese monto como proyección
+        # 5. Si no hay monto del usuario → congela el histórico
+        #
+        # No requiere cambios en el formulario porque el OCR corre
+        # después de que el usuario llena los supuestos.
+
+        if totales["total_activo_circulante"] == Decimal("0.00"):
+            # Paso 1: Buscar el total de circulante en el OCR
+            kw_circulante = [
+                "circulante",
+                "activo circulante",
+                "total circulante",
+                "activo corriente",
+                "total activo circulante",
+                "total activo corriente",
+            ]
+            v_circ_ocr = None
+            for kw in kw_circulante:
+                v_circ_ocr = self._get_exact_first(
+                    ocr_data, kw,
+                    target_col_index=target_col_index,
+                    consumed_set=None
+                )
+                if v_circ_ocr is not None:
+                    break
+
+            if v_circ_ocr is not None and abs(v_circ_ocr) > Decimal("0"):
+                v_base_circ = abs(Decimal(str(v_circ_ocr)))
+
+                # Paso 2: Verificar si el usuario ingresó un monto explícito
+                # en modo $ en alguna subcuenta del activo circulante
+                monto_usuario = next(
+                    (
+                        Decimal(str(s.monto))
+                        for s in activo_circulante
+                        if getattr(s, "monto", None) is not None
+                        and Decimal(str(s.monto)) > Decimal("0")
+                    ),
+                    None
+                )
+
+                if monto_usuario:
+                    # Usuario indicó monto explícito → usarlo como proyección
+                    v_proy_circ = self._redondear(monto_usuario)
+                else:
+                    # Sin indicación del usuario → congelar el histórico
+                    v_proy_circ = self._redondear(v_base_circ)
+
+                # Paso 3: Calcular variación aplicada para la fila
+                variacion_aplicada = float(
+                    ((v_proy_circ / v_base_circ) - Decimal("1")) * Decimal("100")
+                ) if v_base_circ > Decimal("0") else 0.0
+
+                # Paso 4: Registrar la fila consolidada y actualizar el total de sección
+                filas_tabla.append({
+                    "concepto": "Activo circulante (consolidado)",
+                    "valor_base": float(v_base_circ),
+                    "variacion_aplicada": variacion_aplicada,
+                    "valor_proyectado": float(v_proy_circ),
+                    "supuesto_texto": f"${float(monto_usuario):,.2f}" if monto_usuario else "Consolidado — mantener igual"
+                })
+                totales["total_activo_circulante"] = v_proy_circ
+
+                print(
+                    f"  [RESCATE BG] Activo circulante consolidado: "
+                    f"base={float(v_base_circ):,.2f} → "
+                    f"proyectado={float(v_proy_circ):,.2f}"
+                    + (" (monto usuario)" if monto_usuario else " (congelado)")
+                )
+
         procesar_seccion(activo_no_circulante, "total_activo_no_circulante")
 
         # --- AJUSTE DE DEPRECIACIÓN ---
@@ -1721,7 +2155,117 @@ class ProjectionCalculator(FinancialCalculator):
                     "valor_proyectado": float(v_dep_proy)
                 , "supuesto_texto": "-"
                 })
+        # Si se detectó formato cuenta (doble bloque horizontal), cambiar al índice
+        # del bloque derecho para que Pasivo y Capital lean de la columna correcta.
+        # Para formato reporte (vertical), target_col_index_pasivo es None
+        # y este bloque no se ejecuta — flujo normal sin cambios.
+        if target_col_index_pasivo is not None:
+            target_col_index = target_col_index_pasivo
+            target_relative_index = target_relative_index_pasivo
+
         procesar_seccion(pasivo_corto_plazo, "total_pasivo_corto")
+
+        # ── RESCATE: Pasivo Corto Plazo Consolidado ───────────────────────────
+        # Algunos PDFs presentan el pasivo circulante como un total único
+        # sin subcuentas desglosadas (ej. "Pasivo C.P. 900,000").
+        # En ese caso todas las subcuentas retornan $0 y el total queda en $0.
+        #
+        # Es el mismo patrón que el Activo Circulante Consolidado (Fix 6).
+        # El rescate corre automáticamente sin cambios en el formulario.
+        #
+        # Nota: Solo activa el rescate si el total del pasivo CP es $0
+        # Y se encontró un total de sección en el OCR.
+        # El bloque de Impuestos a la utilidad por pagar se suma por separado
+        # después del rescate para no interferir con la lógica automática.
+
+        # El total puede ser > 0 si "Impuestos a la utilidad por pagar" se inyectó
+        # automáticamente del ER proforma — pero eso no significa que haya subcuentas
+        # reales extraídas del OCR. El rescate debe activarse cuando ninguna subcuenta
+        # real (Proveedores, Préstamos, Acreedores) fue extraída del PDF.
+        # Verificamos si hay alguna fila de pasivo CP con valor_base > 0 en filas_tabla
+        # excluyendo "Impuestos a la utilidad por pagar" que es automático.
+        subcuentas_pasivo_cp_reales = [
+            f for f in filas_tabla
+            if f.get("concepto") in [
+                "Cuentas por pagar a proveedores",
+                "Préstamo bancario / Deuda a corto plazo",
+                "Acreedores diversos",
+                "IVA por causar o trasladar",
+                "IVA causado o trasladado",
+                "Anticipo de clientes",
+                "Rentas cobradas por anticipado",
+                "Intereses cobrados por anticipado",
+            ]
+            and f.get("valor_base", 0) > 0
+        ]
+
+        if not subcuentas_pasivo_cp_reales:
+            # Paso 1: Buscar el total de pasivo circulante en el OCR
+            kw_pasivo_cp = [
+                "pasivo c.p.",
+                "pasivo circulante",
+                "pasivo a corto plazo",
+                "pasivo corriente",
+                "total pasivo circulante",
+                "total pasivo corto plazo",
+                "total pasivo c.p.",
+            ]
+            v_pasivo_cp_ocr = None
+            for kw in kw_pasivo_cp:
+                v_pasivo_cp_ocr = self._get_exact_first(
+                    ocr_data, kw,
+                    target_col_index=target_col_index,
+                    consumed_set=None
+                )
+                if v_pasivo_cp_ocr is not None:
+                    break
+
+            if v_pasivo_cp_ocr is not None and abs(v_pasivo_cp_ocr) > Decimal("0"):
+                v_base_pasivo_cp = abs(Decimal(str(v_pasivo_cp_ocr)))
+
+                # Paso 2: Verificar si el usuario ingresó un monto explícito
+                # en modo $ en alguna subcuenta del pasivo corto plazo
+                monto_usuario_pasivo = next(
+                    (
+                        Decimal(str(s.monto))
+                        for s in pasivo_corto_plazo
+                        if getattr(s, "monto", None) is not None
+                        and Decimal(str(s.monto)) > Decimal("0")
+                    ),
+                    None
+                )
+
+                if monto_usuario_pasivo:
+                    # Usuario indicó monto explícito → usarlo como proyección
+                    v_proy_pasivo_cp = self._redondear(monto_usuario_pasivo)
+                else:
+                    # Sin indicación del usuario → congelar el histórico
+                    v_proy_pasivo_cp = self._redondear(v_base_pasivo_cp)
+
+                # Paso 3: Calcular variación aplicada para la fila
+                variacion_aplicada_pasivo = float(
+                    ((v_proy_pasivo_cp / v_base_pasivo_cp) - Decimal("1")) * Decimal("100")
+                ) if v_base_pasivo_cp > Decimal("0") else 0.0
+
+                # Paso 4: Registrar la fila consolidada y actualizar el total de sección
+                filas_tabla.append({
+                    "concepto": "Pasivo circulante (consolidado)",
+                    "valor_base": float(v_base_pasivo_cp),
+                    "variacion_aplicada": variacion_aplicada_pasivo,
+                    "valor_proyectado": float(v_proy_pasivo_cp),
+                    "supuesto_texto": f"${float(monto_usuario_pasivo):,.2f}" if monto_usuario_pasivo else "Consolidado — mantener igual"
+                })
+                # Sumar al total existente — no sobreescribir.
+                # "Impuestos a la utilidad por pagar" ya fue sumado por procesar_seccion
+                # antes del rescate — este consolidado se agrega encima.
+                totales["total_pasivo_corto"] += v_proy_pasivo_cp
+
+                print(
+                    f"  [RESCATE BG] Pasivo circulante consolidado: "
+                    f"base={float(v_base_pasivo_cp):,.2f} → "
+                    f"proyectado={float(v_proy_pasivo_cp):,.2f}"
+                    + (" (monto usuario)" if monto_usuario_pasivo else " (congelado)")
+                )
 
         # --- AJUSTE AUTOMÁTICO: IMPUESTOS RETENIDOS ---
         # Captura retenciones fiscales usando _get_exact_first para tomar
@@ -1752,6 +2296,13 @@ class ProjectionCalculator(FinancialCalculator):
         procesar_seccion(pasivo_largo_plazo, "total_pasivo_largo")
         procesar_seccion(capital_contribuido, "total_capital_contribuido")
         procesar_seccion(capital_ganado, "total_capital_ganado")
+
+        # Restaurar el índice del Activo para los cálculos finales de totales y FER.
+        # FER = Total Activo - (Total Pasivo + Total Capital)
+        # El Total Activo viene de la columna izquierda — necesita el índice original.
+        if target_col_index_pasivo is not None:
+            target_col_index = cols_coincidentes[0]
+            target_relative_index = 0
 
         # Cálculos finales
         total_activo = self._redondear(totales["total_activo_circulante"] + totales["total_activo_no_circulante"])

@@ -232,16 +232,31 @@ onMounted(async () => {
   const groupCC = categorize(catCapitalContribuido);
   const groupCG = categorize(catCapitalGanado);
 
+  // Totales de sección calculados desde tablas_proyectadas incluyendo
+  // filas consolidadas (Fix 6 y Fix 8) que el backend inyecta
+  // para PDFs sin desglose de subcuentas.
+  const sumarSeccion = (cats, extras = []) =>
+    res.tablas_proyectadas
+      .filter(f => [...cats, ...extras].includes(f.concepto))
+      .reduce((s, f) => s + (f.valor_proyectado || 0), 0);
+
+  const totalAC  = sumarSeccion(catActivoCirculante,  ["Activo circulante (consolidado)"]);
+  const totalANC = sumarSeccion(catActivoNoCirculante);
+  const totalPC  = sumarSeccion(catPasivoCorto,        ["Pasivo circulante (consolidado)"]);
+  const totalPL  = sumarSeccion(catPasivoLargo);
+  const totalCC  = sumarSeccion(catCapitalContribuido);
+  const totalCG  = sumarSeccion(catCapitalGanado);
+
   assetsGroups.value = [
-    { title: "Activo Circulante", tone: "primary", items: groupAC, totalLabel: "Total Activo Circulante", totalValue: fmt(groupAC.reduce((s, i) => s + (res.tablas_proyectadas.find(f => f.concepto === i.label)?.valor_proyectado || 0), 0)) },
-    { title: "Activo No Circulante", tone: "primary", items: groupANC, totalLabel: "Total Activo No Circulante", totalValue: fmt(groupANC.reduce((s, i) => s + (res.tablas_proyectadas.find(f => f.concepto === i.label)?.valor_proyectado || 0), 0)) }
+    { title: "Activo Circulante", tone: "primary", items: groupAC, totalLabel: "Total Activo Circulante", totalValue: fmt(totalAC) },
+    { title: "Activo No Circulante", tone: "primary", items: groupANC, totalLabel: "Total Activo No Circulante", totalValue: fmt(totalANC) }
   ];
 
   liabilityEquityGroups.value = [
-    { title: "Pasivo a Corto Plazo", tone: "orange", items: groupPC, totalLabel: "Total Pasivo a Corto Plazo", totalValue: fmt(groupPC.reduce((s, i) => s + (res.tablas_proyectadas.find(f => f.concepto === i.label)?.valor_proyectado || 0), 0)) },
-    { title: "Pasivo a Largo Plazo", tone: "orange", items: groupPL, totalLabel: "Total Pasivo a Largo Plazo", totalValue: fmt(groupPL.reduce((s, i) => s + (res.tablas_proyectadas.find(f => f.concepto === i.label)?.valor_proyectado || 0), 0)) },
-    { title: "Capital Contribuido", tone: "blue", items: groupCC, totalLabel: "Total Capital Contribuido", totalValue: fmt(groupCC.reduce((s, i) => s + (res.tablas_proyectadas.find(f => f.concepto === i.label)?.valor_proyectado || 0), 0)) },
-    { title: "Capital Ganado", tone: "blue", items: groupCG, totalLabel: "Total Capital Ganado", totalValue: fmt(groupCG.reduce((s, i) => s + (res.tablas_proyectadas.find(f => f.concepto === i.label)?.valor_proyectado || 0), 0)) }
+    { title: "Pasivo a Corto Plazo", tone: "orange", items: groupPC, totalLabel: "Total Pasivo a Corto Plazo", totalValue: fmt(totalPC) },
+    { title: "Pasivo a Largo Plazo", tone: "orange", items: groupPL, totalLabel: "Total Pasivo a Largo Plazo", totalValue: fmt(totalPL) },
+    { title: "Capital Contribuido", tone: "blue", items: groupCC, totalLabel: "Total Capital Contribuido", totalValue: fmt(totalCC) },
+    { title: "Capital Ganado", tone: "blue", items: groupCG, totalLabel: "Total Capital Ganado", totalValue: fmt(totalCG) }
   ];
 
   // Detalle comparativo

@@ -126,22 +126,35 @@ onMounted(async () => {
   const utilidadBrutaBase = ventasBase - costoBase;
 
   const gastosBase = rawRows
-      .filter(f => 
-          f.concepto.toLowerCase().includes('gastos') && 
-          !f.concepto.toLowerCase().includes('costo')
-      )
+      .filter(f => {
+        const c = f.concepto.toLowerCase();
+        return c.includes('gastos') && 
+               !c.includes('costo') &&
+               !c.includes('gastos financieros') &&
+               !c.includes('intereses');
+      })
       .reduce((sum, f) => sum + (f.valor_base || 0), 0);
 
   const utilidadOperativaBase = utilidadBrutaBase - gastosBase;
 
+  const rifBase = rawRows
+      .filter(f => {
+        const c = f.concepto.toLowerCase();
+        return c.includes('productos financieros') ||
+               c.includes('gastos financieros') ||
+               c.includes('intereses');
+      })
+      .reduce((sum, f) => {
+        const c = f.concepto.toLowerCase();
+        const isGastoFin = c.includes('gastos financieros') || c.includes('intereses');
+        return sum + (isGastoFin ? -(f.valor_base || 0) : (f.valor_base || 0));
+      }, 0);
+
   const otrosIngresosBase = rawRows
-      .filter(f => 
-          f.concepto.toLowerCase().includes('otros ingresos') || 
-          f.concepto.toLowerCase().includes('productos financieros')
-      )
+      .filter(f => f.concepto.toLowerCase().includes('otros ingresos'))
       .reduce((sum, f) => sum + (f.valor_base || 0), 0);
 
-  const utilidadAntesImpuestosBase = utilidadOperativaBase + otrosIngresosBase;
+  const utilidadAntesImpuestosBase = utilidadOperativaBase + rifBase + otrosIngresosBase;
 
   // Buscar si el PDF tiene ISR y PTU en el periodo base
   const ptuBase = rawRows
@@ -191,65 +204,89 @@ onMounted(async () => {
   // Actualizar string reactivo para el cuadro inferior
   utilidadNetaStr.value = fmt(results.utilidad_neta);
 
-  // 4. Mapear Filas
+  // 4. Mapear Filas — orden NIF B-3
   const rows = [];
 
-  // --- Sección Ingresos ---
-  rows.push({ type: "section", label: "Ingresos" });
-  rawRows.filter(f => 
-    f.concepto.toLowerCase().includes('ventas') || 
-    f.concepto.toLowerCase().includes('otros ingresos') ||
-    f.concepto.toLowerCase().includes('productos financieros')
-  ).forEach(f => {
-    rows.push({
-      type: "row",
-      concept: f.concepto,
-      base: fmt(f.valor_base),
-      assumption: f.supuesto_texto || pct(f.variacion_aplicada),
-      participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
-      proforma: fmt(f.valor_proyectado),
-      variation: pct(f.variacion_aplicada),
-      variationTone: f.variacion_aplicada >= 0 ? "up" : "down"
-    });
+  // Helper para construir una fila de cuenta estándar
+  const makeRow = (f, variationTone = "up") => ({
+    type: "row",
+    concept: f.concepto,
+    base: fmt(f.valor_base),
+    assumption: f.supuesto_texto || pct(f.variacion_aplicada),
+    participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
+    proforma: fmt(f.valor_proyectado),
+    variation: pct(f.variacion_aplicada),
+    variationTone
   });
 
-  // --- Sección Costos y Gastos ---
+  // Clasificadores por naturaleza NIF B-3
+  const esVentas = f => {
+    const c = f.concepto.toLowerCase();
+    return c.includes('ventas') && !c.includes('costo');
+  };
+  const esCosto = f => f.concepto.toLowerCase().includes('costo');
+  const esOtrosIngresos = f => f.concepto.toLowerCase().includes('otros ingresos');
+  const esGastosFinancieros = f => {
+    const c = f.concepto.toLowerCase();
+    return c.includes('gastos financieros') || c.includes('intereses');
+  };
+  const esProductosFinancieros = f => f.concepto.toLowerCase().includes('productos financieros');
+  const esGastoOperativo = f => {
+    const c = f.concepto.toLowerCase();
+    return c.includes('gastos') && !esCosto(f) && !esGastosFinancieros(f);
+  };
 
-  rows.push({ type: "subtotal", concept: "Utilidad bruta", base: fmt(utilidadBrutaBase), proforma: fmt(results.utilidad_bruta), variation: "—" });
-  rows.push({ type: "section", label: "Costos y gastos" });
-  
-  rawRows.filter(f => 
-    f.concepto.toLowerCase().includes('gastos') &&
-    !f.concepto.toLowerCase().includes('costo')
-  ).forEach(f => {
-    rows.push({
-      type: "row",
-      concept: f.concepto,
-      base: fmt(f.valor_base),
-      assumption: f.supuesto_texto || pct(f.variacion_aplicada),
-      participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
-      proforma: fmt(f.valor_proyectado),
-      variation: pct(f.variacion_aplicada),
-      variationTone: f.variacion_aplicada >= 0 ? "down" : "up" 
-    });
+  // ── BLOQUE 1: INGRESOS ORDINARIOS (NIF B-3 párr. 42) ─────────────────
+  rows.push({ type: "section", label: "Ingresos ordinarios" });
+  rawRows.filter(esVentas).forEach(f => rows.push(makeRow(f, "up")));
+  rawRows.filter(esOtrosIngresos).forEach(f => rows.push(makeRow(f, "up")));
+
+  // ── BLOQUE 2: COSTO DE VENTAS (NIF B-3 párr. 42) ─────────────────────
+  rows.push({ type: "section", label: "Costo de ventas" });
+  rawRows.filter(esCosto).forEach(f => rows.push(makeRow(f, "down")));
+
+  // ── SUBTOTAL: UTILIDAD BRUTA (NIF B-3 párr. 43) ──────────────────────
+  rows.push({
+    type: "subtotal",
+    concept: "Utilidad bruta",
+    base: fmt(utilidadBrutaBase),
+    proforma: fmt(results.utilidad_bruta),
+    variation: "—"
   });
 
-  rows.push({ 
-    type: "subtotal", 
-    concept: "Utilidad de operación", 
+  // ── BLOQUE 3: GASTOS DE OPERACIÓN (NIF B-3 párr. 44-54) ──────────────
+  rows.push({ type: "section", label: "Gastos de operación" });
+  rawRows.filter(esGastoOperativo).forEach(f => rows.push(makeRow(f, "down")));
+
+  // ── SUBTOTAL: UTILIDAD DE OPERACIÓN (NIF B-3 párr. 54) ───────────────
+  rows.push({
+    type: "subtotal",
+    concept: "Utilidad de operación",
     base: fmt(utilidadOperativaBase),
-    proforma: fmt(results.utilidad_operativa), 
+    proforma: fmt(results.utilidad_operativa),
     variation: "—",
-    highlightValue: true 
+    highlightValue: true
   });
-  
-  rows.push({ 
-    type: "subtotal", 
-    concept: "Utilidad antes de impuestos", 
+
+  // ── BLOQUE 4: RIF (NIF B-3 párr. 55-57) ──────────────────────────────
+  const rifRows = [
+    ...rawRows.filter(esGastosFinancieros),
+    ...rawRows.filter(esProductosFinancieros)
+  ];
+  if (rifRows.length > 0) {
+    rows.push({ type: "section", label: "Resultado integral de financiamiento (RIF)" });
+    rawRows.filter(esGastosFinancieros).forEach(f => rows.push(makeRow(f, "down")));
+    rawRows.filter(esProductosFinancieros).forEach(f => rows.push(makeRow(f, "up")));
+  }
+
+  // ── SUBTOTAL: UTILIDAD ANTES DE IMPUESTOS (NIF B-3 párr. 57) ─────────
+  rows.push({
+    type: "subtotal",
+    concept: "Utilidad antes de impuestos",
     base: fmt(utilidadAntesImpuestosBase),
-    proforma: fmt(results.utilidad_antes_impuestos), 
+    proforma: fmt(results.utilidad_antes_impuestos),
     variation: "—",
-    highlightValue: true 
+    highlightValue: true
   });
 
   // --- Sección Impuestos ---
