@@ -112,6 +112,68 @@ CONCEPTOS_CANONICOS: Dict[str, str] = {
         "Pasivo a largo plazo, pasivo no circulante o deuda a largo plazo. "
         "Incluye: préstamos bancarios LP, pasivo fijo, créditos a largo plazo."
     ),
+    # ══════════════════════════════════════════════════════════════════════════
+    # PROYECCIONES — Cuentas individuales del BG (NIF C-1, C-6, C-8)
+    # Los 17 conceptos anteriores son totales/subtotales para razones financieras.
+    # Estos conceptos nuevos son cuentas individuales que el motor de proyecciones
+    # busca por separado y que no estaban en el diccionario original.
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # NIF C-1 — Efectivo y equivalentes de efectivo
+    "caja_bancos": (
+        "Caja, caja y efectivo, efectivo en caja, caja chica, fondo fijo, "
+        "bancos, bancos nacionales, bancos moneda nacional, bancos moneda extranjera, "
+        "depósitos bancarios, cuentas de cheques, efectivo en bancos, "
+        "efectivo y equivalentes de efectivo, efectivo y equivalentes, "
+        "efectivo y valores de realización inmediata, "
+        "caja moneda nacional, caja moneda extranjera según NIF C-1. "
+        "NO incluye: inversiones temporales, cuentas por cobrar, inventarios."
+    ),
+
+    # NIF C-1 — Instrumentos financieros de negociación e inversiones temporales
+    "inversiones_temporales": (
+        "Inversiones temporales, inversiones a corto plazo, "
+        "instrumentos financieros de negociación, instrumentos de capital, "
+        "instrumentos de deuda, valores negociables, CETES, papel comercial, "
+        "fondos de inversión de deuda, valores gubernamentales según NIF C-1. "
+        "NO incluye: caja, bancos, cuentas por cobrar."
+    ),
+
+    # NIF C-6 y C-8 — Propiedades planta y equipo + Intangibles (cuentas individuales)
+    # El concepto "activo_fijo" original describe el TOTAL del activo no circulante.
+    # Este concepto nuevo describe las CUENTAS INDIVIDUALES que lo componen,
+    # para que el embedding pueda matchear "Equipos de computo", "Flotilla vehicular",
+    # "Muebles y enseres", etc. cuando el keyword falla.
+    "activo_fijo_detalle": (
+        "Terrenos, predios, lotes, bienes inmuebles sin construccion, "
+        "edificios, construcciones, inmuebles, instalaciones, casa oficina, "
+        "maquinaria y equipo, maquinaria industrial, equipo de produccion, "
+        "equipo de transporte, vehiculos, automoviles, camiones, autobuses, "
+        "flotilla vehicular, equipo automotriz, unidades de reparto, "
+        "mobiliario y equipo de oficina, muebles y enseres, equipo de oficina, "
+        "equipo de computo, equipos de computo, equipo de cómputo, "
+        "equipos de cómputo, hardware, equipo de sistemas, computadoras, servidores, "
+        "herramientas y otros equipos de operacion, herramienta pesada, "
+        "patentes, marcas, credito mercantil, franquicias, licencias de software, "
+        "activos intangibles, depositos en garantia "
+        "segun NIF C-6 Propiedades planta y equipo y NIF C-8 Intangibles. "
+        "NO incluye: activo circulante, inventarios, cuentas por cobrar, efectivo."
+    ),
+
+    # NIF B-6 — Pagos anticipados del activo circulante
+    # Cuentas individuales de pagos anticipados que no matchean con ningún
+    # concepto existente cuando el keyword falla.
+    "pagos_anticipados": (
+        "IVA acreditable, IVA a favor, IVA por acreditar, impuestos a favor, "
+        "ISR a favor, ISR anticipos, subsidio al empleo, "
+        "impuestos y derechos, impuestos acreditables, "
+        "seguros y fianzas, seguros pagados por anticipado, seguros anticipados, "
+        "rentas pagadas por anticipado, rentas anticipadas, arrendamientos anticipados, "
+        "intereses pagados por anticipado, anticipos a proveedores, "
+        "papeleria y articulos de escritorio, propaganda y publicidad "
+        "segun NIF B-6 Pagos anticipados. "
+        "NO incluye: cuentas por cobrar, inventarios, activo fijo."
+    ),
 }
 
 
@@ -129,6 +191,11 @@ ANTI_CONCEPTOS: Dict[str, List[str]] = {
     "pasivo_total":       ["activo_total", "capital_contable"],
     "capital_contable":   ["capital_social", "pasivo_total"],
     "capital_social":     ["capital_contable"],
+    # Nuevos pares para cuentas individuales de proyecciones
+    "caja_bancos":            ["inversiones_temporales", "cuentas_por_cobrar"],
+    "inversiones_temporales": ["caja_bancos", "activo_fijo"],
+    "activo_fijo_detalle":    ["activo_circulante", "inventario", "caja_bancos"],
+    "pagos_anticipados":      ["activo_fijo_detalle", "pasivo_circulante"],
 }
 
 

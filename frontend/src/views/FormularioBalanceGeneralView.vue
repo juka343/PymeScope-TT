@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 import { useRouter, useRoute } from "vue-router";
 import { db } from "@/firebase/config";
@@ -109,7 +109,7 @@ onMounted(async () => {
         const erPeriodoBase = proyData.periodo_base_id;
         const periodoBaseSeleccionado = projectConfig.value.periodoBaseId;
         if (erPeriodoBase && periodoBaseSeleccionado && erPeriodoBase !== periodoBaseSeleccionado) {
-          errorBanner.value = `⚠️ Advertencia: El Estado de Resultados Proforma disponible fue calculado sobre un periodo base diferente al seleccionado. Los valores de utilidad y ventas pueden no ser consistentes con este balance.`;
+          errorBanner.value = `⚠️ Advertencia: El Estado de Resultados Proforma disponible fue calculado sobre un periodo base diferente al seleccionado. Los valores de utilidad y ventas pueden no ser consistentes con el Estado de Situación Financiera.`;
         }
 
         projectConfig.value.periodoProyectado = proyData.periodo_proyectado;
@@ -133,7 +133,7 @@ onMounted(async () => {
         errorBanner.value = "Atención: No se encontró una proyección de Estado de Resultados previa para este proyecto.";
       }
     } catch (error) {
-      console.error("Error al cargar datos del balance:", error);
+      console.error("Error al cargar datos del Estado de Situación Financiera:", error);
       errorBanner.value = "Error al conectar con la base de datos de Firebase.";
     }
   }
@@ -168,7 +168,7 @@ onMounted(async () => {
           sup = proyDoc.data().supuestos;
         }
       } catch (err) {
-        console.error("Error al recuperar supuestos de Balance de Firestore:", err);
+        console.error("Error al recuperar supuestos del Estado de Situación Financiera de Firestore:", err);
       }
     }
 
@@ -182,7 +182,13 @@ onMounted(async () => {
             return {
               ...item,
               variacion: isMantener ? "" : match.variacion,
-              mantener_igual: isMantener
+              mantener_igual: isMantener,
+              modoInput: match.modoInput
+                ? match.modoInput
+                : (match.monto != null ? "monto" : "pct"),
+              montoInput: match.montoInput != null
+                ? match.montoInput
+                : (match.monto != null ? String(match.monto) : "")
             };
           }
           return item;
@@ -200,66 +206,66 @@ onMounted(async () => {
 });
 
 const activoCirculante = ref([
-  { concepto: "Caja", variacion: "", mantener_igual: false },
-  { concepto: "Bancos", variacion: "", mantener_igual: false },
-  { concepto: "Inversiones temporales", variacion: "", mantener_igual: false },
-  { concepto: "Cuentas por cobrar a clientes", variacion: "", mantener_igual: false },
-  { concepto: "Otras cuentas por cobrar (deudores diversos)", variacion: "", mantener_igual: false },
-  { concepto: "IVA por acreditar", variacion: "", mantener_igual: false },
-  { concepto: "IVA acreditable", variacion: "", mantener_igual: false },
-  { concepto: "Inventarios", variacion: "", mantener_igual: false },
-  { concepto: "Anticipo a proveedores", variacion: "", mantener_igual: false },
-  { concepto: "Papelería y artículos de escritorio", variacion: "", mantener_igual: false },
-  { concepto: "Propaganda y publicidad", variacion: "", mantener_igual: false },
-  { concepto: "Seguros y fianzas", variacion: "", mantener_igual: false },
-  { concepto: "Rentas pagadas por anticipado", variacion: "", mantener_igual: false },
-  { concepto: "Intereses pagados por anticipado", variacion: "", mantener_igual: false },
-  { concepto: "Impuestos y derechos", variacion: "", mantener_igual: false },
+  { concepto: "Caja", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Bancos", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Inversiones temporales", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Cuentas por cobrar a clientes", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Otras cuentas por cobrar (deudores diversos)", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "IVA por acreditar", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "IVA acreditable", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Inventarios", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Anticipo a proveedores", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Papelería y artículos de escritorio", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Propaganda y publicidad", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Seguros y fianzas", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Rentas pagadas por anticipado", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Intereses pagados por anticipado", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Impuestos y derechos", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
 ]);
 
 const activoNoCirculante = ref([
-  { concepto: "Terrenos", variacion: "", mantener_igual: false },
-  { concepto: "Edificios", variacion: "", mantener_igual: false },
-  { concepto: "Maquinaria y equipo", variacion: "", mantener_igual: false },
-  { concepto: "Equipo de transporte", variacion: "", mantener_igual: false },
-  { concepto: "Mobiliario y equipo de oficina", variacion: "", mantener_igual: false },
-  { concepto: "Equipo de cómputo", variacion: "", mantener_igual: false },
-  { concepto: "Patentes", variacion: "", mantener_igual: false },
-  { concepto: "Marcas", variacion: "", mantener_igual: false },
-  { concepto: "Crédito mercantil", variacion: "", mantener_igual: false },
-  { concepto: "Franquicias", variacion: "", mantener_igual: false },
-  { concepto: "Licencias de software", variacion: "", mantener_igual: false },
-  { concepto: "Depósitos en garantía", variacion: "", mantener_igual: false },
+  { concepto: "Terrenos", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Edificios", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Maquinaria y equipo", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Equipo de transporte", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Mobiliario y equipo de oficina", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Equipo de cómputo", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Patentes", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Marcas", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Crédito mercantil", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Franquicias", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Licencias de software", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Depósitos en garantía", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
 ]);
 
 const pasivoCorto = ref([
-  { concepto: "Cuentas por pagar a proveedores", variacion: "", mantener_igual: false },
-  { concepto: "Préstamo bancario / Deuda a corto plazo", variacion: "", mantener_igual: false },
-  { concepto: "Acreedores diversos", variacion: "", mantener_igual: false },
-  { concepto: "Impuestos a la utilidad por pagar", variacion: "", mantener_igual: false },
-  { concepto: "IVA por causar o trasladar", variacion: "", mantener_igual: false },
-  { concepto: "IVA causado o trasladado", variacion: "", mantener_igual: false },
-  { concepto: "Anticipo de clientes", variacion: "", mantener_igual: false },
-  { concepto: "Rentas cobradas por anticipado", variacion: "", mantener_igual: false },
-  { concepto: "Intereses cobrados por anticipado", variacion: "", mantener_igual: false },
+  { concepto: "Cuentas por pagar a proveedores", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Préstamo bancario / Deuda a corto plazo", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Acreedores diversos", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Impuestos a la utilidad por pagar", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "IVA por causar o trasladar", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "IVA causado o trasladado", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Anticipo de clientes", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Rentas cobradas por anticipado", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Intereses cobrados por anticipado", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
 ]);
 
 const pasivoLargo = ref([
-  { concepto: "Acreedores diversos a largo plazo", variacion: "", mantener_igual: false },
-  { concepto: "Cuentas por pagar a largo plazo", variacion: "", mantener_igual: false },
-  { concepto: "Cobros anticipados a largo plazo", variacion: "", mantener_igual: false },
+  { concepto: "Acreedores diversos a largo plazo", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Cuentas por pagar a largo plazo", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Cobros anticipados a largo plazo", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
 ]);
 
 const capitalContribuido = ref([
-  { concepto: "Capital social", variacion: "", mantener_igual: false },
-  { concepto: "Aportaciones para futuros aumentos de capital", variacion: "", mantener_igual: false },
-  { concepto: "Prima en venta de acciones", variacion: "", mantener_igual: false },
-  { concepto: "Donaciones", variacion: "", mantener_igual: false },
+  { concepto: "Capital social", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Aportaciones para futuros aumentos de capital", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Prima en venta de acciones", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Donaciones", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
 ]);
 
 const capitalGanadoEditable = ref([
-  { concepto: "Reserva legal", variacion: "", mantener_igual: false },
-  { concepto: "Otros resultados integrales", variacion: "", mantener_igual: false },
+  { concepto: "Reserva legal", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
+  { concepto: "Otros resultados integrales", variacion: "", mantener_igual: false, modoInput: "pct", montoInput: "" },
 ]);
 
 function cancelar() {
@@ -267,12 +273,108 @@ function cancelar() {
 }
 
 function isFilaVacia(item) {
-  return !item.mantener_igual && (item.variacion === "" || item.variacion === null || item.variacion === undefined);
+  // Cuentas congeladas nunca están vacías
+  if (item.mantener_igual) return false;
+
+  // Modo monto ($): vacío si no hay monto ingresado
+  if (item.modoInput === "monto") {
+    return item.montoInput === "" || item.montoInput === null || item.montoInput === undefined;
+  }
+
+  // Modo porcentaje (%) — comportamiento original
+  return item.variacion === "" || item.variacion === null || item.variacion === undefined;
 }
+
+function tieneValorIngresado(item) {
+  if (item.modoInput === "monto") {
+    return item.montoInput !== "" && item.montoInput !== null && item.montoInput !== undefined;
+  }
+  return item.variacion !== "" && item.variacion !== null && item.variacion !== undefined;
+}
+
+function toggleAllMantenerIgual(section, isChecked) {
+  let arraysToUpdate = [];
+  if (section === 'activos') {
+    arraysToUpdate = [activoCirculante.value, activoNoCirculante.value];
+  } else if (section === 'pasivos') {
+    arraysToUpdate = [pasivoCorto.value, pasivoLargo.value];
+  } else if (section === 'capital') {
+    arraysToUpdate = [capitalContribuido.value, capitalGanadoEditable.value];
+  }
+
+  arraysToUpdate.forEach(arr => {
+    arr.forEach(item => {
+      // Solo modificar el estado si la cuenta no tiene un valor ingresado explícitamente
+      if (!tieneValorIngresado(item)) {
+        item.mantener_igual = isChecked;
+      }
+    });
+  });
+}
+
+const checkAllActivos = computed({
+  get() {
+    const arrays = [activoCirculante.value, activoNoCirculante.value];
+    let allEmptyChecked = true;
+    let hasEmptyFields = false;
+    arrays.forEach(arr => {
+      arr.forEach(item => {
+        if (!tieneValorIngresado(item)) {
+          hasEmptyFields = true;
+          if (!item.mantener_igual) allEmptyChecked = false;
+        }
+      });
+    });
+    return hasEmptyFields && allEmptyChecked;
+  },
+  set(val) {
+    toggleAllMantenerIgual('activos', val);
+  }
+});
+
+const checkAllPasivos = computed({
+  get() {
+    const arrays = [pasivoCorto.value, pasivoLargo.value];
+    let allEmptyChecked = true;
+    let hasEmptyFields = false;
+    arrays.forEach(arr => {
+      arr.forEach(item => {
+        if (!tieneValorIngresado(item)) {
+          hasEmptyFields = true;
+          if (!item.mantener_igual) allEmptyChecked = false;
+        }
+      });
+    });
+    return hasEmptyFields && allEmptyChecked;
+  },
+  set(val) {
+    toggleAllMantenerIgual('pasivos', val);
+  }
+});
+
+const checkAllCapital = computed({
+  get() {
+    const arrays = [capitalContribuido.value, capitalGanadoEditable.value];
+    let allEmptyChecked = true;
+    let hasEmptyFields = false;
+    arrays.forEach(arr => {
+      arr.forEach(item => {
+        if (!tieneValorIngresado(item)) {
+          hasEmptyFields = true;
+          if (!item.mantener_igual) allEmptyChecked = false;
+        }
+      });
+    });
+    return hasEmptyFields && allEmptyChecked;
+  },
+  set(val) {
+    toggleAllMantenerIgual('capital', val);
+  }
+});
 
 async function generarProyeccion() {
   if (!projectConfig.value.resultsUrl) {
-    errorBanner.value = "No se encontró el PDF base del Balance General.";
+    errorBanner.value = "No se encontró el PDF base del Estado de Situación Financiera.";
     return;
   }
 
@@ -297,6 +399,26 @@ async function generarProyeccion() {
   isProcessing.value = true;
   errorBanner.value = "";
 
+  const formatRowBG = (s) => {
+    // Modo monto ($): enviar variacion=null y monto=valor ingresado
+    if (s.modoInput === "monto" && !s.mantener_igual) {
+      const montoVal = parseFloat(s.montoInput);
+      return {
+        concepto: s.concepto,
+        variacion: null,
+        mantener_igual: false,
+        monto: isNaN(montoVal) ? null : montoVal
+      };
+    }
+    // Modo porcentaje (%) — comportamiento original
+    return {
+      concepto: s.concepto,
+      variacion: parseFloat(s.variacion) || 0,
+      mantener_igual: s.mantener_igual,
+      monto: null
+    };
+  };
+
   const payload = {
     project_id: projectId,
     period_id: projectConfig.value.periodoBaseId,
@@ -308,39 +430,15 @@ async function generarProyeccion() {
     total_impuestos_proforma: parseFloat(projectConfig.value.totalImpuestosProforma) || 0,
     utilidad_neta_base: parseFloat(projectConfig.value.utilidadNetaBase) || 0,
     periodicidad: projectConfig.value.periodicidad,
-    activo_circulante: activoCirculante.value.map(s => ({
-      concepto: s.concepto,
-      variacion: parseFloat(s.variacion) || 0,
-      mantener_igual: s.mantener_igual
-    })),
-    activo_no_circulante: activoNoCirculante.value.map(s => ({
-      concepto: s.concepto,
-      variacion: parseFloat(s.variacion) || 0,
-      mantener_igual: s.mantener_igual
-    })),
-    pasivo_corto_plazo: pasivoCorto.value.map(s => ({
-      concepto: s.concepto,
-      variacion: parseFloat(s.variacion) || 0,
-      mantener_igual: s.mantener_igual
-    })),
-    pasivo_largo_plazo: pasivoLargo.value.map(s => ({
-      concepto: s.concepto,
-      variacion: parseFloat(s.variacion) || 0,
-      mantener_igual: s.mantener_igual
-    })),
-    capital_contribuido: capitalContribuido.value.map(s => ({
-      concepto: s.concepto,
-      variacion: parseFloat(s.variacion) || 0,
-      mantener_igual: s.mantener_igual
-    })),
+    activo_circulante: activoCirculante.value.map(formatRowBG),
+    activo_no_circulante: activoNoCirculante.value.map(formatRowBG),
+    pasivo_corto_plazo: pasivoCorto.value.map(formatRowBG),
+    pasivo_largo_plazo: pasivoLargo.value.map(formatRowBG),
+    capital_contribuido: capitalContribuido.value.map(formatRowBG),
     capital_ganado: [
-      ...capitalGanadoEditable.value.map(s => ({
-        concepto: s.concepto,
-        variacion: parseFloat(s.variacion) || 0,
-        mantener_igual: s.mantener_igual
-      })),
-      { concepto: "Utilidades o pérdidas de ejercicios anteriores", variacion: 0, mantener_igual: false },
-      { concepto: "Utilidad o pérdida del ejercicio", variacion: 0, mantener_igual: true }
+      ...capitalGanadoEditable.value.map(formatRowBG),
+      { concepto: "Utilidades o pérdidas de ejercicios anteriores", variacion: 0, mantener_igual: false, monto: null },
+      { concepto: "Utilidad o pérdida del ejercicio", variacion: 0, mantener_igual: true, monto: null }
     ]
   };
 
@@ -353,7 +451,7 @@ async function generarProyeccion() {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.detail || "Error en el servidor al calcular el balance");
+      throw new Error(errData.detail || "Error en el servidor al calcular el Estado de Situación Financiera");
     }
 
     const resultados = await response.json();
@@ -422,6 +520,15 @@ async function generarProyeccion() {
     // Al regenerar los datos, borramos el caché de la IA para forzar un nuevo análisis del FER
     localStorage.removeItem(`${prefix}_balance_ai`);
 
+    // Limpiar también el caché de IA en Firestore para que la vista proforma recalcule con los nuevos datos
+    try {
+      const { doc, setDoc } = await import("firebase/firestore");
+      const aiCacheRef = doc(db, "proyectos", projectId, "ai_analysis", "fer_proforma_latest");
+      await setDoc(aiCacheRef, { status: "invalidated" }, { merge: true });
+    } catch (e) {
+      console.warn("No se pudo limpiar caché IA de Firestore:", e);
+    }
+
     router.push({ 
       name: getRouteName("ProyeccionProformaBalanceGeneral"),
       params: { id_proyecto: projectId },
@@ -442,7 +549,7 @@ async function generarProyeccion() {
     <div v-if="isProcessing" class="loading-overlay">
       <div class="loading-content">
         <div class="spinner"></div>
-        <h3>Generando Balance General Proforma...</h3>
+        <h3>Generando Estado de Situación Financiera Proforma...</h3>
         <p>Procesando OCR del documento base y aplicando supuestos financieros.</p>
       </div>
     </div>
@@ -450,9 +557,9 @@ async function generarProyeccion() {
     <div class="page-head">
       <div class="page-head-top">
         <div>
-          <h1>Supuestos Proforma – Balance General</h1>
+          <h1>Supuestos Proforma – Estado de Situación Financiera</h1>
           <p class="page-description">
-            Define los supuestos para proyectar el balance general a partir del último periodo disponible.
+            Define los supuestos para proyectar el Estado de Situación Financiera a partir del último periodo disponible.
           </p>
         </div>
 
@@ -518,7 +625,13 @@ async function generarProyeccion() {
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
           <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
+          <div class="col-check right" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <label for="check-all-activos" style="cursor: pointer; font-size: 9px; font-weight: 800; color: #299de0; text-transform: uppercase; letter-spacing: 0.02em;">Mantener igual todo</label>
+              <input id="check-all-activos" type="checkbox" class="checkbox" style="width: 12px; height: 12px; border-radius: 3px;" v-model="checkAllActivos" />
+            </div>
+            <span>Mantener igual</span>
+          </div>
         </div>
 
         <div v-for="(item, idx) in activoCirculante" :key="`ac-${idx}`" class="assumptions-row">
@@ -526,14 +639,55 @@ async function generarProyeccion() {
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!item.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'pct' }]"
+                @click="item.modoInput = 'pct'; item.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'monto' }]"
+                @click="item.modoInput = 'monto'; item.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="item.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="item.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.1"
+                placeholder="0"
+                :disabled="item.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="item.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="item.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="item.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (
+              (item.modoInput === 'pct' && item.variacion !== null && item.variacion !== '') ||
+              (item.modoInput === 'monto' && item.montoInput !== null && item.montoInput !== '')
+            )" />
           </div>
         </div>
       </div>
@@ -545,14 +699,55 @@ async function generarProyeccion() {
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!item.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'pct' }]"
+                @click="item.modoInput = 'pct'; item.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'monto' }]"
+                @click="item.modoInput = 'monto'; item.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="item.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="item.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.1"
+                placeholder="0"
+                :disabled="item.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="item.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="item.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="item.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (
+              (item.modoInput === 'pct' && item.variacion !== null && item.variacion !== '') ||
+              (item.modoInput === 'monto' && item.montoInput !== null && item.montoInput !== '')
+            )" />
           </div>
         </div>
       </div>
@@ -569,7 +764,13 @@ async function generarProyeccion() {
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
           <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
+          <div class="col-check right" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <label for="check-all-pasivos" style="cursor: pointer; font-size: 9px; font-weight: 800; color: #299de0; text-transform: uppercase; letter-spacing: 0.02em;">Mantener igual todo</label>
+              <input id="check-all-pasivos" type="checkbox" class="checkbox" style="width: 12px; height: 12px; border-radius: 3px;" v-model="checkAllPasivos" />
+            </div>
+            <span>Mantener igual</span>
+          </div>
         </div>
 
         <div v-for="(item, idx) in pasivoCorto" :key="`pc-${idx}`" class="assumptions-row">
@@ -577,14 +778,55 @@ async function generarProyeccion() {
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!item.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'pct' }]"
+                @click="item.modoInput = 'pct'; item.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'monto' }]"
+                @click="item.modoInput = 'monto'; item.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="item.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="item.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.1"
+                placeholder="0"
+                :disabled="item.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="item.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="item.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="item.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (
+              (item.modoInput === 'pct' && item.variacion !== null && item.variacion !== '') ||
+              (item.modoInput === 'monto' && item.montoInput !== null && item.montoInput !== '')
+            )" />
           </div>
         </div>
       </div>
@@ -596,14 +838,55 @@ async function generarProyeccion() {
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!item.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'pct' }]"
+                @click="item.modoInput = 'pct'; item.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'monto' }]"
+                @click="item.modoInput = 'monto'; item.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="item.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="item.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.1"
+                placeholder="0"
+                :disabled="item.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="item.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="item.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="item.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (
+              (item.modoInput === 'pct' && item.variacion !== null && item.variacion !== '') ||
+              (item.modoInput === 'monto' && item.montoInput !== null && item.montoInput !== '')
+            )" />
           </div>
         </div>
       </div>
@@ -620,7 +903,13 @@ async function generarProyeccion() {
         <div class="assumptions-head">
           <div class="col-concepto">Concepto</div>
           <div class="col-variacion center">Variación (%)</div>
-          <div class="col-check right">Mantener igual</div>
+          <div class="col-check right" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <label for="check-all-capital" style="cursor: pointer; font-size: 9px; font-weight: 800; color: #299de0; text-transform: uppercase; letter-spacing: 0.02em;">Mantener igual todo</label>
+              <input id="check-all-capital" type="checkbox" class="checkbox" style="width: 12px; height: 12px; border-radius: 3px;" v-model="checkAllCapital" />
+            </div>
+            <span>Mantener igual</span>
+          </div>
         </div>
 
         <div v-for="(item, idx) in capitalContribuido" :key="`cc-${idx}`" class="assumptions-row">
@@ -628,14 +917,55 @@ async function generarProyeccion() {
             <div class="concept-text">{{ item.concepto }}</div>
           </div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!item.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'pct' }]"
+                @click="item.modoInput = 'pct'; item.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'monto' }]"
+                @click="item.modoInput = 'monto'; item.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="item.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="item.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.1"
+                placeholder="0"
+                :disabled="item.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="item.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="item.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="item.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
           <div class="col-check check-wrap">
-            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" />
+            <input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (
+              (item.modoInput === 'pct' && item.variacion !== null && item.variacion !== '') ||
+              (item.modoInput === 'monto' && item.montoInput !== null && item.montoInput !== '')
+            )" />
           </div>
         </div>
       </div>
@@ -653,13 +983,54 @@ async function generarProyeccion() {
         <div v-for="(item, idx) in capitalGanadoEditable" :key="`cg-${idx}`" class="assumptions-row">
           <div class="col-concepto"><div class="concept-text">{{ item.concepto }}</div></div>
           <div class="col-variacion">
-            <div class="input-with-suffix">
-              <input v-model="item.variacion" class="input" :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }" type="number" step="0.1" placeholder="0" :disabled="item.mantener_igual" />
+            <!-- Toggle % / $ — no aplica para ISR/PTU ni para mantener_igual -->
+            <div class="mode-toggle-wrap" v-if="!item.mantener_igual">
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'pct' }]"
+                @click="item.modoInput = 'pct'; item.montoInput = ''"
+              >%</button>
+              <button
+                type="button"
+                :class="['mode-btn', { 'mode-btn-active': item.modoInput === 'monto' }]"
+                @click="item.modoInput = 'monto'; item.variacion = ''"
+              >$</button>
+            </div>
+
+            <!-- Input modo % -->
+            <div v-if="item.modoInput === 'pct'" class="input-with-suffix">
+              <input
+                v-model="item.variacion"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.1"
+                placeholder="0"
+                :disabled="item.mantener_igual"
+              />
               <span class="suffix">%</span>
             </div>
+
+            <!-- Input modo $ -->
+            <div v-if="item.modoInput === 'monto'" class="input-with-prefix">
+              <span class="prefix">$</span>
+              <input
+                v-model="item.montoInput"
+                class="input"
+                :class="{ 'input-error': formularioEnviado && isFilaVacia(item) }"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                :disabled="item.mantener_igual"
+              />
+            </div>
+
             <span v-if="formularioEnviado && isFilaVacia(item)" class="required-badge">* Obligatorio</span>
           </div>
-          <div class="col-check check-wrap"><input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (item.variacion !== null && item.variacion !== '' )" /></div>
+          <div class="col-check check-wrap"><input v-model="item.mantener_igual" class="checkbox" type="checkbox" :disabled="!item.mantener_igual && (
+              (item.modoInput === 'pct' && item.variacion !== null && item.variacion !== '') ||
+              (item.modoInput === 'monto' && item.montoInput !== null && item.montoInput !== '')
+            )" /></div>
         </div>
 
         <div class="assumptions-row">
@@ -690,7 +1061,7 @@ async function generarProyeccion() {
     <footer class="foot">
       <p>
         Las proyecciones son estimaciones basadas en los supuestos ingresados.<br />
-        Los Fondos Externos Requeridos (FER) se calculan automáticamente para equilibrar el balance.
+        Los Fondos Externos Requeridos (FER) se calculan automáticamente para equilibrar el Estado de Situación Financiera.
       </p>
     </footer>
   </div>
@@ -1074,5 +1445,67 @@ async function generarProyeccion() {
 
 @media (min-width: 1200px) {
   .config-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.mode-toggle-wrap {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.mode-btn {
+  padding: 2px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-btn:hover {
+  border-color: #299de0;
+  color: #299de0;
+}
+
+.mode-btn-active {
+  background: #299de0;
+  border-color: #299de0;
+  color: #ffffff;
+}
+
+.input-with-prefix {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.prefix {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  padding: 0 8px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.input-with-prefix .input {
+  border-radius: 0 6px 6px 0;
+}
+
+.header-check-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.header-check-wrap label {
+  user-select: none;
 }
 </style>

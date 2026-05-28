@@ -352,7 +352,7 @@ async function guardarNombre(item) {
 async function eliminarProyeccion(item) {
   const isConfirmed = await confirmModal({
     title: "Eliminar proyección",
-    message: `¿Estás seguro de que deseas eliminar la proyección "${item.custom_name || item.proyected_label}"?\n\nSe eliminará el Estado de Resultados Proforma y el Balance General Proforma generados. Esta acción no se puede deshacer.`,
+    message: `¿Estás seguro de que deseas eliminar la proyección "${item.custom_name || item.proyected_label}"?\n\nSe eliminará el Estado de resultados proforma y el Estado de situación financiera proforma generados. Esta acción no se puede deshacer.`,
     confirmText: "Sí, eliminar",
     cancelText: "Cancelar",
     variant: "danger",
@@ -397,7 +397,7 @@ async function eliminarProyeccion(item) {
         <p>
           Genera proyecciones proforma a partir del último periodo disponible
           <span class="separator">•</span>
-          Genera primero el Estado de Resultados Proforma y después el Balance General Proforma.
+          Genera primero el Estado de resultados proforma y después el Estado de situación financiera proforma.
         </p>
       </div>
     </div>
@@ -410,7 +410,7 @@ async function eliminarProyeccion(item) {
           </div>
         </div>
 
-        <h3>Estado de Resultados Proforma</h3>
+        <h3>Estado de resultados proforma</h3>
         <p class="card-text">
           Proyecta ingresos, costos y gastos a partir de supuestos definidos cuenta por cuenta.
         </p>
@@ -453,7 +453,7 @@ async function eliminarProyeccion(item) {
           </div>
         </div>
 
-        <h3>Balance General Proforma</h3>
+        <h3>Estado de situación financiera proforma</h3>
         <p class="card-text">
           Proyecta la estructura financiera futura considerando activos, pasivos y capital.
         </p>
@@ -518,7 +518,7 @@ async function eliminarProyeccion(item) {
             </div>
             <div class="status-pill" :class="item.hasBG ? 'status-ok' : 'status-missing'">
               <span class="material-symbols-outlined">{{ item.hasBG ? 'check_circle' : 'pending' }}</span>
-              <span>Balance General</span>
+              <span>Estado de situación financiera</span>
             </div>
           </div>
 

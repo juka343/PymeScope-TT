@@ -120,21 +120,60 @@ onMounted(async () => {
   
   const ventasBaseRow = rawRows.find(f => f.concepto.toLowerCase().includes('ventas'));
   const costoBaseRow  = rawRows.find(f => f.concepto.toLowerCase().includes('costo'));
+  // Calcular utilidad neta base correctamente según lo que tiene el PDF
   const ventasBase = ventasBaseRow?.valor_base || 1;
   const costoBase = costoBaseRow?.valor_base || 0;
   const utilidadBrutaBase = ventasBase - costoBase;
-  
+
   const gastosBase = rawRows
-    .filter(f => f.concepto.toLowerCase().includes('gastos') && !f.concepto.toLowerCase().includes('costo'))
-    .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+      .filter(f => {
+        const c = f.concepto.toLowerCase();
+        return c.includes('gastos') && 
+               !c.includes('costo') &&
+               !c.includes('gastos financieros') &&
+               !c.includes('intereses');
+      })
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
   const utilidadOperativaBase = utilidadBrutaBase - gastosBase;
-  
+
+  const rifBase = rawRows
+      .filter(f => {
+        const c = f.concepto.toLowerCase();
+        return c.includes('productos financieros') ||
+               c.includes('gastos financieros') ||
+               c.includes('intereses');
+      })
+      .reduce((sum, f) => {
+        const c = f.concepto.toLowerCase();
+        const isGastoFin = c.includes('gastos financieros') || c.includes('intereses');
+        return sum + (isGastoFin ? -(f.valor_base || 0) : (f.valor_base || 0));
+      }, 0);
+
   const otrosIngresosBase = rawRows
-    .filter(f => f.concepto.toLowerCase().includes('otros ingresos') || f.concepto.toLowerCase().includes('productos financieros'))
-    .reduce((sum, f) => sum + (f.valor_base || 0), 0);
-  const utilidadAntesImpuestosBase = utilidadOperativaBase + otrosIngresosBase;
-  const impuestosBase = config.incluirImpuestos ? (utilidadAntesImpuestosBase * 0.30) : 0; 
-  const utilidadNetaBase = utilidadAntesImpuestosBase - impuestosBase;
+      .filter(f => f.concepto.toLowerCase().includes('otros ingresos'))
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
+  const utilidadAntesImpuestosBase = utilidadOperativaBase + rifBase + otrosIngresosBase;
+
+  // Buscar si el PDF tiene ISR y PTU en el periodo base
+  const ptuBase = rawRows
+      .filter(f => 
+          f.concepto.toLowerCase().includes('ptu') || 
+          f.concepto.toLowerCase().includes('participación de los trabajadores')
+      )
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
+  const isrBase = rawRows
+      .filter(f => f.concepto.toLowerCase() === 'isr')
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
+  const impuestosBaseReales = ptuBase + isrBase;
+
+  // Si el PDF tiene ISR/PTU → restarlos; si no → usar UAI directamente
+  const utilidadNetaBase = impuestosBaseReales > 0 
+      ? utilidadAntesImpuestosBase - impuestosBaseReales  // PDF con impuestos
+      : utilidadAntesImpuestosBase;                        // PDF sin impuestos (ej. TAAS mensual)
 
   // 3. Calcular Deltas
   const deltaVentas = ((results.ventas / ventasBase) - 1) * 100;
@@ -165,74 +204,111 @@ onMounted(async () => {
   // Actualizar string reactivo para el cuadro inferior
   utilidadNetaStr.value = fmt(results.utilidad_neta);
 
-  // 4. Mapear Filas
+  // 4. Mapear Filas — orden NIF B-3
   const rows = [];
 
-  // --- Sección Ingresos ---
-  rows.push({ type: "section", label: "Ingresos" });
-  rawRows.filter(f => 
-    f.concepto.toLowerCase().includes('ventas') || 
-    f.concepto.toLowerCase().includes('otros ingresos') ||
-    f.concepto.toLowerCase().includes('productos financieros')
-  ).forEach(f => {
-    rows.push({
-      type: "row",
-      concept: f.concepto,
-      base: fmt(f.valor_base),
-      assumption: pct(f.variacion_aplicada),
-      participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
-      proforma: fmt(f.valor_proyectado),
-      variation: pct(f.variacion_aplicada),
-      variationTone: f.variacion_aplicada >= 0 ? "up" : "down"
-    });
+  // Helper para construir una fila de cuenta estándar
+  const makeRow = (f, variationTone = "up") => ({
+    type: "row",
+    concept: f.concepto,
+    base: fmt(f.valor_base),
+    assumption: f.supuesto_texto || pct(f.variacion_aplicada),
+    participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
+    proforma: fmt(f.valor_proyectado),
+    variation: pct(f.variacion_aplicada),
+    variationTone
   });
 
-  // --- Sección Costos y Gastos ---
+  // Clasificadores por naturaleza NIF B-3
+  const esVentas = f => {
+    const c = f.concepto.toLowerCase();
+    return c.includes('ventas') && !c.includes('costo');
+  };
+  const esCosto = f => f.concepto.toLowerCase().includes('costo');
+  const esOtrosIngresos = f => f.concepto.toLowerCase().includes('otros ingresos');
+  const esGastosFinancieros = f => {
+    const c = f.concepto.toLowerCase();
+    return c.includes('gastos financieros') || c.includes('intereses');
+  };
+  const esProductosFinancieros = f => f.concepto.toLowerCase().includes('productos financieros');
+  const esGastoOperativo = f => {
+    const c = f.concepto.toLowerCase();
+    return c.includes('gastos') && !esCosto(f) && !esGastosFinancieros(f);
+  };
 
-  rows.push({ type: "subtotal", concept: "Utilidad bruta", base: fmt(utilidadBrutaBase), proforma: fmt(results.utilidad_bruta), variation: "—" });
-  rows.push({ type: "section", label: "Costos y gastos" });
-  
-  rawRows.filter(f => 
-    f.concepto.toLowerCase().includes('gastos') &&
-    !f.concepto.toLowerCase().includes('costo')
-  ).forEach(f => {
-    rows.push({
-      type: "row",
-      concept: f.concepto,
-      base: fmt(f.valor_base),
-      assumption: pct(f.variacion_aplicada),
-      participation: ((f.valor_proyectado / results.ventas) * 100).toFixed(1) + "%",
-      proforma: fmt(f.valor_proyectado),
-      variation: pct(f.variacion_aplicada),
-      variationTone: f.variacion_aplicada >= 0 ? "down" : "up" 
-    });
+  // ── BLOQUE 1: INGRESOS ORDINARIOS (NIF B-3 párr. 42) ─────────────────
+  rows.push({ type: "section", label: "Ingresos ordinarios" });
+  rawRows.filter(esVentas).forEach(f => rows.push(makeRow(f, "up")));
+  rawRows.filter(esOtrosIngresos).forEach(f => rows.push(makeRow(f, "up")));
+
+  // ── BLOQUE 2: COSTO DE VENTAS (NIF B-3 párr. 42) ─────────────────────
+  rows.push({ type: "section", label: "Costo de ventas" });
+  rawRows.filter(esCosto).forEach(f => rows.push(makeRow(f, "down")));
+
+  // ── SUBTOTAL: UTILIDAD BRUTA (NIF B-3 párr. 43) ──────────────────────
+  rows.push({
+    type: "subtotal",
+    concept: "Utilidad bruta",
+    base: fmt(utilidadBrutaBase),
+    proforma: fmt(results.utilidad_bruta),
+    variation: "—"
   });
 
-  rows.push({ 
-    type: "subtotal", 
-    concept: "Utilidad de operación", 
+  // ── BLOQUE 3: GASTOS DE OPERACIÓN (NIF B-3 párr. 44-54) ──────────────
+  rows.push({ type: "section", label: "Gastos de operación" });
+  rawRows.filter(esGastoOperativo).forEach(f => rows.push(makeRow(f, "down")));
+
+  // ── SUBTOTAL: UTILIDAD DE OPERACIÓN (NIF B-3 párr. 54) ───────────────
+  rows.push({
+    type: "subtotal",
+    concept: "Utilidad de operación",
     base: fmt(utilidadOperativaBase),
-    proforma: fmt(results.utilidad_operativa), 
+    proforma: fmt(results.utilidad_operativa),
     variation: "—",
-    highlightValue: true 
+    highlightValue: true
   });
-  
-  rows.push({ 
-    type: "subtotal", 
-    concept: "Utilidad antes de impuestos", 
+
+  // ── BLOQUE 4: RIF (NIF B-3 párr. 55-57) ──────────────────────────────
+  const rifRows = [
+    ...rawRows.filter(esGastosFinancieros),
+    ...rawRows.filter(esProductosFinancieros)
+  ];
+  if (rifRows.length > 0) {
+    rows.push({ type: "section", label: "Resultado integral de financiamiento (RIF)" });
+    rawRows.filter(esGastosFinancieros).forEach(f => rows.push(makeRow(f, "down")));
+    rawRows.filter(esProductosFinancieros).forEach(f => rows.push(makeRow(f, "up")));
+  }
+
+  // ── SUBTOTAL: UTILIDAD ANTES DE IMPUESTOS (NIF B-3 párr. 57) ─────────
+  rows.push({
+    type: "subtotal",
+    concept: "Utilidad antes de impuestos",
     base: fmt(utilidadAntesImpuestosBase),
-    proforma: fmt(results.utilidad_antes_impuestos), 
+    proforma: fmt(results.utilidad_antes_impuestos),
     variation: "—",
-    highlightValue: true 
+    highlightValue: true
   });
 
   // --- Sección Impuestos ---
   if (config.incluirImpuestos === true) {
     rows.push({ type: "section", label: "Impuestos" });
+    
+    // Calcular el valor base de impuestos sumando PTU e ISR del periodo base
+    const filasPTU = (results.tablas_proyectadas || []).filter(f =>
+      f.concepto.toLowerCase().includes("ptu") ||
+      f.concepto.toLowerCase().includes("participación de los trabajadores")
+    );
+    const filasISR = (results.tablas_proyectadas || []).filter(f =>
+      f.concepto.toLowerCase() === "isr"
+    );
+
+    const impuestosBase = [...filasPTU, ...filasISR]
+      .reduce((sum, f) => sum + (f.valor_base || 0), 0);
+
     rows.push({
       type: "row",
       concept: "Total impuestos (PTU + ISR)",
-      base: "—",
+      base: impuestosBase > 0 ? fmt(impuestosBase) : "—",
       assumption: "Calculado sobre utilidad",
       participation: ((results.impuestos / results.ventas) * 100).toFixed(1) + "%",
       proforma: fmt(results.impuestos),
@@ -537,10 +613,10 @@ async function continueToBalance() {
         <article class="next-card">
           <div class="next-head">
             <div class="next-icon"><span class="material-symbols-outlined">arrow_forward</span></div>
-            <h4>Siguiente paso: Balance General Proforma</h4>
+            <h4>Siguiente paso: Estado de Situación Financiera Proforma</h4>
           </div>
           <p>
-            La <strong>Utilidad neta proyectada de {{ utilidadNetaStr }}</strong> se integrará automáticamente en la sección de Capital Contable del Balance General Proforma a realizarse como paso siguiente.
+            La <strong>Utilidad neta proyectada de {{ utilidadNetaStr }}</strong> se integrará automáticamente en la sección de Capital Contable del Estado de Situación Financiera Proforma a realizarse como paso siguiente.
           </p>
           <div class="next-status">
             <span>Listo para procesar</span>
@@ -559,7 +635,7 @@ async function continueToBalance() {
           <span>{{ isExporting ? 'Exportando...' : 'Exportar proyección' }}</span>
         </button>
         <button class="btn-primary" type="button" @click="continueToBalance">
-          Continuar al Balance
+          Continuar al Estado de Situación Financiera
         </button>
       </div>
     </section>

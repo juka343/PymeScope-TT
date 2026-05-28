@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from typing import Any, Dict
+from typing import Any, Dict, List
 import json
 import asyncio
 import traceback
@@ -33,6 +33,103 @@ def _ensure_firebase_initialized() -> None:
     _db_manager.inicializar_app(settings.FIREBASE_CREDENTIALS_PATH, settings.FIREBASE_STORAGE_BUCKET)
     _is_initialized = True
 
+
+def _resolver_montos_a_pct(
+    supuestos: List[LineaSupuesto],
+    ocr_data: dict,
+    calculator,
+    periodo_base: str = None,
+    inflacion_esperada: float = 0.0,
+    es_balance: bool = False
+) -> List[LineaSupuesto]:
+    """
+    Para supuestos que traen monto en lugar de variacion,
+    extrae el valor_base del OCR y calcula el % equivalente.
+    Regla de 3: % = ((monto / valor_base) - 1) * 100
+    Si no encuentra valor_base -> mantener_igual=True (congela la cuenta).
+    """
+    tablas_ocr = ocr_data.get("tables_data", [])
+    target_col = calculator._detectar_columna_periodo(tablas_ocr, periodo_base)
+    resueltos = []
+
+    for sup in supuestos:
+        if sup.monto is not None and not sup.mantener_igual:
+            if sup.monto == 0:
+                # Usuario escribió $0 explícitamente -> proyectar la cuenta a $0
+                # Se traduce en variacion=-100% para que el motor calcule:
+                # base x (1 + (-100)/100) = base x 0 = $0
+                resueltos.append(LineaSupuesto(
+                    concepto=sup.concepto,
+                    variacion=-100.0,
+                    mantener_igual=False,
+                    monto=sup.monto
+                ))
+                continue
+            
+            # ── Caso especial: Ventas netas usa keywords propios del motor ──
+            if sup.concepto == "Ventas netas / Ingresos por servicios":
+                tablas_ocr_data = {"tables_data": tablas_ocr}
+                valor_base = calculator._get_exact_first(tablas_ocr_data, "ing por servicios", target_col_index=target_col)
+                if valor_base is None:
+                    valor_base = calculator._get_exact_first(tablas_ocr_data, "ingresos por servicios", target_col_index=target_col)
+                if valor_base is None:
+                    valor_base = calculator._get_exact_first(tablas_ocr_data, "ingresos", target_col_index=target_col)
+            else:
+                # ── Resto de cuentas — usar concept_keywords ──
+                kw = calculator.concept_keywords.get(sup.concepto, [sup.concepto.lower()])
+                valor_base = None
+                for keyword in kw:
+                    resultado = calculator._get_exact_first(
+                        {"tables_data": tablas_ocr},
+                        keyword,
+                        target_col_index=target_col
+                    )
+                    if resultado is not None:
+                        valor_base = resultado
+                        break
+                if valor_base is None:
+                    # Fallback sin restricción de columna — _find_value tiene su propia
+                    # lógica de detección. Riesgo bajo: solo afecta PDFs comparativos
+                    # sin header donde _get_exact_first también falló.
+                    valor_base = calculator._find_value(
+                        tablas_ocr, kw,
+                        take_last=False
+                    )
+
+            if valor_base and abs(float(valor_base)) > 0:
+                if es_balance:
+                    # BG: solve_balance_rubro NO multiplica inflación
+                    # Fórmula inversa exacta: pct = (monto/base - 1) * 100
+                    pct = ((sup.monto / float(valor_base)) - 1) * 100
+                else:
+                    # ER: solve_rubro SÍ multiplica inflación en CASO 3
+                    # Fórmula inversa exacta: pct = (monto/base/(1+infl/100) - 1) * 100
+                    inflacion_factor = 1 + (inflacion_esperada / 100)
+                    pct = ((sup.monto / float(valor_base) / inflacion_factor) - 1) * 100
+                pct = round(pct, 4)
+                print(f"  \U0001f4b1 Monto->%: '{sup.concepto}' "
+                      f"base={float(valor_base):,.2f} "
+                      f"monto={sup.monto:,.2f} -> {pct:.4f}%")
+                resueltos.append(LineaSupuesto(
+                    concepto=sup.concepto,
+                    variacion=pct,
+                    mantener_igual=False,
+                    monto=sup.monto
+                ))
+            else:
+                print(f"  \u26a0\ufe0f Monto->%: '{sup.concepto}' "
+                      f"sin valor base en PDF -- se congela")
+                resueltos.append(LineaSupuesto(
+                    concepto=sup.concepto,
+                    variacion=0.0,
+                    mantener_igual=True,
+                    monto=sup.monto
+                ))
+        else:
+            resueltos.append(sup)
+
+    return resueltos
+
 @router.post("/projections/estado-resultados")
 async def generar_proyeccion_estado_resultados(payload: ProyeccionSupuestosRequest) -> Dict[str, Any]:
     """
@@ -52,6 +149,19 @@ async def generar_proyeccion_estado_resultados(payload: ProyeccionSupuestosReque
         print(f"   URL: {payload.results_url[:80]}...")
         ocr_data = await _azure_service.process_financial_document_async(payload.results_url)
         print(f"   ✅ OCR completado. Tablas encontradas: {len(ocr_data.get('tables_data', []))}")
+
+        payload.ingresos = _resolver_montos_a_pct(
+            payload.ingresos, ocr_data, _projection_calculator,
+            payload.periodo_base,
+            inflacion_esperada=payload.inflacion_esperada,
+            es_balance=False
+        )
+        payload.costos = _resolver_montos_a_pct(
+            payload.costos, ocr_data, _projection_calculator,
+            payload.periodo_base,
+            inflacion_esperada=payload.inflacion_esperada,
+            es_balance=False
+        )
 
         # 2. Calcular la proyección
         print(f"\n-> Calculando proyección matemática (Porcentaje de Ventas)...")
@@ -138,6 +248,13 @@ async def generar_proyeccion_balance_general(payload: ProyeccionBalanceRequest) 
         print(f"\n-> Analizando PDF base con Azure (Balance General)...")
         ocr_data = await _azure_service.process_financial_document_async(payload.results_url)
         print(f"   ✅ OCR completado. Tablas encontradas: {len(ocr_data.get('tables_data', []))}")
+
+        payload.activo_circulante    = _resolver_montos_a_pct(payload.activo_circulante,    ocr_data, _projection_calculator, es_balance=True)
+        payload.activo_no_circulante = _resolver_montos_a_pct(payload.activo_no_circulante, ocr_data, _projection_calculator, es_balance=True)
+        payload.pasivo_corto_plazo   = _resolver_montos_a_pct(payload.pasivo_corto_plazo,   ocr_data, _projection_calculator, es_balance=True)
+        payload.pasivo_largo_plazo   = _resolver_montos_a_pct(payload.pasivo_largo_plazo,   ocr_data, _projection_calculator, es_balance=True)
+        payload.capital_contribuido  = _resolver_montos_a_pct(payload.capital_contribuido,  ocr_data, _projection_calculator, es_balance=True)
+        payload.capital_ganado       = _resolver_montos_a_pct(payload.capital_ganado,       ocr_data, _projection_calculator, es_balance=True)
 
         # 2. Calcular la proyección
         print(f"\n-> Calculando proyección de Balance General (FER / Plug Account)...")
