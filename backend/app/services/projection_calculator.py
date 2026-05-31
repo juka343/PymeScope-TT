@@ -1659,6 +1659,21 @@ class ProjectionCalculator(FinancialCalculator):
             # CUENTAS COMPLEMENTARIAS DE ACTIVO (Depreciación): Siempre negativas
             if "depreciación" in concepto_nombre.lower() or "depreciacion" in concepto_nombre.lower() or "dep." in concepto_nombre.lower():
                 return -abs(valor)
+            # Cuentas que pueden tener saldo negativo legítimo en el Activo.
+            # Contalink presenta impuestos pendientes de pago dentro del Activo
+            # con signo negativo — indican que reducen el activo circulante neto.
+            # Preservar el signo antes de aplicar cualquier override de valor absoluto.
+            _CUENTAS_SALDO_NEGATIVO_ACTIVO = [
+                "impuestos acreditables por pagar",
+                "iva pendiente de pago",
+                "ieps pendiente de pago",
+                "impuestos por pagar",
+                "iva por pagar",
+                "impuestos acreditables por pagar",
+            ]
+            if any(x in concepto_nombre.lower() for x in _CUENTAS_SALDO_NEGATIVO_ACTIVO):
+                return valor  # preservar signo negativo — no forzar abs()
+
             # ACTIVOS FIJOS: Siempre positivos
             if any(x in concepto_nombre.lower() for x in [
                 "mobiliario", "equipo", "maquinaria", "transporte", "edificio",
@@ -1715,7 +1730,15 @@ class ProjectionCalculator(FinancialCalculator):
                     v_proy = Decimal(str(utilidad_neta_proforma))
 
                 elif sup.concepto == "Impuestos a la utilidad por pagar":
-                    # Juicio crítico: esta cuenta = ISR + PTU del ER proforma
+                    # NIF D-4: los impuestos corrientes corresponden a la utilidad
+                    # del periodo proyectado — nunca al histórico.
+                    #
+                    # Base siempre = ISR + PTU calculados del ER proforma.
+                    # mantener_igual y variacion=0% son equivalentes — ambos
+                    # usan la base del ER sin ajuste.
+                    # Si el usuario ingresa variacion != 0%, se aplica sobre
+                    # la base del ER para ajustar por diferencias base contable
+                    # vs fiscal (créditos fiscales, deducciones adicionales, etc.)
                     kw = self.bg_keywords.get(sup.concepto, [sup.concepto.lower()])
                     v_base_ocr, row_text_lower = self._get_all_matches_sum_with_text(
                         ocr_data, kw,
@@ -1726,21 +1749,27 @@ class ProjectionCalculator(FinancialCalculator):
                         consumed_set=filas_consumidas
                     )
                     v_base = abs(Decimal(str(v_base_ocr))) if v_base_ocr else Decimal("0.00")
-                    
-                    if sup.mantener_igual:
-                        v_proy = self._redondear(v_base)
-                    elif sup.variacion != 0:
-                        v_proy = self._redondear(v_base * (Decimal("1") + (Decimal(str(sup.variacion)) / Decimal("100"))))
+
+                    # Calcular base automática del ER proforma
+                    if total_impuestos_proforma > 0:
+                        v_base_er = self._redondear(Decimal(str(total_impuestos_proforma)))
                     else:
-                        if total_impuestos_proforma > 0:
-                            # Hay ISR+PTU proyectados del ER → usar ese valor exacto
-                            v_proy = self._redondear(Decimal(str(total_impuestos_proforma)))
-                        elif utilidad_neta_proforma < 0:
-                            # Hay pérdida → definitivamente no hay impuestos que pagar
-                            v_proy = Decimal("0.00")
-                        else:
-                            # Hay utilidad pero el usuario no activó ISR/PTU → conservar valor histórico
-                            v_proy = self._redondear(v_base)
+                        v_base_er = Decimal("0.00")
+
+                    if sup.monto is not None and Decimal(str(sup.monto)) > 0:
+                        # Usuario ingresó monto explícito en modo $ → respetarlo
+                        # Justificación: usuario conoce su provisión fiscal exacta
+                        # (ej. pagos provisionales ISR Art. 14 LISR)
+                        v_proy = self._redondear(Decimal(str(sup.monto)))
+                    elif sup.variacion is not None and Decimal(str(sup.variacion)) != 0:
+                        # Usuario ingresó variación != 0% → aplicar sobre base del ER
+                        # Justificación: ajuste por diferencias base contable vs fiscal
+                        factor = Decimal("1") + Decimal(str(sup.variacion)) / Decimal("100")
+                        v_proy = self._redondear(v_base_er * factor)
+                    else:
+                        # mantener_igual=True O variacion=0% O sin supuesto
+                        # → ambos equivalentes: usar base del ER proforma sin ajuste
+                        v_proy = v_base_er
 
                 elif sup.concepto == "Reserva legal":
                     kw = self.bg_keywords.get(sup.concepto, ["reserva legal"])
@@ -1792,8 +1821,13 @@ class ProjectionCalculator(FinancialCalculator):
                             v_base += Decimal(str(v_iva_ret))
                     else:
                         # 2. Estamos en TAAS. Tomamos subcuentas específicas sin tocar la cuenta padre del IVA
-                        kw_taas = ["impuestos acreditables por pagar", "impuestos y derechos"]
-                        v_base = abs(Decimal(str(self._get_all_matches_sum(ocr_data, kw_taas, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas))))
+                        # "Impuestos acreditables pagados" y "por pagar" se suman algebraicamente.
+                        kw_taas = [
+                            "impuestos acreditables por pagar",   # puede ser + o - según periodo
+                            "impuestos acreditables pagados",     # siempre positivo
+                            "impuestos y derechos",
+                        ]
+                        v_base = Decimal(str(self._get_all_matches_sum(ocr_data, kw_taas, target_col_index=target_col_index, target_relative_index=target_relative_index, consumed_set=filas_consumidas)))
                         
                     v_proy = solve_balance_rubro(sup, v_base)
 
@@ -2319,5 +2353,6 @@ class ProjectionCalculator(FinancialCalculator):
             "total_activo": float(total_activo),
             "total_pasivo": float(total_pasivo),
             "total_capital": float(total_capital),
-            "fer": float(fer)
+            "fer": float(fer),
+            "utilidad_neta_proforma": float(utilidad_neta_proforma)
         }

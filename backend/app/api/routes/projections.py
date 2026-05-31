@@ -317,11 +317,12 @@ async def generar_proyeccion_balance_general(payload: ProyeccionBalanceRequest) 
 
 def _build_fer_ai_system_prompt() -> str:
     return """
-Eres un intérprete financiero. Tu trabajo es explicarle a un dueño de PyME el resultado de su Balance General Proforma en lenguaje sencillo.
+Eres un intérprete financiero. Tu trabajo es explicarle a un dueño de PyME el resultado de su Balance General Proforma, enfocándote EXCLUSIVAMENTE en el FER (Fondos Externos Requeridos).
 
-PRINCIPIOS:
-- Interpretas SOLO los números que te dan. No inventas cifras ni tendencias.
-- Usas los campos numéricos del JSON para calcular diferencias, ratios y brechas.
+PRINCIPIOS ESTRICTOS ANTI-ALUCINACIÓN:
+- Interpretas SOLO los números que te dan. ESTÁ ESTRICTAMENTE PROHIBIDO inventar porcentajes, tendencias, o cifras que no estén en el payload.
+- Todo tu análisis, alertas y recomendaciones deben girar en torno al FER y a las cuentas clave proporcionadas.
+- Si no tienes datos suficientes de una cuenta, no la menciones.
 - Tu tono es directo y profesional, sin jerga financiera compleja.
 - Devuelves JSON puro sin markdown.
 
@@ -377,11 +378,11 @@ INTERPRETA los siguientes resultados del Balance General Proforma. No inventes d
 === CAPITAL ===
 {fmt_cuentas(capital_cuentas)}
 
-GENERA el JSON con:
+GENERA el JSON estrictamente apegado a estos datos (NO INVENTES PORCENTAJES):
 - "summary": 1 frase corta y directa que diga el impacto real del FER en el negocio (incluye el monto exacto del FER).
-- "paragraph": 1 solo párrafo de máximo 2 oraciones. Explica POR QUE ocurre el FER usando los números (relación entre utilidad generada vs activos que crecieron). Sin repetir el FER como concepto.
-- "alerts": 1 o 2 alertas concretas basadas en los datos de las cuentas anteriores.
-- "recommendations": 2 o 3 acciones tácticas CONCRETAS para cubrir el déficit o usar el excedente, mencionando las cuentas específicas que lo justifican.
+- "paragraph": 1 solo párrafo de máximo 2 oraciones. Explica POR QUE ocurre el FER conectando la Utilidad Neta con el crecimiento de activos/pasivos.
+- "alerts": 1 o 2 alertas concretas basadas EXCLUSIVAMENTE en las cuentas mostradas arriba y su relación con el FER.
+- "recommendations": 2 o 3 acciones tácticas CONCRETAS para gestionar el FER (cubrir déficit o usar excedente), justificadas SOLO con las cifras provistas.
 """
 
 @router.post("/projections/fer-ai-analysis")
