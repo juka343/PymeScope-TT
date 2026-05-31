@@ -514,6 +514,7 @@ async function generarProyeccion() {
       inflacion: projectConfig.value.inflacionEsperada,
       periodoBaseId: projectConfig.value.periodoBaseId,
       bgId: bgId,
+      ventas_proy_incremento_pct: payload.ventas_proy_incremento_pct,
     }));
     localStorage.setItem(`${prefix}_balance_supuestos`, JSON.stringify(payload));
     

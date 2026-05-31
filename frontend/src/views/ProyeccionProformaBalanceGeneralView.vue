@@ -362,11 +362,11 @@ async function generateAiAnalysis(conf, res) {
       total_pasivo: totals.value.pasivo,
       total_capital: totals.value.capital,
       // Desglose de cuentas relevantes para recomendaciones basadas en datos reales
-      activo_circulante: cuentasFmt(["Caja", "Bancos", "Inversiones temporales", "Cuentas por cobrar", "Inventarios"]),
-      activo_no_circulante: cuentasFmt(["Terrenos", "Edificios", "Maquinaria", "Equipo", "Dep"]),
-      pasivo_corto_plazo: cuentasFmt(["pagar a proveedores", "Préstamo bancario", "Deuda a corto", "Impuestos a la utilidad", "Anticipo de clientes"]),
-      pasivo_largo_plazo: cuentasFmt(["largo plazo", "largo"]),
-      capital: cuentasFmt(["Capital social", "Utilidades", "Reserva"])
+      activo_circulante: cuentasFmt(["Caja", "Bancos", "Efectivo", "Inversiones temporales", "Cuentas por cobrar", "Clientes", "Inventarios"]),
+      activo_no_circulante: cuentasFmt(["Terrenos", "Edificios", "Maquinaria", "Equipo", "Mobiliario", "Dep", "Marcas", "Patentes", "Intangibles"]),
+      pasivo_corto_plazo: cuentasFmt(["proveedores", "Préstamo bancario a corto", "Deuda a corto", "Impuestos", "Acreedores", "Anticipo de clientes", "Cuentas por pagar"]),
+      pasivo_largo_plazo: cuentasFmt(["largo plazo", "largo", "Préstamo bancario a largo", "Hipotecas", "Deuda a largo"]),
+      capital: cuentasFmt(["Capital social", "Utilidad", "Pérdida", "Reserva", "Resultado"])
     };
 
     const response = await fetch(`${API_BASE_URL}/projections/fer-ai-analysis`, {

@@ -2353,5 +2353,6 @@ class ProjectionCalculator(FinancialCalculator):
             "total_activo": float(total_activo),
             "total_pasivo": float(total_pasivo),
             "total_capital": float(total_capital),
-            "fer": float(fer)
+            "fer": float(fer),
+            "utilidad_neta_proforma": float(utilidad_neta_proforma)
         }
