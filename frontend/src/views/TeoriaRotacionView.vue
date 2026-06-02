@@ -22,9 +22,18 @@ const videos = ref([
 ]);
 
 const resources = ref([
-  { name: "Guía completa de Rentabilidad.pdf", meta: "2.4 MB • PDF", url: "#", type: "pdf" },
-  { name: "Bibliografía recomendada.pdf", meta: "1.1 MB • PDF", url: "#", type: "pdf" },
-  { name: "Glosario de Términos Financieros.pdf", meta: "0.8 MB • PDF", url: "#", type: "pdf" },
+  {
+    name: "Razones de actividad y rotación",
+    meta: "FCA UAQ • PDF",
+    url: "https://fca.uaq.mx/docs/ConvocatoriasLicenciatura/2023-2/GUIAS/LAF04.pdf",
+    type: "pdf",
+  },
+  {
+    name: "Las 10 razones financieras (guía completa)",
+    meta: "FCCA UMSNH • PDF",
+    url: "https://www.fcca.umich.mx/descargas/apuntes/academia%20de%20finanzas/finanzas%20i%20mauricio%20a.%20chagolla%20farias/10%20razones%20financieras.pdf",
+    type: "pdf",
+  },
 ]);
 
 // ===== YouTube thumbnail dinámico =====

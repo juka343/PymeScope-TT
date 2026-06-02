@@ -22,9 +22,18 @@ const videos = ref([
 ]);
 
 const resources = ref([
-  { name: "Guía completa de Rentabilidad.pdf", meta: "2.4 MB • PDF", url: "#", type: "pdf" },
-  { name: "Bibliografía recomendada.pdf", meta: "1.1 MB • PDF", url: "#", type: "pdf" },
-  { name: "Glosario de Términos Financieros.pdf", meta: "0.8 MB • PDF", url: "#", type: "pdf" },
+  {
+    name: "Fundamentos de la administración del capital de trabajo",
+    meta: "UADEC • PDF",
+    url: "http://oacampusvirtual.uadec.mx/licenciatura/Planeacion_Financiera/V1/UnidadII/Pdf/pdfs/Fundamentos_Administracion_Financiera_CT.pdf",
+    type: "pdf",
+  },
+  {
+    name: "Uso e interpretación de las razones financieras",
+    meta: "FCA UAQ • PDF",
+    url: "https://fca.uaq.mx/docs/ConvocatoriasLicenciatura/2023-2/GUIAS/LAF03.pdf",
+    type: "pdf",
+  },
 ]);
 
 // ===== YouTube thumbnail dinámico =====

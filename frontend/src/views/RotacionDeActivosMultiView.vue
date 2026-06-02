@@ -1070,6 +1070,7 @@ onMounted(() => {
   box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
 }
 
+.kpi-dot.danger,
 .kpi-dot.alert {
   background: #ef4444;
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
