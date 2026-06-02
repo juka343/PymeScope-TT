@@ -110,7 +110,7 @@ async function handleGoogle() {
           <div class="side-copy">
             <h2>Analiza la salud financiera de tu empresa en minutos</h2>
             <p>
-              Accede a herramientas de análisis profesional y toma decisiones informadas para el
+              Accede a esta herramienta de análisis y toma decisiones informadas para el
               crecimiento de tu negocio.
             </p>
           </div>
